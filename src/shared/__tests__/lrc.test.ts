@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currentLineIndex, lineProgress, parseLrc } from '../lrc'
+import { currentLineIndex, formatLrc, lineProgress, parseLrc } from '../lrc'
 
 describe('parseLrc', () => {
   it('기본 [mm:ss.xx] 줄을 파싱한다', () => {
@@ -38,6 +38,24 @@ describe('parseLrc', () => {
 
   it('타임스탬프 없는 줄과 빈 입력을 무시한다', () => {
     expect(parseLrc('그냥 텍스트\n\n')).toEqual([])
+  })
+})
+
+describe('formatLrc', () => {
+  it('LRC로 직렬화하고 다시 파싱하면 같은 줄이 나온다', () => {
+    const lines = [
+      { time: 0.68, text: '망했다' },
+      { time: 65.5, text: '' },
+      { time: 125.481, text: '가사' }
+    ]
+    const parsed = parseLrc(formatLrc(lines))
+    expect(parsed.map((l) => l.text)).toEqual(['망했다', '', '가사'])
+    expect(parsed[0].time).toBeCloseTo(0.68, 2)
+    expect(parsed[2].time).toBeCloseTo(125.48, 2)
+  })
+
+  it('음수 시간은 0으로 클램프한다', () => {
+    expect(formatLrc([{ time: -1, text: 'x' }])).toBe('[00:00.00] x\n')
   })
 })
 

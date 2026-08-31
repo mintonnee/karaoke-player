@@ -30,20 +30,20 @@
 
 ## 3. 기술 스택 (결정)
 
-| 영역            | 선택                                 | 비고                                     |
-| --------------- | ------------------------------------ | ---------------------------------------- |
-| 셸              | Electron + TypeScript                | electron-vite 템플릿                     |
-| 렌더러          | React + Vite                         | 상태는 zustand, UI 라이브러리 없음       |
-| 메인 프로세스   | TypeScript                           | 사이드카 프로세스 관리, 파일 시스템, DB  |
-| 오디오 (v1)     | Web Audio API + AudioWorklet         | `AudioEngine` 인터페이스 뒤에 숨김       |
-| 피치 시프트     | soundtouchjs (WASM/Worklet)          | Rubber Band WASM으로 교체 가능하게       |
-| 분리            | Python 사이드카 + Demucs             | 모델 `htdemucs_ft`, `--two-stems=vocals` |
-| 가사 정렬       | Python 사이드카 + ctc-forced-aligner | 일본어는 pyopenjtalk로 가나 변환 후 정렬 |
-| 전사 (fallback) | faster-whisper                       | 가사 텍스트가 전혀 없을 때만             |
-| 가사 소스       | LRCLIB API                           | https://lrclib.net/api                   |
-| DB              | SQLite (better-sqlite3)              | 라이브러리 메타데이터                    |
-| Python 관리     | uv                                   | `sidecar/pyproject.toml`                 |
-| 패키징          | electron-builder                     | Python 런타임 번들은 v1 후반 슬라이스    |
+| 영역            | 선택                                | 비고                                                    |
+| --------------- | ----------------------------------- | ------------------------------------------------------- |
+| 셸              | Electron + TypeScript               | electron-vite 템플릿                                    |
+| 렌더러          | React + Vite                        | 상태는 zustand, UI 라이브러리 없음                      |
+| 메인 프로세스   | TypeScript                          | 사이드카 프로세스 관리, 파일 시스템, DB                 |
+| 오디오 (v1)     | Web Audio API + AudioWorklet        | `AudioEngine` 인터페이스 뒤에 숨김                      |
+| 피치 시프트     | soundtouchjs (WASM/Worklet)         | Rubber Band WASM으로 교체 가능하게                      |
+| 분리            | Python 사이드카 + Demucs            | 모델 `htdemucs_ft`, `--two-stems=vocals`                |
+| 가사 정렬       | Python 사이드카 + torchaudio MMS_FA | 일본어는 pyopenjtalk로 가나 변환 후 정렬 (`--extra ja`) |
+| 전사 (fallback) | faster-whisper                      | 가사 텍스트가 전혀 없을 때만                            |
+| 가사 소스       | LRCLIB API                          | https://lrclib.net/api                                  |
+| DB              | SQLite (better-sqlite3)             | 라이브러리 메타데이터                                   |
+| Python 관리     | uv                                  | `sidecar/pyproject.toml`                                |
+| 패키징          | electron-builder                    | Python 런타임 번들은 v1 후반 슬라이스                   |
 
 **GPU**: 개발 머신은 RTX 5090. torch는 CUDA 빌드 기본, `KARAOKE_DEVICE=cpu|cuda|mps`로 강제 가능.
 
@@ -158,7 +158,7 @@ SQLite `tracks`: `id, title, artist, album, duration, source_path, status(import
 - `×2`, `(x2)`, `[Chorus]` 등 구조 표기 제거/전개
 - 빈 줄 제거, 한 줄 = 한 하이라이트 단위
 - 일본어: pyopenjtalk로 한자→가나 변환한 텍스트로 정렬하되, 표시는 원문 유지
-- 줄별 `conf < 0.5`는 UI에서 경고 표시 + 탭으로 시작점 수동 지정 가능
+- 줄별 conf는 토큰 확률의 기하평균(0..1). 가창은 발화보다 값이 낮아 `conf < 0.1`을 UI 경고 임계값으로 쓴다. 경고 줄은 탭으로 시작점 수동 지정 가능
 
 LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시각 − 현재 줄 시각)에 비례.
 
@@ -242,6 +242,7 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 - 로컬 파일 전용: URL 다운로드 기능은 법적 리스크만 늘리고 핵심 가치와 무관
 - 줄 단위 하이라이트: 일본어 단어 경계 문제와 정렬 정확도를 고려한 현실적 선택. 실제 노래방 기기와 동일한 UX
 - 오디오 엔진 인터페이스를 S2에서 먼저 고정: v2 네이티브 전환 비용을 렌더러 0 변경으로 묶기 위함
+- 가사 정렬을 ctc-forced-aligner 대신 torchaudio 내장 MMS_FA로 구현 (2026-09-01): 같은 MMS 정렬 모델이지만 ctc-forced-aligner는 PyPI에 없고(git 설치) pybind11 소스 빌드가 필요해 MSVC 없는 환경에서 설치 불가. torchaudio는 이미 의존성에 있어 추가 빌드가 없다. 정렬 결과 conf는 align.json으로 트랙 디렉토리에 저장
 
 ## 8. 미정 (구현 전 확인)
 

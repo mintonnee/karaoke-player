@@ -19,6 +19,8 @@ const PROBE_TIMEOUT_MS = 30_000
 export interface ImportServiceOptions {
   store: LibraryStore
   sidecar: SidecarManager
+  /** 분리/정렬 작업 공용 직렬화 큐 (§4, 동시 1개) */
+  queue: JobQueue
   /** <userData>/tracks */
   tracksDir: string
   /** KARAOKE_MAX_DURATION_SEC, 초과 시 임포트 거부 */
@@ -37,7 +39,7 @@ export class ImportService {
   private readonly queue: JobQueue
 
   constructor(private readonly options: ImportServiceOptions) {
-    this.queue = new JobQueue((error) => this.log(`job error: ${String(error)}`))
+    this.queue = options.queue
   }
 
   async importFiles(filePaths: string[]): Promise<ImportFilesResponse> {

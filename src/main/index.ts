@@ -6,6 +6,7 @@ import icon from '../../resources/icon.png?asset'
 import { MEDIA_PROTOCOL_SCHEME } from '../shared/types'
 import { registerIpcHandlers } from './ipc'
 import { ImportService } from './library/ImportService'
+import { JobQueue } from './library/JobQueue'
 import { LibraryStore } from './library/LibraryStore'
 import { LyricsService } from './lyrics/LyricsService'
 import { createUvSidecarManager } from './sidecar/SidecarManager'
@@ -103,8 +104,12 @@ app.whenReady().then(() => {
   const notify = (channel: string, payload: unknown): void => {
     BrowserWindow.getAllWindows().forEach((window) => window.webContents.send(channel, payload))
   }
+  // 분리/정렬/전사(GPU 작업)를 하나의 큐로 직렬화한다 (§4)
+  const jobQueue = new JobQueue((error) => console.error('[jobs]', error))
   const lyricsService = new LyricsService({
     store,
+    sidecar,
+    queue: jobQueue,
     tracksDir,
     userAgent: `karaoke-player/${app.getVersion()} (local desktop app)`,
     notify
@@ -112,6 +117,7 @@ app.whenReady().then(() => {
   const importService = new ImportService({
     store,
     sidecar,
+    queue: jobQueue,
     tracksDir,
     maxDurationSec: parsePositiveInt(process.env.KARAOKE_MAX_DURATION_SEC, 900),
     demucsModel: process.env.KARAOKE_DEMUCS_MODEL ?? 'htdemucs_ft',

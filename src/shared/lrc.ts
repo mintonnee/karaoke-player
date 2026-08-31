@@ -56,6 +56,22 @@ export function parseLrc(content: string): LyricLine[] {
   return lines.sort((a, b) => a.time - b.time)
 }
 
+/** LyricLine 배열을 LRC 본문으로 직렬화한다 (수동 보정 저장용) */
+export function formatLrc(lines: LyricLine[]): string {
+  return (
+    lines
+      .map((line) => {
+        const t = Math.max(0, line.time)
+        const minutes = Math.floor(t / 60)
+        const seconds = t - minutes * 60
+        const mm = String(minutes).padStart(2, '0')
+        const ss = seconds.toFixed(2).padStart(5, '0')
+        return `[${mm}:${ss}] ${line.text}`.trimEnd()
+      })
+      .join('\n') + '\n'
+  )
+}
+
 /** 현재 재생 위치에 해당하는 줄 인덱스. 첫 줄 이전이면 -1. */
 export function currentLineIndex(lines: LyricLine[], positionSec: number): number {
   let lo = 0

@@ -27,6 +27,19 @@ def build_parser() -> argparse.ArgumentParser:
     separate_parser.add_argument("--shifts", type=int, default=None)
     separate_parser.add_argument("--json", action="store_true", default=True)
 
+    align_parser = sub.add_parser("align", help="forced-align lyrics to vocal track")
+    align_parser.add_argument("--vocal", required=True)
+    align_parser.add_argument("--lyrics", required=True)
+    align_parser.add_argument("--lang", choices=["ja", "ko", "en"], required=True)
+    align_parser.add_argument("--out", required=True)
+    align_parser.add_argument("--json", action="store_true", default=True)
+
+    transcribe_parser = sub.add_parser("transcribe", help="transcribe vocal with faster-whisper")
+    transcribe_parser.add_argument("--vocal", required=True)
+    transcribe_parser.add_argument("--lang", default="auto")
+    transcribe_parser.add_argument("--out", required=True)
+    transcribe_parser.add_argument("--json", action="store_true", default=True)
+
     return parser
 
 
@@ -57,6 +70,14 @@ def main() -> None:
                     args.shifts if args.shifts is not None else DEFAULT_SHIFTS,
                 )
             )
+        elif args.command == "align":
+            from .align import align
+
+            emit_done(align(args.vocal, args.lyrics, args.lang, args.out))
+        elif args.command == "transcribe":
+            from .transcribe import transcribe
+
+            emit_done(transcribe(args.vocal, args.lang, args.out))
     except WorkerError as e:
         emit_error(e.code, e.msg)
         sys.exit(1)

@@ -2,9 +2,12 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { DEFAULT_GUIDE_VOCAL_DB, IPC_CHANNELS } from '../shared/types'
 import type {
+  AlignLang,
+  AlignedLine,
   ImportFilesResponse,
   ImportProgressEvent,
   LyricsPayload,
+  LyricsProgressEvent,
   Track,
   TrackFiles,
   TrackMetaInput
@@ -30,6 +33,19 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.lyricsGet, trackId),
   refetchLyrics: (trackId: string): Promise<LyricsPayload> =>
     ipcRenderer.invoke(IPC_CHANNELS.lyricsRefetch, trackId),
+  alignLyrics: (
+    trackId: string,
+    text: string,
+    lang: AlignLang,
+    fromLrclibPlain: boolean
+  ): Promise<LyricsPayload> =>
+    ipcRenderer.invoke(IPC_CHANNELS.lyricsAlign, trackId, text, lang, fromLrclibPlain),
+  transcribeLyrics: (trackId: string): Promise<string> =>
+    ipcRenderer.invoke(IPC_CHANNELS.lyricsTranscribe, trackId),
+  saveLyricsLines: (trackId: string, lines: AlignedLine[]): Promise<LyricsPayload> =>
+    ipcRenderer.invoke(IPC_CHANNELS.lyricsSaveLines, trackId, lines),
+  onLyricsProgress: (callback: (event: LyricsProgressEvent) => void): (() => void) =>
+    subscribe(IPC_CHANNELS.lyricsProgress, callback),
   /** §6 KARAOKE_GUIDE_VOCAL_DB (기본 -20 dB) */
   guideVocalDefaultDb: ((): number => {
     const parsed = Number(process.env.KARAOKE_GUIDE_VOCAL_DB)

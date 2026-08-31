@@ -26,13 +26,31 @@ export interface Track {
   updatedAt: string
 }
 
-/** 트랙의 저장된 가사 (§4.3 lyrics.lrc / lyrics.txt) */
+/** 정렬 결과 한 줄 (§4.2 align.lines). conf는 0..1, 수동 보정된 줄은 1 */
+export interface AlignedLine {
+  t: number
+  text: string
+  conf: number
+}
+
+export type AlignLang = 'ja' | 'ko' | 'en'
+
+/** 트랙의 저장된 가사 (§4.3 lyrics.lrc / lyrics.txt / align.json) */
 export interface LyricsPayload {
   source: LyricsSource
   /** 싱크 가사(LRC 원문). 없으면 null */
   lrc: string | null
-  /** plain 가사 원문 (S5 정렬 대기). 없으면 null */
+  /** plain 가사 원문 (정렬 입력). 없으면 null */
   plain: string | null
+  /** 정렬 결과(conf 포함). forced alignment를 거친 경우에만 존재 */
+  lines: AlignedLine[] | null
+}
+
+export interface LyricsProgressEvent {
+  trackId: string
+  stage: 'align' | 'transcribe'
+  pct: number
+  msg?: string
 }
 
 /** 메타 편집 입력 (S3.2). LRCLIB 조회 정확도에 영향 */
@@ -79,6 +97,10 @@ export const IPC_CHANNELS = {
   updateTrackMeta: 'library:update-meta',
   lyricsGet: 'lyrics:get',
   lyricsRefetch: 'lyrics:refetch',
+  lyricsAlign: 'lyrics:align',
+  lyricsTranscribe: 'lyrics:transcribe',
+  lyricsSaveLines: 'lyrics:save-lines',
+  lyricsProgress: 'lyrics:progress',
   trackUpdated: 'library:track-updated',
   importProgress: 'library:import-progress'
 } as const

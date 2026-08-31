@@ -3,7 +3,14 @@ import { existsSync } from 'fs'
 import { rm } from 'fs/promises'
 import { join } from 'path'
 import { IPC_CHANNELS } from '../shared/types'
-import type { ImportFilesResponse, Track, TrackFiles, TrackMetaInput } from '../shared/types'
+import type {
+  AlignLang,
+  AlignedLine,
+  ImportFilesResponse,
+  Track,
+  TrackFiles,
+  TrackMetaInput
+} from '../shared/types'
 import type { ImportService } from './library/ImportService'
 import type { LibraryStore } from './library/LibraryStore'
 import type { LyricsService } from './lyrics/LyricsService'
@@ -34,6 +41,20 @@ export function registerIpcHandlers({
     if (!track) throw new Error(`track not found: ${trackId}`)
     return lyricsService.fetchAndStore(track)
   })
+
+  ipcMain.handle(
+    IPC_CHANNELS.lyricsAlign,
+    (_event, trackId: string, text: string, lang: AlignLang, fromLrclibPlain: boolean) =>
+      lyricsService.alignLyrics(trackId, text, lang, fromLrclibPlain)
+  )
+
+  ipcMain.handle(IPC_CHANNELS.lyricsTranscribe, (_event, trackId: string) =>
+    lyricsService.transcribe(trackId)
+  )
+
+  ipcMain.handle(IPC_CHANNELS.lyricsSaveLines, (_event, trackId: string, lines: AlignedLine[]) =>
+    lyricsService.saveLines(trackId, lines)
+  )
 
   ipcMain.handle(IPC_CHANNELS.listTracks, (_event, query?: string): Track[] =>
     store.listTracks(query)

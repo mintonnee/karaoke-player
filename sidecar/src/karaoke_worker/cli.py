@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     separate_parser.add_argument("--out", required=True)
     separate_parser.add_argument("--model", default=None)
     separate_parser.add_argument("--device", default=None)
+    separate_parser.add_argument("--shifts", type=int, default=None)
     separate_parser.add_argument("--json", action="store_true", default=True)
 
     return parser
@@ -45,7 +46,7 @@ def main() -> None:
         if args.command == "probe":
             emit_done(probe(args.input))
         elif args.command == "separate":
-            from .separate import DEFAULT_DEVICE, DEFAULT_MODEL, separate
+            from .separate import DEFAULT_DEVICE, DEFAULT_MODEL, DEFAULT_SHIFTS, separate
 
             emit_done(
                 separate(
@@ -53,6 +54,7 @@ def main() -> None:
                     args.out,
                     args.model or DEFAULT_MODEL,
                     args.device or DEFAULT_DEVICE,
+                    args.shifts if args.shifts is not None else DEFAULT_SHIFTS,
                 )
             )
     except WorkerError as e:

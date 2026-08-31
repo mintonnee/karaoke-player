@@ -120,7 +120,7 @@ export interface AudioEngine {
 명령:
 
 - `probe --input <path>` → `{duration, sample_rate, channels, title?, artist?, album?}` (mutagen)
-- `separate --input <path> --out <dir> [--model htdemucs_ft] [--device auto]` → `{inst: path, vocal: path}`
+- `separate --input <path> --out <dir> [--model htdemucs_ft] [--device auto] [--shifts 1]` → `{inst: path, vocal: path}` (파일 경계 아티팩트 완화를 위해 앞뒤 1초 무음 패딩 후 분리하고 잘라낸다)
 - `align --vocal <path> --lyrics <txt> --lang ja|ko|en --out <lrc>` → `{lrc: path, lines:[{t, text, conf}]}`
 - `transcribe --vocal <path> --lang auto --out <txt>` → `{txt: path}`
 
@@ -230,6 +230,7 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 | -------------------------- | ------------- | --------------------------- |
 | `KARAOKE_DEVICE`           | auto          | torch 디바이스 강제         |
 | `KARAOKE_DEMUCS_MODEL`     | `htdemucs_ft` | Demucs 모델명               |
+| `KARAOKE_DEMUCS_SHIFTS`    | 2             | 랜덤 시프트 평균화 횟수 (품질↑ 처리시간 배수↑) |
 | `KARAOKE_PYTHON`           | (번들)        | 개발 시 uv 환경 파이썬 경로 |
 | `KARAOKE_MAX_DURATION_SEC` | 900           | 초과 시 임포트 거부         |
 | `KARAOKE_GUIDE_VOCAL_DB`   | -20           | 가이드 보컬 기본 게인       |
@@ -248,6 +249,7 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 - [ ] Rubber Band vs SoundTouch: 품질 차이가 체감되면 S6에서 교체. 라이선스(Rubber Band GPL/상용) 확인 필요
 - [ ] 한국어 가사 정렬 품질: ctc-forced-aligner(MMS)의 한국어 성능 미검증. S5.1에서 실제 곡으로 확인
 - [ ] macOS 빌드 우선순위: v1은 Windows 검증만, macOS는 CI 빌드만 통과시킬지
+- [ ] 분리 모델 교체 검토: htdemucs_ft는 곡 초반(인트로 조용한 구간)에 특유의 지터가 남는다 (실청감 확인 2026-08-31, 무음 패딩·shifts=2로도 제거 불가, 완화만 됨). 계속 거슬리면 BS-RoFormer/Mel-RoFormer 계열 검토 — §3 결정 변경이므로 사용자 승인 필요
 
 ## 9. Claude Code 작업 규칙
 

@@ -1,0 +1,62 @@
+@import './base.css';
+
+.app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+
+.app h1 {
+  font-size: 24px;
+  margin-bottom: 24px;
+}
+
+.app button {
+  padding: 8px 20px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--ev-button-alt-border);
+  color: var(--ev-button-alt-text);
+  background-color: var(--ev-button-alt-bg);
+  cursor: pointer;
+}
+
+.app button:hover {
+  background-color: var(--ev-button-alt-hover-bg);
+}
+
+.app button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.probe-result {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  row-gap: 8px;
+}
+
+.probe-result dt {
+  color: var(--ev-c-text-2);
+}
+
+.probe-result dd {
+  margin: 0;
+}
+
+.probe-result .file-path {
+  word-break: break-all;
+  color: var(--ev-c-text-3);
+  font-size: 12px;
+}
+
+.probe-error {
+  margin-top: 24px;
+  color: #e66;
+}
+
+.probe-error pre {
+  white-space: pre-wrap;
+  font-size: 12px;
+}

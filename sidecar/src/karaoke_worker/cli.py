@@ -1,0 +1,40 @@
+"""karaoke_worker CLI 엔트리포인트.
+
+사용법: karaoke_worker <cmd> --json
+S0에서는 probe만 구현한다. separate/align/transcribe는 해당 슬라이스에서 추가.
+"""
+
+import argparse
+import sys
+
+from .probe import probe
+from .protocol import WorkerError, emit_done, emit_error, log
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="karaoke_worker")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    probe_parser = sub.add_parser("probe", help="extract audio metadata")
+    probe_parser.add_argument("--input", required=True)
+    probe_parser.add_argument("--json", action="store_true", default=True)
+
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    try:
+        if args.command == "probe":
+            emit_done(probe(args.input))
+    except WorkerError as e:
+        emit_error(e.code, e.msg)
+        sys.exit(1)
+    except Exception as e:  # noqa: BLE001 — 프로토콜상 마지막 방어선
+        log(f"unhandled exception: {e!r}")
+        emit_error("INTERNAL", str(e))
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,18 @@
+[project]
+name = "karaoke-worker"
+version = "0.1.0"
+description = "Python sidecar for karaoke-player: probe/separate/align/transcribe"
+requires-python = ">=3.11"
+dependencies = [
+    "mutagen>=1.47",
+]
+
+[project.scripts]
+karaoke_worker = "karaoke_worker.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/karaoke_worker"]

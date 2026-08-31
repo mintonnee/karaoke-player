@@ -226,14 +226,14 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 
 ## 6. 설정
 
-| 변수                       | 기본          | 설명                        |
-| -------------------------- | ------------- | --------------------------- |
-| `KARAOKE_DEVICE`           | auto          | torch 디바이스 강제         |
-| `KARAOKE_DEMUCS_MODEL`     | `htdemucs_ft` | Demucs 모델명               |
+| 변수                       | 기본          | 설명                                           |
+| -------------------------- | ------------- | ---------------------------------------------- |
+| `KARAOKE_DEVICE`           | auto          | torch 디바이스 강제                            |
+| `KARAOKE_DEMUCS_MODEL`     | `htdemucs_ft` | Demucs 모델명                                  |
 | `KARAOKE_DEMUCS_SHIFTS`    | 2             | 랜덤 시프트 평균화 횟수 (품질↑ 처리시간 배수↑) |
-| `KARAOKE_PYTHON`           | (번들)        | 개발 시 uv 환경 파이썬 경로 |
-| `KARAOKE_MAX_DURATION_SEC` | 900           | 초과 시 임포트 거부         |
-| `KARAOKE_GUIDE_VOCAL_DB`   | -20           | 가이드 보컬 기본 게인       |
+| `KARAOKE_PYTHON`           | (번들)        | 개발 시 uv 환경 파이썬 경로                    |
+| `KARAOKE_MAX_DURATION_SEC` | 900           | 초과 시 임포트 거부                            |
+| `KARAOKE_GUIDE_VOCAL_DB`   | -20           | 가이드 보컬 기본 게인                          |
 
 ## 7. 결정 기록
 

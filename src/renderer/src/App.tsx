@@ -3,7 +3,7 @@ import type { DragEvent } from 'react'
 import Transport from './components/Transport'
 import { useLibraryStore } from './stores/libraryStore'
 import { usePlayerStore } from './stores/playerStore'
-import type { Track } from '../../shared/types'
+import type { Track, TrackMetaInput } from '../../shared/types'
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -18,18 +18,125 @@ const STATUS_LABEL: Record<Track['status'], string> = {
   failed: '실패'
 }
 
+interface TrackRowProps {
+  track: Track
+  progressPct: number | undefined
+  isCurrent: boolean
+  onLoad: () => void
+  onDelete: () => void
+  onSaveMeta: (meta: TrackMetaInput) => Promise<void>
+}
+
+function TrackRow({
+  track,
+  progressPct,
+  isCurrent,
+  onLoad,
+  onDelete,
+  onSaveMeta
+}: TrackRowProps): React.JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState<TrackMetaInput>({
+    title: track.title,
+    artist: track.artist,
+    album: track.album
+  })
+  const playable = track.status === 'ready'
+
+  const startEdit = (): void => {
+    setForm({ title: track.title, artist: track.artist, album: track.album })
+    setEditing(true)
+  }
+
+  const save = async (): Promise<void> => {
+    if (!form.title.trim()) return
+    await onSaveMeta(form)
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <li className="track-item editing">
+        <div className="track-edit-form">
+          <input
+            value={form.title}
+            placeholder="제목"
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+          />
+          <input
+            value={form.artist ?? ''}
+            placeholder="아티스트"
+            onChange={(e) => setForm({ ...form, artist: e.target.value || null })}
+          />
+          <input
+            value={form.album ?? ''}
+            placeholder="앨범"
+            onChange={(e) => setForm({ ...form, album: e.target.value || null })}
+          />
+          <div className="track-edit-actions">
+            <button onClick={() => void save()} disabled={!form.title.trim()}>
+              저장
+            </button>
+            <button onClick={() => setEditing(false)}>취소</button>
+          </div>
+        </div>
+      </li>
+    )
+  }
+
+  return (
+    <li
+      className={`track-item${playable ? ' playable' : ''}${isCurrent ? ' current' : ''}`}
+      onClick={playable ? onLoad : undefined}
+    >
+      <div className="track-info">
+        <span className="track-title">{track.title}</span>
+        <span className="track-meta">
+          {track.artist ?? '(아티스트 없음)'} · {formatDuration(track.duration)}
+        </span>
+      </div>
+      <div className="track-state">
+        {track.status === 'separating' ? (
+          <div className="progress">
+            <div className="progress-fill" style={{ width: `${progressPct ?? 0}%` }} />
+            <span className="progress-label">{progressPct ?? 0}%</span>
+          </div>
+        ) : (
+          <span className={`status status-${track.status}`}>{STATUS_LABEL[track.status]}</span>
+        )}
+      </div>
+      <div className="track-actions" onClick={(e) => e.stopPropagation()}>
+        <button onClick={startEdit}>편집</button>
+        <button
+          className="danger"
+          disabled={track.status === 'separating'}
+          onClick={onDelete}
+          title={track.status === 'separating' ? '분리 중에는 삭제할 수 없습니다' : undefined}
+        >
+          삭제
+        </button>
+      </div>
+    </li>
+  )
+}
+
 function App(): React.JSX.Element {
   const {
     tracks,
     progress,
     rejections,
     importing,
+    search,
     refresh,
+    setSearch,
     importFiles,
     importViaDialog,
+    deleteTrack,
+    updateTrackMeta,
     dismissRejections
   } = useLibraryStore()
   const loadTrack = usePlayerStore((s) => s.loadTrack)
+  const unload = usePlayerStore((s) => s.unload)
   const currentTrackId = usePlayerStore((s) => s.track?.id)
   const [dragOver, setDragOver] = useState(false)
 
@@ -44,6 +151,12 @@ function App(): React.JSX.Element {
       window.api.getPathForFile(file)
     )
     if (paths.length > 0) void importFiles(paths)
+  }
+
+  const onDelete = async (track: Track): Promise<void> => {
+    if (!window.confirm(`"${track.title}" 곡과 분리된 파일을 삭제할까요?`)) return
+    if (track.id === currentTrackId) unload()
+    await deleteTrack(track.id)
   }
 
   return (
@@ -76,43 +189,31 @@ function App(): React.JSX.Element {
 
       <Transport />
 
+      <input
+        className="search"
+        type="search"
+        placeholder="제목/아티스트/앨범 검색"
+        value={search}
+        onChange={(e) => void setSearch(e.target.value)}
+      />
+
       <ul className="track-list">
-        {tracks.map((track) => {
-          const trackProgress = progress[track.id]
-          const playable = track.status === 'ready'
-          return (
-            <li
-              key={track.id}
-              className={`track-item${playable ? ' playable' : ''}${
-                track.id === currentTrackId ? ' current' : ''
-              }`}
-              onClick={playable ? () => void loadTrack(track) : undefined}
-            >
-              <div className="track-info">
-                <span className="track-title">{track.title}</span>
-                <span className="track-meta">
-                  {track.artist ?? '(아티스트 없음)'} · {formatDuration(track.duration)}
-                </span>
-              </div>
-              <div className="track-state">
-                {track.status === 'separating' ? (
-                  <div className="progress">
-                    <div
-                      className="progress-fill"
-                      style={{ width: `${trackProgress?.pct ?? 0}%` }}
-                    />
-                    <span className="progress-label">{trackProgress?.pct ?? 0}%</span>
-                  </div>
-                ) : (
-                  <span className={`status status-${track.status}`}>
-                    {STATUS_LABEL[track.status]}
-                  </span>
-                )}
-              </div>
-            </li>
-          )
-        })}
-        {tracks.length === 0 && <li className="track-empty">아직 임포트한 곡이 없습니다.</li>}
+        {tracks.map((track) => (
+          <TrackRow
+            key={track.id}
+            track={track}
+            progressPct={progress[track.id]?.pct}
+            isCurrent={track.id === currentTrackId}
+            onLoad={() => void loadTrack(track)}
+            onDelete={() => void onDelete(track)}
+            onSaveMeta={(meta) => updateTrackMeta(track.id, meta)}
+          />
+        ))}
+        {tracks.length === 0 && (
+          <li className="track-empty">
+            {search ? '검색 결과가 없습니다.' : '아직 임포트한 곡이 없습니다.'}
+          </li>
+        )}
       </ul>
     </div>
   )

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import type { LyricsSource, Track, TrackStatus } from '../../shared/types'
+import type { LyricsSource, Track, TrackMetaInput, TrackStatus } from '../../shared/types'
 
 /** §4.3 tracks 스키마. 변경 시 user_version을 올리고 마이그레이션을 추가한다. */
 const SCHEMA_VERSION = 1
@@ -87,11 +87,38 @@ export class LibraryStore {
     return row ? toTrack(row) : undefined
   }
 
-  listTracks(): Track[] {
-    const rows = this.db
-      .prepare('SELECT * FROM tracks ORDER BY created_at DESC, id')
-      .all() as TrackRow[]
+  listTracks(query?: string): Track[] {
+    const trimmed = query?.trim()
+    const rows = trimmed
+      ? (this.db
+          .prepare(
+            `SELECT * FROM tracks
+             WHERE title LIKE @like OR artist LIKE @like OR album LIKE @like
+             ORDER BY created_at DESC, id`
+          )
+          .all({ like: `%${trimmed}%` }) as TrackRow[])
+      : (this.db.prepare('SELECT * FROM tracks ORDER BY created_at DESC, id').all() as TrackRow[])
     return rows.map(toTrack)
+  }
+
+  updateMeta(id: string, meta: TrackMetaInput): Track {
+    const title = meta.title.trim()
+    if (!title) throw new Error('title must not be empty')
+    this.db
+      .prepare('UPDATE tracks SET title = ?, artist = ?, album = ?, updated_at = ? WHERE id = ?')
+      .run(
+        title,
+        meta.artist?.trim() || null,
+        meta.album?.trim() || null,
+        new Date().toISOString(),
+        id
+      )
+    return this.mustGetTrack(id)
+  }
+
+  /** DB 행만 삭제한다. 트랙 디렉토리 정리는 호출자(IPC 핸들러) 책임. */
+  deleteTrack(id: string): boolean {
+    return this.db.prepare('DELETE FROM tracks WHERE id = ?').run(id).changes > 0
   }
 
   updateStatus(id: string, status: TrackStatus): Track {

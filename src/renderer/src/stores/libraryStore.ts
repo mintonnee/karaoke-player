@@ -1,5 +1,10 @@
 import { create } from 'zustand'
-import type { ImportProgressEvent, ImportRejection, Track } from '../../../shared/types'
+import type {
+  ImportProgressEvent,
+  ImportRejection,
+  Track,
+  TrackMetaInput
+} from '../../../shared/types'
 
 interface LibraryState {
   tracks: Track[]
@@ -7,9 +12,13 @@ interface LibraryState {
   progress: Record<string, ImportProgressEvent>
   rejections: ImportRejection[]
   importing: boolean
+  search: string
   refresh: () => Promise<void>
+  setSearch: (query: string) => Promise<void>
   importFiles: (filePaths: string[]) => Promise<void>
   importViaDialog: () => Promise<void>
+  deleteTrack: (trackId: string) => Promise<void>
+  updateTrackMeta: (trackId: string, meta: TrackMetaInput) => Promise<void>
   dismissRejections: () => void
 }
 
@@ -53,11 +62,24 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     progress: {},
     rejections: [],
     importing: false,
+    search: '',
     refresh: async () => {
-      set({ tracks: await window.api.listTracks() })
+      set({ tracks: await window.api.listTracks(get().search) })
+    },
+    setSearch: async (query) => {
+      set({ search: query })
+      set({ tracks: await window.api.listTracks(query) })
     },
     importFiles: (filePaths) => applyImportResult(() => window.api.importFiles(filePaths)),
     importViaDialog: () => applyImportResult(() => window.api.importDialog()),
+    deleteTrack: async (trackId) => {
+      await window.api.deleteTrack(trackId)
+      set((state) => ({ tracks: state.tracks.filter((t) => t.id !== trackId) }))
+    },
+    updateTrackMeta: async (trackId, meta) => {
+      const updated = await window.api.updateTrackMeta(trackId, meta)
+      set((state) => ({ tracks: upsertTrack(state.tracks, updated) }))
+    },
     dismissRejections: () => set({ rejections: [] })
   }
 })

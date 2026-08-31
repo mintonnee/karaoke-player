@@ -1,8 +1,9 @@
 import { dialog, ipcMain } from 'electron'
 import { existsSync } from 'fs'
+import { rm } from 'fs/promises'
 import { join } from 'path'
 import { IPC_CHANNELS } from '../shared/types'
-import type { ImportFilesResponse, Track, TrackFiles } from '../shared/types'
+import type { ImportFilesResponse, Track, TrackFiles, TrackMetaInput } from '../shared/types'
 import type { ImportService } from './library/ImportService'
 import type { LibraryStore } from './library/LibraryStore'
 
@@ -12,10 +13,32 @@ export interface IpcDeps {
   store: LibraryStore
   importService: ImportService
   tracksDir: string
+  notify: (channel: string, payload: unknown) => void
 }
 
-export function registerIpcHandlers({ store, importService, tracksDir }: IpcDeps): void {
-  ipcMain.handle(IPC_CHANNELS.listTracks, (): Track[] => store.listTracks())
+export function registerIpcHandlers({ store, importService, tracksDir, notify }: IpcDeps): void {
+  ipcMain.handle(IPC_CHANNELS.listTracks, (_event, query?: string): Track[] =>
+    store.listTracks(query)
+  )
+
+  ipcMain.handle(IPC_CHANNELS.deleteTrack, async (_event, trackId: string): Promise<void> => {
+    const track = store.getTrack(trackId)
+    if (!track) return
+    if (track.status === 'separating') {
+      throw new Error('분리 작업 중인 트랙은 삭제할 수 없습니다')
+    }
+    store.deleteTrack(trackId)
+    await rm(join(tracksDir, trackId), { recursive: true, force: true })
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.updateTrackMeta,
+    (_event, trackId: string, meta: TrackMetaInput): Track => {
+      const updated = store.updateMeta(trackId, meta)
+      notify(IPC_CHANNELS.trackUpdated, updated)
+      return updated
+    }
+  )
 
   ipcMain.handle(IPC_CHANNELS.trackFiles, (_event, trackId: string): TrackFiles => {
     const track = store.getTrack(trackId)

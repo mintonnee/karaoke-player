@@ -26,6 +26,13 @@ export interface Track {
   updatedAt: string
 }
 
+/** 메타 편집 입력 (S3.2). LRCLIB 조회 정확도에 영향 */
+export interface TrackMetaInput {
+  title: string
+  artist: string | null
+  album: string | null
+}
+
 export interface ImportRejection {
   filePath: string
   reason: string
@@ -59,6 +66,8 @@ export const IPC_CHANNELS = {
   importDialog: 'library:import-dialog',
   listTracks: 'library:list',
   trackFiles: 'library:track-files',
+  deleteTrack: 'library:delete',
+  updateTrackMeta: 'library:update-meta',
   trackUpdated: 'library:track-updated',
   importProgress: 'library:import-progress'
 } as const

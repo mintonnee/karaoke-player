@@ -1,7 +1,13 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { DEFAULT_GUIDE_VOCAL_DB, IPC_CHANNELS } from '../shared/types'
-import type { ImportFilesResponse, ImportProgressEvent, Track, TrackFiles } from '../shared/types'
+import type {
+  ImportFilesResponse,
+  ImportProgressEvent,
+  Track,
+  TrackFiles,
+  TrackMetaInput
+} from '../shared/types'
 
 function subscribe<T>(channel: string, callback: (payload: T) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, payload: T): void => callback(payload)
@@ -11,9 +17,14 @@ function subscribe<T>(channel: string, callback: (payload: T) => void): () => vo
 
 // Custom APIs for renderer
 const api = {
-  listTracks: (): Promise<Track[]> => ipcRenderer.invoke(IPC_CHANNELS.listTracks),
+  listTracks: (query?: string): Promise<Track[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.listTracks, query),
   trackFiles: (trackId: string): Promise<TrackFiles> =>
     ipcRenderer.invoke(IPC_CHANNELS.trackFiles, trackId),
+  deleteTrack: (trackId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.deleteTrack, trackId),
+  updateTrackMeta: (trackId: string, meta: TrackMetaInput): Promise<Track> =>
+    ipcRenderer.invoke(IPC_CHANNELS.updateTrackMeta, trackId, meta),
   /** §6 KARAOKE_GUIDE_VOCAL_DB (기본 -20 dB) */
   guideVocalDefaultDb: ((): number => {
     const parsed = Number(process.env.KARAOKE_GUIDE_VOCAL_DB)

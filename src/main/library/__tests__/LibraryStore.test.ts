@@ -75,4 +75,45 @@ describe('LibraryStore', () => {
   it('없는 트랙 갱신은 오류를 던진다', () => {
     expect(() => store.updateStatus('missing', 'ready')).toThrow('track not found')
   })
+
+  it('검색은 title/artist/album 부분 일치로 필터한다', () => {
+    createTrack('a', { title: '廻廻奇譚', artist: 'Eve', album: null })
+    createTrack('b', { title: '夜に駆ける', artist: 'YOASOBI', album: 'THE BOOK' })
+    createTrack('c', { title: 'ハルジオン', artist: 'YOASOBI', album: 'THE BOOK' })
+
+    expect(
+      store
+        .listTracks('YOASOBI')
+        .map((t) => t.id)
+        .sort()
+    ).toEqual(['b', 'c'])
+    expect(store.listTracks('廻廻').map((t) => t.id)).toEqual(['a'])
+    expect(
+      store
+        .listTracks('BOOK')
+        .map((t) => t.id)
+        .sort()
+    ).toEqual(['b', 'c'])
+    expect(store.listTracks('없는검색어')).toEqual([])
+    expect(store.listTracks('  ')).toHaveLength(3)
+  })
+
+  it('메타 편집: trim 후 저장, 빈 값은 null, 빈 제목은 거부', () => {
+    createTrack('t1')
+    const updated = store.updateMeta('t1', { title: '  새 제목 ', artist: ' Eve ', album: '' })
+
+    expect(updated.title).toBe('새 제목')
+    expect(updated.artist).toBe('Eve')
+    expect(updated.album).toBeNull()
+    expect(() => store.updateMeta('t1', { title: '   ', artist: null, album: null })).toThrow(
+      'title must not be empty'
+    )
+  })
+
+  it('삭제하면 목록에서 사라지고 반환값으로 성공 여부를 알린다', () => {
+    createTrack('t1')
+    expect(store.deleteTrack('t1')).toBe(true)
+    expect(store.getTrack('t1')).toBeUndefined()
+    expect(store.deleteTrack('t1')).toBe(false)
+  })
 })

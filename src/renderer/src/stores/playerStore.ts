@@ -18,6 +18,8 @@ interface PlayerState {
   loadError: string | null
 
   loadTrack: (track: Track) => Promise<void>
+  /** 트랙 삭제 등으로 현재 로드를 해제한다 */
+  unload: () => void
   play: () => void
   pause: () => void
   stop: () => void
@@ -31,6 +33,11 @@ interface PlayerState {
 export const usePlayerStore = create<PlayerState>((set, get) => {
   engine.onPosition((seconds) => set({ position: seconds, engineState: engine.state }))
   engine.onEnded(() => set({ engineState: engine.state }))
+  // 메타 편집이 현재 로드된 트랙이면 Transport 표시도 갱신
+  window.api.onTrackUpdated((updated) => {
+    const current = get().track
+    if (current && current.id === updated.id) set({ track: updated })
+  })
 
   const syncEngine = (): void => set({ engineState: engine.state })
 
@@ -66,6 +73,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
           loadError: error instanceof Error ? error.message : String(error)
         })
       }
+    },
+    unload: () => {
+      engine.stop()
+      set({ track: null, duration: 0, position: 0, loop: null, engineState: engine.state })
     },
     play: () => {
       engine.play()

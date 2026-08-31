@@ -99,17 +99,18 @@ app.whenReady().then(() => {
   const tracksDir = join(userData, 'tracks')
   registerMediaProtocol(tracksDir)
 
+  const notify = (channel: string, payload: unknown): void => {
+    BrowserWindow.getAllWindows().forEach((window) => window.webContents.send(channel, payload))
+  }
   const importService = new ImportService({
     store,
     sidecar,
     tracksDir,
     maxDurationSec: parsePositiveInt(process.env.KARAOKE_MAX_DURATION_SEC, 900),
     demucsModel: process.env.KARAOKE_DEMUCS_MODEL ?? 'htdemucs_ft',
-    notify: (channel, payload) => {
-      BrowserWindow.getAllWindows().forEach((window) => window.webContents.send(channel, payload))
-    }
+    notify
   })
-  registerIpcHandlers({ store, importService, tracksDir })
+  registerIpcHandlers({ store, importService, tracksDir, notify })
   app.on('will-quit', () => store.close())
 
   createWindow()

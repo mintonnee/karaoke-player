@@ -4,6 +4,7 @@ import { DEFAULT_GUIDE_VOCAL_DB, IPC_CHANNELS } from '../shared/types'
 import type {
   ImportFilesResponse,
   ImportProgressEvent,
+  LyricsPayload,
   Track,
   TrackFiles,
   TrackMetaInput
@@ -25,6 +26,10 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.deleteTrack, trackId),
   updateTrackMeta: (trackId: string, meta: TrackMetaInput): Promise<Track> =>
     ipcRenderer.invoke(IPC_CHANNELS.updateTrackMeta, trackId, meta),
+  getLyrics: (trackId: string): Promise<LyricsPayload> =>
+    ipcRenderer.invoke(IPC_CHANNELS.lyricsGet, trackId),
+  refetchLyrics: (trackId: string): Promise<LyricsPayload> =>
+    ipcRenderer.invoke(IPC_CHANNELS.lyricsRefetch, trackId),
   /** §6 KARAOKE_GUIDE_VOCAL_DB (기본 -20 dB) */
   guideVocalDefaultDb: ((): number => {
     const parsed = Number(process.env.KARAOKE_GUIDE_VOCAL_DB)

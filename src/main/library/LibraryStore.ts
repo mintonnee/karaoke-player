@@ -121,6 +121,13 @@ export class LibraryStore {
     return this.db.prepare('DELETE FROM tracks WHERE id = ?').run(id).changes > 0
   }
 
+  updateLyricsSource(id: string, source: LyricsSource): Track {
+    this.db
+      .prepare('UPDATE tracks SET lyrics_source = ?, updated_at = ? WHERE id = ?')
+      .run(source, new Date().toISOString(), id)
+    return this.mustGetTrack(id)
+  }
+
   updateStatus(id: string, status: TrackStatus): Track {
     this.db
       .prepare('UPDATE tracks SET status = ?, updated_at = ? WHERE id = ?')

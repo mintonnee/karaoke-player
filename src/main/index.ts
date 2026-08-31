@@ -7,6 +7,7 @@ import { MEDIA_PROTOCOL_SCHEME } from '../shared/types'
 import { registerIpcHandlers } from './ipc'
 import { ImportService } from './library/ImportService'
 import { LibraryStore } from './library/LibraryStore'
+import { LyricsService } from './lyrics/LyricsService'
 import { createUvSidecarManager } from './sidecar/SidecarManager'
 
 // AudioEngine이 fetch로 스템 파일을 읽는 통로 (§4.1). app ready 전에 등록해야 한다.
@@ -102,15 +103,22 @@ app.whenReady().then(() => {
   const notify = (channel: string, payload: unknown): void => {
     BrowserWindow.getAllWindows().forEach((window) => window.webContents.send(channel, payload))
   }
+  const lyricsService = new LyricsService({
+    store,
+    tracksDir,
+    userAgent: `karaoke-player/${app.getVersion()} (local desktop app)`,
+    notify
+  })
   const importService = new ImportService({
     store,
     sidecar,
     tracksDir,
     maxDurationSec: parsePositiveInt(process.env.KARAOKE_MAX_DURATION_SEC, 900),
     demucsModel: process.env.KARAOKE_DEMUCS_MODEL ?? 'htdemucs_ft',
-    notify
+    notify,
+    fetchLyrics: (track) => lyricsService.fetchAndStore(track)
   })
-  registerIpcHandlers({ store, importService, tracksDir, notify })
+  registerIpcHandlers({ store, importService, lyricsService, tracksDir, notify })
   app.on('will-quit', () => store.close())
 
   createWindow()

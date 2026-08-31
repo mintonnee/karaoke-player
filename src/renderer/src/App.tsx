@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { DragEvent } from 'react'
+import LyricsView from './components/LyricsView'
 import Transport from './components/Transport'
 import { useLibraryStore } from './stores/libraryStore'
+import { useLyricsStore } from './stores/lyricsStore'
 import { usePlayerStore } from './stores/playerStore'
 import type { Track, TrackMetaInput } from '../../shared/types'
 
@@ -138,11 +140,18 @@ function App(): React.JSX.Element {
   const loadTrack = usePlayerStore((s) => s.loadTrack)
   const unload = usePlayerStore((s) => s.unload)
   const currentTrackId = usePlayerStore((s) => s.track?.id)
+  const loadLyrics = useLyricsStore((s) => s.load)
+  const clearLyrics = useLyricsStore((s) => s.clear)
   const [dragOver, setDragOver] = useState(false)
 
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    if (currentTrackId) void loadLyrics(currentTrackId)
+    else clearLyrics()
+  }, [currentTrackId, loadLyrics, clearLyrics])
 
   const onDrop = (event: DragEvent): void => {
     event.preventDefault()
@@ -188,6 +197,7 @@ function App(): React.JSX.Element {
       )}
 
       <Transport />
+      <LyricsView />
 
       <input
         className="search"

@@ -26,6 +26,15 @@ export interface Track {
   updatedAt: string
 }
 
+/** 트랙의 저장된 가사 (§4.3 lyrics.lrc / lyrics.txt) */
+export interface LyricsPayload {
+  source: LyricsSource
+  /** 싱크 가사(LRC 원문). 없으면 null */
+  lrc: string | null
+  /** plain 가사 원문 (S5 정렬 대기). 없으면 null */
+  plain: string | null
+}
+
 /** 메타 편집 입력 (S3.2). LRCLIB 조회 정확도에 영향 */
 export interface TrackMetaInput {
   title: string
@@ -68,6 +77,8 @@ export const IPC_CHANNELS = {
   trackFiles: 'library:track-files',
   deleteTrack: 'library:delete',
   updateTrackMeta: 'library:update-meta',
+  lyricsGet: 'lyrics:get',
+  lyricsRefetch: 'lyrics:refetch',
   trackUpdated: 'library:track-updated',
   importProgress: 'library:import-progress'
 } as const

@@ -6,17 +6,35 @@ import { IPC_CHANNELS } from '../shared/types'
 import type { ImportFilesResponse, Track, TrackFiles, TrackMetaInput } from '../shared/types'
 import type { ImportService } from './library/ImportService'
 import type { LibraryStore } from './library/LibraryStore'
+import type { LyricsService } from './lyrics/LyricsService'
 
 const AUDIO_FILE_FILTERS = [{ name: 'Audio', extensions: ['mp3', 'wav', 'flac', 'm4a'] }]
 
 export interface IpcDeps {
   store: LibraryStore
   importService: ImportService
+  lyricsService: LyricsService
   tracksDir: string
   notify: (channel: string, payload: unknown) => void
 }
 
-export function registerIpcHandlers({ store, importService, tracksDir, notify }: IpcDeps): void {
+export function registerIpcHandlers({
+  store,
+  importService,
+  lyricsService,
+  tracksDir,
+  notify
+}: IpcDeps): void {
+  ipcMain.handle(IPC_CHANNELS.lyricsGet, (_event, trackId: string) =>
+    lyricsService.getLyrics(trackId)
+  )
+
+  ipcMain.handle(IPC_CHANNELS.lyricsRefetch, (_event, trackId: string) => {
+    const track = store.getTrack(trackId)
+    if (!track) throw new Error(`track not found: ${trackId}`)
+    return lyricsService.fetchAndStore(track)
+  })
+
   ipcMain.handle(IPC_CHANNELS.listTracks, (_event, query?: string): Track[] =>
     store.listTracks(query)
   )

@@ -27,6 +27,8 @@ export interface ImportServiceOptions {
   demucsModel: string
   /** 렌더러 브로드캐스트 */
   notify: (channel: string, payload: unknown) => void
+  /** 임포트 직후 LRCLIB 가사 조회 (§4.4). 실패는 서비스 내부에서 삼킨다 */
+  fetchLyrics?: (track: Track) => Promise<unknown>
   onLog?: (line: string) => void
 }
 
@@ -77,6 +79,7 @@ export class ImportService {
       sourcePath: filePath
     })
     this.notifyTrack(track)
+    void this.options.fetchLyrics?.(track)
     this.enqueueSeparation(id)
     return track
   }

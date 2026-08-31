@@ -1,11 +1,46 @@
-import { app, shell, BrowserWindow } from 'electron'
-import { join } from 'path'
+import { app, shell, BrowserWindow, net, protocol } from 'electron'
+import { join, resolve, sep } from 'path'
+import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { MEDIA_PROTOCOL_SCHEME } from '../shared/types'
 import { registerIpcHandlers } from './ipc'
 import { ImportService } from './library/ImportService'
 import { LibraryStore } from './library/LibraryStore'
 import { createUvSidecarManager } from './sidecar/SidecarManager'
+
+// AudioEngine이 fetch로 스템 파일을 읽는 통로 (§4.1). app ready 전에 등록해야 한다.
+// dev 렌더러는 http://localhost origin이라 교차 출처 fetch가 되므로 CORS 응답까지 필요하다.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: MEDIA_PROTOCOL_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+      bypassCSP: true
+    }
+  }
+])
+
+/** media:// 요청을 tracks 디렉토리 밑 파일로 제한해서 서빙한다 */
+function registerMediaProtocol(tracksDir: string): void {
+  const root = resolve(tracksDir)
+  const cors = { 'Access-Control-Allow-Origin': '*' }
+  protocol.handle(MEDIA_PROTOCOL_SCHEME, async (request) => {
+    const raw = new URL(request.url).searchParams.get('path')
+    const filePath = raw ? resolve(raw) : null
+    if (!filePath || !filePath.startsWith(root + sep)) {
+      return new Response('forbidden', { status: 403, headers: cors })
+    }
+    const fileResponse = await net.fetch(pathToFileURL(filePath).toString())
+    const headers = new Headers(fileResponse.headers)
+    headers.set('Access-Control-Allow-Origin', '*')
+    return new Response(fileResponse.body, { status: fileResponse.status, headers })
+  })
+}
 
 function createWindow(): void {
   // Create the browser window.
@@ -61,17 +96,20 @@ app.whenReady().then(() => {
   const stale = store.failStaleSeparating()
   if (stale > 0) console.error(`[library] marked ${stale} stale separating track(s) as failed`)
 
+  const tracksDir = join(userData, 'tracks')
+  registerMediaProtocol(tracksDir)
+
   const importService = new ImportService({
     store,
     sidecar,
-    tracksDir: join(userData, 'tracks'),
+    tracksDir,
     maxDurationSec: parsePositiveInt(process.env.KARAOKE_MAX_DURATION_SEC, 900),
     demucsModel: process.env.KARAOKE_DEMUCS_MODEL ?? 'htdemucs_ft',
     notify: (channel, payload) => {
       BrowserWindow.getAllWindows().forEach((window) => window.webContents.send(channel, payload))
     }
   })
-  registerIpcHandlers({ store, importService })
+  registerIpcHandlers({ store, importService, tracksDir })
   app.on('will-quit', () => store.close())
 
   createWindow()

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { DragEvent } from 'react'
+import Transport from './components/Transport'
 import { useLibraryStore } from './stores/libraryStore'
+import { usePlayerStore } from './stores/playerStore'
 import type { Track } from '../../shared/types'
 
 function formatDuration(seconds: number): string {
@@ -27,6 +29,8 @@ function App(): React.JSX.Element {
     importViaDialog,
     dismissRejections
   } = useLibraryStore()
+  const loadTrack = usePlayerStore((s) => s.loadTrack)
+  const currentTrackId = usePlayerStore((s) => s.track?.id)
   const [dragOver, setDragOver] = useState(false)
 
   useEffect(() => {
@@ -70,11 +74,20 @@ function App(): React.JSX.Element {
         </div>
       )}
 
+      <Transport />
+
       <ul className="track-list">
         {tracks.map((track) => {
           const trackProgress = progress[track.id]
+          const playable = track.status === 'ready'
           return (
-            <li key={track.id} className="track-item">
+            <li
+              key={track.id}
+              className={`track-item${playable ? ' playable' : ''}${
+                track.id === currentTrackId ? ' current' : ''
+              }`}
+              onClick={playable ? () => void loadTrack(track) : undefined}
+            >
               <div className="track-info">
                 <span className="track-title">{track.title}</span>
                 <span className="track-meta">

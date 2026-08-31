@@ -42,10 +42,23 @@ export interface ImportProgressEvent {
   msg?: string
 }
 
+/** 분리 산출물 절대 경로 (§4.3 tracks/<id>/) */
+export interface TrackFiles {
+  inst: string
+  vocal: string
+}
+
+/** §6 KARAOKE_GUIDE_VOCAL_DB 기본값 */
+export const DEFAULT_GUIDE_VOCAL_DB = -20
+
+/** AudioEngine이 재생 파일을 읽는 커스텀 프로토콜 (§4.1) */
+export const MEDIA_PROTOCOL_SCHEME = 'media'
+
 export const IPC_CHANNELS = {
   importFiles: 'library:import-files',
   importDialog: 'library:import-dialog',
   listTracks: 'library:list',
+  trackFiles: 'library:track-files',
   trackUpdated: 'library:track-updated',
   importProgress: 'library:import-progress'
 } as const

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { IPC_CHANNELS } from '../shared/types'
-import type { ImportFilesResponse, ImportProgressEvent, Track } from '../shared/types'
+import { DEFAULT_GUIDE_VOCAL_DB, IPC_CHANNELS } from '../shared/types'
+import type { ImportFilesResponse, ImportProgressEvent, Track, TrackFiles } from '../shared/types'
 
 function subscribe<T>(channel: string, callback: (payload: T) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, payload: T): void => callback(payload)
@@ -12,6 +12,13 @@ function subscribe<T>(channel: string, callback: (payload: T) => void): () => vo
 // Custom APIs for renderer
 const api = {
   listTracks: (): Promise<Track[]> => ipcRenderer.invoke(IPC_CHANNELS.listTracks),
+  trackFiles: (trackId: string): Promise<TrackFiles> =>
+    ipcRenderer.invoke(IPC_CHANNELS.trackFiles, trackId),
+  /** §6 KARAOKE_GUIDE_VOCAL_DB (기본 -20 dB) */
+  guideVocalDefaultDb: ((): number => {
+    const parsed = Number(process.env.KARAOKE_GUIDE_VOCAL_DB)
+    return Number.isFinite(parsed) ? parsed : DEFAULT_GUIDE_VOCAL_DB
+  })(),
   importFiles: (filePaths: string[]): Promise<ImportFilesResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.importFiles, filePaths),
   importDialog: (): Promise<ImportFilesResponse> => ipcRenderer.invoke(IPC_CHANNELS.importDialog),

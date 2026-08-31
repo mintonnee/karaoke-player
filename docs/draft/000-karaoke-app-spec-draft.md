@@ -102,7 +102,7 @@ export interface AudioEngine {
 
 - 제어 명령은 control-rate(초당 수십 회)만 가정. 샘플 단위 조작이 필요한 기능은 인터페이스에 넣지 말고 엔진 내부 기능으로 정의한다.
 - `onPosition`은 60 Hz 이하로 push. 렌더러가 폴링하지 않는다.
-- `load`는 디스크 경로만 받는다. Web 구현체는 내부에서 `fetch(file://)` + `decodeAudioData`.
+- `load`는 디스크 경로만 받는다. Web 구현체는 내부에서 `fetch(media://)` + `decodeAudioData`. (`file://` fetch는 webSecurity에 막히므로 메인이 `media://` 커스텀 프로토콜로 tracks 디렉토리 밑 파일만 서빙한다)
 
 ### 4.2 사이드카 프로토콜 (결정)
 

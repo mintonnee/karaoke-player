@@ -25,7 +25,11 @@ export default defineConfig(
     },
     rules: {
       ...eslintPluginReactHooks.configs.recommended.rules,
-      ...eslintPluginReactRefresh.configs.vite.rules
+      ...eslintPluginReactRefresh.configs.vite.rules,
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
+      ]
     }
   },
   {
@@ -33,6 +37,30 @@ export default defineConfig(
     files: ['**/__tests__/**/*.mjs'],
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'off'
+    }
+  },
+  {
+    // 스펙 §4.1/§9: 렌더러는 AudioContext를 직접 만지지 않는다. 오직 audio/ 구현체 내부에서만.
+    files: ['src/renderer/**/*.{ts,tsx}'],
+    ignores: ['src/renderer/src/audio/**'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'AudioContext',
+          message: 'AudioEngine 구현체(src/renderer/src/audio) 내부에서만 사용한다 (spec §4.1)'
+        },
+        {
+          name: 'webkitAudioContext',
+          message: 'AudioEngine 구현체 내부에서만 사용한다 (spec §4.1)'
+        },
+        {
+          name: 'OfflineAudioContext',
+          message: 'AudioEngine 구현체 내부에서만 사용한다 (spec §4.1)'
+        },
+        { name: 'AudioWorklet', message: 'AudioEngine 구현체 내부에서만 사용한다 (spec §4.1)' },
+        { name: 'AudioWorkletNode', message: 'AudioEngine 구현체 내부에서만 사용한다 (spec §4.1)' }
+      ]
     }
   },
   eslintConfigPrettier

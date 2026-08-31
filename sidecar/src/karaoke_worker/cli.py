@@ -22,7 +22,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _force_utf8_streams() -> None:
+    # Windows에서 stdout이 파이프면 로케일 인코딩(cp949)이 기본이라
+    # JSONL의 비ASCII 문자가 깨진다. 프로토콜은 항상 UTF-8로 고정한다.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main() -> None:
+    _force_utf8_streams()
     args = build_parser().parse_args()
     try:
         if args.command == "probe":

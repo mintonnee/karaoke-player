@@ -5,6 +5,9 @@ import { dbToGain, wrapLoopPosition } from './audioMath'
 const POSITION_PUSH_INTERVAL_MS = 33 // ~30 Hz (스펙 상한 60 Hz)
 const GAIN_RAMP_SEC = 0.01 // 클릭 노이즈 방지용 짧은 램프
 const START_DELAY_SEC = 0.03 // 두 소스의 샘플 동기 시작 여유
+const PITCH_WORKLET_URL = 'worklets/soundtouch-worklet.js' // renderer public/ 정적 자산
+const PITCH_MIN = -6
+const PITCH_MAX = 6
 
 function toMediaUrl(path: string): string {
   return `${MEDIA_PROTOCOL_SCHEME}://audio?path=${encodeURIComponent(path)}`
@@ -22,6 +25,17 @@ export class WebAudioEngine implements AudioEngine {
   private channels: { inst: TrackChannel; vocal: TrackChannel } | null = null
   private engineState: AudioEngineState = 'idle'
   private trackDuration = 0
+
+  /**
+   * 재생 그래프: source → trackGain → mixBus → pitchNode(SoundTouch worklet) → destination.
+   * 피치는 인서트 이펙트라 소스/위치 추적에 영향이 없다 (S6 DoD: 키 변경 시 위치 유지).
+   */
+  private mixBus: GainNode | null = null
+  private pitchNode: AudioWorkletNode | null = null
+  private pitchGraphReady: Promise<void> | null = null
+  private pitchSemitones = 0
+  /** 워클릿이 실측 보고하는 파이프라인 지연. 재생 중 위치 보고에서 차감한다. */
+  private pitchLatencySec = 0
 
   /** 정지 시점 위치(초). 재생 중에는 startedAt 기준으로 계산한다. */
   private offset = 0
@@ -52,7 +66,8 @@ export class WebAudioEngine implements AudioEngine {
     try {
       const [instBuffer, vocalBuffer] = await Promise.all([
         this.decodeFile(ctx, tracks.inst),
-        this.decodeFile(ctx, tracks.vocal)
+        this.decodeFile(ctx, tracks.vocal),
+        this.ensurePitchGraph(ctx)
       ])
       this.channels = {
         inst: { buffer: instBuffer, gain: this.createGain(ctx, this.gainsDb.inst), source: null },
@@ -125,8 +140,9 @@ export class WebAudioEngine implements AudioEngine {
     channel.gain.gain.setTargetAtTime(dbToGain(db), ctx.currentTime, GAIN_RAMP_SEC)
   }
 
-  setPitch(_semitones: number): void {
-    // S6에서 soundtouch AudioWorklet과 함께 구현한다
+  setPitch(semitones: number): void {
+    this.pitchSemitones = Math.max(PITCH_MIN, Math.min(PITCH_MAX, semitones))
+    this.pitchNode?.port.postMessage({ pitchSemitones: this.pitchSemitones })
   }
 
   onPosition(cb: (seconds: number) => void): () => void {
@@ -147,6 +163,11 @@ export class WebAudioEngine implements AudioEngine {
     this.channels = null
     this.trackDuration = 0
     this.engineState = 'idle'
+    this.pitchNode?.disconnect()
+    this.pitchNode = null
+    this.mixBus?.disconnect()
+    this.mixBus = null
+    this.pitchGraphReady = null
     void this.ctx?.close()
     this.ctx = null
   }
@@ -156,10 +177,33 @@ export class WebAudioEngine implements AudioEngine {
     return this.ctx
   }
 
+  private ensurePitchGraph(ctx: AudioContext): Promise<void> {
+    if (!this.pitchGraphReady) {
+      this.pitchGraphReady = (async () => {
+        await ctx.audioWorklet.addModule(PITCH_WORKLET_URL)
+        this.pitchNode = new AudioWorkletNode(ctx, 'soundtouch-processor', {
+          channelCount: 2,
+          outputChannelCount: [2]
+        })
+        this.pitchNode.port.onmessage = (event: MessageEvent) => {
+          const latency = (event.data as { latencySec?: number } | null)?.latencySec
+          if (typeof latency === 'number') this.pitchLatencySec = latency
+        }
+        this.mixBus = ctx.createGain()
+        this.mixBus.connect(this.pitchNode)
+        this.pitchNode.connect(ctx.destination)
+        if (this.pitchSemitones !== 0) {
+          this.pitchNode.port.postMessage({ pitchSemitones: this.pitchSemitones })
+        }
+      })()
+    }
+    return this.pitchGraphReady
+  }
+
   private createGain(ctx: AudioContext, db: number): GainNode {
     const gain = ctx.createGain()
     gain.gain.value = dbToGain(db)
-    gain.connect(ctx.destination)
+    gain.connect(this.mixBus ?? ctx.destination)
     return gain
   }
 
@@ -207,6 +251,9 @@ export class WebAudioEngine implements AudioEngine {
 
   private stopSources(): void {
     this.generation++
+    // 불연속 지점: 워클릿 잔류 오디오를 비우고 정렬을 새로 잡는다
+    this.pitchNode?.port.postMessage({ reset: true })
+    this.pitchLatencySec = 0
     if (!this.channels) return
     for (const key of ['inst', 'vocal'] as const) {
       const source = this.channels[key].source
@@ -254,6 +301,8 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   private pushPosition(seconds: number): void {
-    this.positionCallbacks.forEach((cb) => cb(seconds))
+    const compensated =
+      this.engineState === 'playing' ? Math.max(0, seconds - this.pitchLatencySec) : seconds
+    this.positionCallbacks.forEach((cb) => cb(compensated))
   }
 }

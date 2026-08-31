@@ -190,6 +190,47 @@
   color: #e66;
 }
 
+.pitch-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.pitch-label {
+  font-size: 13px;
+  color: var(--ev-c-text-2);
+}
+
+.pitch-control button {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--ev-c-gray-2);
+  background-color: var(--ev-c-black-mute);
+  color: var(--ev-c-text-1);
+  cursor: pointer;
+}
+
+.pitch-control button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pitch-control .pitch-reset {
+  width: auto;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.pitch-value {
+  min-width: 28px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 .lyrics {
   /* offsetTop이 이 컨테이너 기준으로 측정되도록 한다 (자동 스크롤 계산의 기준점) */
   position: relative;

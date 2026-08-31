@@ -19,6 +19,7 @@ function Transport(): React.JSX.Element | null {
     vocalDb,
     vocalMuted,
     loop,
+    pitch,
     loadError,
     play,
     pause,
@@ -27,7 +28,8 @@ function Transport(): React.JSX.Element | null {
     setInstDb,
     setVocalDb,
     toggleVocalMute,
-    setLoop
+    setLoop,
+    setPitch
   } = usePlayerStore()
 
   const loopBarRef = useRef<HTMLDivElement>(null)
@@ -148,6 +150,20 @@ function Transport(): React.JSX.Element | null {
         <button className={`mute-toggle${vocalMuted ? ' active' : ''}`} onClick={toggleVocalMute}>
           {vocalMuted ? '보컬 켜기' : '보컬 뮤트'}
         </button>
+
+        <div className="pitch-control">
+          <span className="pitch-label">키</span>
+          <button onClick={() => setPitch(pitch - 1)} disabled={pitch <= -6}>
+            −
+          </button>
+          <span className="pitch-value">{pitch > 0 ? `+${pitch}` : pitch}</span>
+          <button onClick={() => setPitch(pitch + 1)} disabled={pitch >= 6}>
+            +
+          </button>
+          <button className="pitch-reset" onClick={() => setPitch(0)} disabled={pitch === 0}>
+            원키
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -15,6 +15,8 @@ interface PlayerState {
   vocalDb: number
   vocalMuted: boolean
   loop: LoopRange | null
+  /** 키 변경 (반음, -6..+6) */
+  pitch: number
   loadError: string | null
 
   loadTrack: (track: Track) => Promise<void>
@@ -28,6 +30,7 @@ interface PlayerState {
   setVocalDb: (db: number) => void
   toggleVocalMute: () => void
   setLoop: (range: LoopRange | null) => void
+  setPitch: (semitones: number) => void
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => {
@@ -55,6 +58,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     vocalDb: window.api.guideVocalDefaultDb,
     vocalMuted: false,
     loop: null,
+    pitch: 0,
     loadError: null,
 
     loadTrack: async (track) => {
@@ -109,6 +113,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     setLoop: (range) => {
       set({ loop: range })
       engine.setLoop(range)
+    },
+    setPitch: (semitones) => {
+      const clamped = Math.max(-6, Math.min(6, Math.round(semitones)))
+      set({ pitch: clamped })
+      engine.setPitch(clamped)
     }
   }
 })

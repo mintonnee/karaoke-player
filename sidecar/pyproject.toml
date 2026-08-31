@@ -2,9 +2,13 @@
 name = "karaoke-worker"
 version = "0.1.0"
 description = "Python sidecar for karaoke-player: probe/separate/align/transcribe"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "mutagen>=1.47",
+    "demucs>=4.0.1",
+    "torch==2.8.*",
+    "torchaudio==2.8.*",
+    "soundfile>=0.12",
 ]
 
 [project.scripts]
@@ -13,6 +17,20 @@ karaoke_worker = "karaoke_worker.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# Windows/Linux는 CUDA 12.8 빌드(RTX 5090 sm_120 지원), macOS는 PyPI 기본(MPS)
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+torchaudio = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/karaoke_worker"]

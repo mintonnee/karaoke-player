@@ -1,4 +1,6 @@
 allowBuilds:
+  # v13은 N-API 프리빌드가 tarball에 동봉되어 빌드 불필요 (이 머신엔 MSVC 없음)
+  better-sqlite3: false
   electron: true
   electron-winstaller: true
   esbuild: true

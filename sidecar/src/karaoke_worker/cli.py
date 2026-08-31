@@ -19,6 +19,13 @@ def build_parser() -> argparse.ArgumentParser:
     probe_parser.add_argument("--input", required=True)
     probe_parser.add_argument("--json", action="store_true", default=True)
 
+    separate_parser = sub.add_parser("separate", help="demucs 2-stem separation")
+    separate_parser.add_argument("--input", required=True)
+    separate_parser.add_argument("--out", required=True)
+    separate_parser.add_argument("--model", default=None)
+    separate_parser.add_argument("--device", default=None)
+    separate_parser.add_argument("--json", action="store_true", default=True)
+
     return parser
 
 
@@ -37,6 +44,17 @@ def main() -> None:
     try:
         if args.command == "probe":
             emit_done(probe(args.input))
+        elif args.command == "separate":
+            from .separate import DEFAULT_DEVICE, DEFAULT_MODEL, separate
+
+            emit_done(
+                separate(
+                    args.input,
+                    args.out,
+                    args.model or DEFAULT_MODEL,
+                    args.device or DEFAULT_DEVICE,
+                )
+            )
     except WorkerError as e:
         emit_error(e.code, e.msg)
         sys.exit(1)

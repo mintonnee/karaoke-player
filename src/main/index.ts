@@ -3,6 +3,8 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpcHandlers } from './ipc'
+import { ImportService } from './library/ImportService'
+import { LibraryStore } from './library/LibraryStore'
 import { createUvSidecarManager } from './sidecar/SidecarManager'
 
 function createWindow(): void {
@@ -53,7 +55,24 @@ app.whenReady().then(() => {
 
   // 패키징 시 사이드카 경로는 S7에서 재정의한다. dev에서는 레포 루트의 sidecar/를 사용.
   const sidecar = createUvSidecarManager(join(app.getAppPath(), 'sidecar'))
-  registerIpcHandlers(sidecar)
+
+  const userData = app.getPath('userData')
+  const store = new LibraryStore(join(userData, 'library.sqlite'))
+  const stale = store.failStaleSeparating()
+  if (stale > 0) console.error(`[library] marked ${stale} stale separating track(s) as failed`)
+
+  const importService = new ImportService({
+    store,
+    sidecar,
+    tracksDir: join(userData, 'tracks'),
+    maxDurationSec: parsePositiveInt(process.env.KARAOKE_MAX_DURATION_SEC, 900),
+    demucsModel: process.env.KARAOKE_DEMUCS_MODEL ?? 'htdemucs_ft',
+    notify: (channel, payload) => {
+      BrowserWindow.getAllWindows().forEach((window) => window.webContents.send(channel, payload))
+    }
+  })
+  registerIpcHandlers({ store, importService })
+  app.on('will-quit', () => store.close())
 
   createWindow()
 
@@ -73,5 +92,7 @@ app.on('window-all-closed', () => {
   }
 })
 
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? '', 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}

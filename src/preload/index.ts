@@ -1,11 +1,26 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { IPC_CHANNELS } from '../shared/types'
-import type { PickAndProbeResponse } from '../shared/types'
+import type { ImportFilesResponse, ImportProgressEvent, Track } from '../shared/types'
+
+function subscribe<T>(channel: string, callback: (payload: T) => void): () => void {
+  const listener = (_event: Electron.IpcRendererEvent, payload: T): void => callback(payload)
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.removeListener(channel, listener)
+}
 
 // Custom APIs for renderer
 const api = {
-  pickAndProbe: (): Promise<PickAndProbeResponse> => ipcRenderer.invoke(IPC_CHANNELS.pickAndProbe)
+  listTracks: (): Promise<Track[]> => ipcRenderer.invoke(IPC_CHANNELS.listTracks),
+  importFiles: (filePaths: string[]): Promise<ImportFilesResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.importFiles, filePaths),
+  importDialog: (): Promise<ImportFilesResponse> => ipcRenderer.invoke(IPC_CHANNELS.importDialog),
+  /** 드롭된 File 객체에서 절대 경로 추출 (렌더러에서는 접근 불가) */
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+  onTrackUpdated: (callback: (track: Track) => void): (() => void) =>
+    subscribe(IPC_CHANNELS.trackUpdated, callback),
+  onImportProgress: (callback: (event: ImportProgressEvent) => void): (() => void) =>
+    subscribe(IPC_CHANNELS.importProgress, callback)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
@@ -24,3 +39,5 @@ if (process.contextIsolated) {
   // @ts-ignore (define in dts)
   window.api = api
 }
+
+export type RendererApi = typeof api

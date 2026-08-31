@@ -1,11 +1,9 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { PickAndProbeResponse } from '../shared/types'
+import type { RendererApi } from './index'
 
 declare global {
   interface Window {
     electron: ElectronAPI
-    api: {
-      pickAndProbe: () => Promise<PickAndProbeResponse>
-    }
+    api: RendererApi
   }
 }

@@ -1,4 +1,7 @@
-import { useProbeStore } from './stores/probeStore'
+import { useEffect, useState } from 'react'
+import type { DragEvent } from 'react'
+import { useLibraryStore } from './stores/libraryStore'
+import type { Track } from '../../shared/types'
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -6,41 +9,98 @@ function formatDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+const STATUS_LABEL: Record<Track['status'], string> = {
+  imported: '대기 중',
+  separating: '분리 중',
+  ready: '준비됨',
+  failed: '실패'
+}
+
 function App(): React.JSX.Element {
-  const { status, filePath, result, error, pickAndProbe } = useProbeStore()
+  const {
+    tracks,
+    progress,
+    rejections,
+    importing,
+    refresh,
+    importFiles,
+    importViaDialog,
+    dismissRejections
+  } = useLibraryStore()
+  const [dragOver, setDragOver] = useState(false)
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const onDrop = (event: DragEvent): void => {
+    event.preventDefault()
+    setDragOver(false)
+    const paths = Array.from(event.dataTransfer.files).map((file) =>
+      window.api.getPathForFile(file)
+    )
+    if (paths.length > 0) void importFiles(paths)
+  }
 
   return (
     <div className="app">
       <h1>Karaoke Player</h1>
-      <button onClick={pickAndProbe} disabled={status === 'probing'}>
-        {status === 'probing' ? '분석 중…' : '오디오 파일 선택'}
-      </button>
 
-      {status === 'error' && (
-        <div className="probe-error">
-          <p>파일을 읽지 못했습니다.</p>
-          <pre>{error}</pre>
+      <div
+        className={`dropzone${dragOver ? ' drag-over' : ''}`}
+        onClick={() => void importViaDialog()}
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragOver(true)
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+      >
+        {importing ? '임포트 중…' : '오디오 파일을 끌어다 놓거나 클릭해서 선택 (MP3/WAV/FLAC/M4A)'}
+      </div>
+
+      {rejections.length > 0 && (
+        <div className="rejections">
+          {rejections.map((rejection, i) => (
+            <p key={i}>
+              {rejection.filePath} — {rejection.reason}
+            </p>
+          ))}
+          <button onClick={dismissRejections}>닫기</button>
         </div>
       )}
 
-      {status === 'done' && result && (
-        <dl className="probe-result">
-          <dt>제목</dt>
-          <dd>{result.title ?? '(태그 없음)'}</dd>
-          <dt>아티스트</dt>
-          <dd>{result.artist ?? '(태그 없음)'}</dd>
-          <dt>앨범</dt>
-          <dd>{result.album ?? '(태그 없음)'}</dd>
-          <dt>길이</dt>
-          <dd>{formatDuration(result.duration)}</dd>
-          <dt>샘플레이트</dt>
-          <dd>
-            {result.sample_rate} Hz / {result.channels}ch
-          </dd>
-          <dt>경로</dt>
-          <dd className="file-path">{filePath}</dd>
-        </dl>
-      )}
+      <ul className="track-list">
+        {tracks.map((track) => {
+          const trackProgress = progress[track.id]
+          return (
+            <li key={track.id} className="track-item">
+              <div className="track-info">
+                <span className="track-title">{track.title}</span>
+                <span className="track-meta">
+                  {track.artist ?? '(아티스트 없음)'} · {formatDuration(track.duration)}
+                </span>
+              </div>
+              <div className="track-state">
+                {track.status === 'separating' ? (
+                  <div className="progress">
+                    <div
+                      className="progress-fill"
+                      style={{ width: `${trackProgress?.pct ?? 0}%` }}
+                    />
+                    <span className="progress-label">{trackProgress?.pct ?? 0}%</span>
+                  </div>
+                ) : (
+                  <span className={`status status-${track.status}`}>
+                    {STATUS_LABEL[track.status]}
+                  </span>
+                )}
+              </div>
+            </li>
+          )
+        })}
+        {tracks.length === 0 && <li className="track-empty">아직 임포트한 곡이 없습니다.</li>}
+      </ul>
     </div>
   )
 }

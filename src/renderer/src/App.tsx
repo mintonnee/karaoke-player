@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react'
 import type { DragEvent } from 'react'
+import {
+  MdAutorenew,
+  MdCheck,
+  MdCheckCircle,
+  MdClose,
+  MdDeleteOutline,
+  MdEdit,
+  MdErrorOutline,
+  MdSchedule
+} from 'react-icons/md'
 import LyricsView from './components/LyricsView'
 import Transport from './components/Transport'
 import { useLibraryStore } from './stores/libraryStore'
@@ -18,6 +28,13 @@ const STATUS_LABEL: Record<Track['status'], string> = {
   separating: '분리 중',
   ready: '준비됨',
   failed: '실패'
+}
+
+const STATUS_ICON: Record<Track['status'], React.JSX.Element> = {
+  imported: <MdSchedule />,
+  separating: <MdAutorenew />,
+  ready: <MdCheckCircle />,
+  failed: <MdErrorOutline />
 }
 
 interface TrackRowProps {
@@ -76,10 +93,17 @@ function TrackRow({
             onChange={(e) => setForm({ ...form, album: e.target.value || null })}
           />
           <div className="track-edit-actions">
-            <button onClick={() => void save()} disabled={!form.title.trim()}>
-              저장
+            <button
+              className="icon-btn"
+              title="저장"
+              onClick={() => void save()}
+              disabled={!form.title.trim()}
+            >
+              <MdCheck />
             </button>
-            <button onClick={() => setEditing(false)}>취소</button>
+            <button className="icon-btn" title="취소" onClick={() => setEditing(false)}>
+              <MdClose />
+            </button>
           </div>
         </div>
       </li>
@@ -97,25 +121,30 @@ function TrackRow({
           {track.artist ?? '(아티스트 없음)'} · {formatDuration(track.duration)}
         </span>
       </div>
-      <div className="track-state">
+      <div className="track-side" onClick={(e) => e.stopPropagation()}>
         {track.status === 'separating' ? (
           <div className="progress">
             <div className="progress-fill" style={{ width: `${progressPct ?? 0}%` }} />
             <span className="progress-label">{progressPct ?? 0}%</span>
           </div>
         ) : (
-          <span className={`status status-${track.status}`}>{STATUS_LABEL[track.status]}</span>
+          <span
+            className={`track-status status-${track.status}`}
+            title={STATUS_LABEL[track.status]}
+          >
+            {STATUS_ICON[track.status]}
+          </span>
         )}
-      </div>
-      <div className="track-actions" onClick={(e) => e.stopPropagation()}>
-        <button onClick={startEdit}>편집</button>
+        <button className="icon-btn" title="편집" onClick={startEdit}>
+          <MdEdit />
+        </button>
         <button
-          className="danger"
+          className="icon-btn danger"
           disabled={track.status === 'separating'}
           onClick={onDelete}
-          title={track.status === 'separating' ? '분리 중에는 삭제할 수 없습니다' : undefined}
+          title={track.status === 'separating' ? '분리 중에는 삭제할 수 없습니다' : '삭제'}
         >
-          삭제
+          <MdDeleteOutline />
         </button>
       </div>
     </li>

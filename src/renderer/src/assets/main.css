@@ -691,35 +691,33 @@
   padding: 0;
 }
 
-.track-actions {
+/* 우측 클러스터: 상태 아이콘(또는 진행 바) + 편집/삭제 버튼을 붙여서 정렬 */
+.track-side {
   display: flex;
+  align-items: center;
   gap: 6px;
   flex-shrink: 0;
 }
 
-.track-actions button {
-  padding: 4px 10px;
-  font-size: 12px;
-  border-radius: 4px;
-  border: 1px solid var(--ev-c-gray-2);
-  background: none;
-  color: var(--ev-c-text-2);
-  cursor: pointer;
+.track-side .progress {
+  width: 120px;
 }
 
-.track-actions button:hover:not(:disabled) {
-  color: var(--ev-c-text-1);
-  border-color: var(--ev-c-gray-1);
+.track-status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 18px;
+  margin-right: 4px;
 }
 
-.track-actions button.danger:hover:not(:disabled) {
-  color: #e66;
-  border-color: #e66;
-}
-
-.track-actions button:disabled {
+.icon-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.icon-btn.danger:hover:not(:disabled) {
+  color: #e66;
+  border-color: #e66;
 }
 
 .track-edit-form {
@@ -742,21 +740,8 @@
 
 .track-edit-actions {
   display: flex;
+  align-items: center;
   gap: 6px;
-}
-
-.track-edit-actions button {
-  padding: 6px 12px;
-  font-size: 12px;
-  border-radius: 4px;
-  border: 1px solid var(--ev-c-gray-2);
-  background-color: var(--ev-c-black-mute);
-  color: var(--ev-c-text-1);
-  cursor: pointer;
-}
-
-.track-edit-actions button:disabled {
-  opacity: 0.4;
 }
 
 .track-item.playable {
@@ -778,6 +763,8 @@
   justify-content: space-between;
   gap: 16px;
   padding: 12px 8px;
+  /* 일반(제목+메타 2줄)과 편집(입력 1줄) 모드의 행 높이를 동일하게 고정 */
+  min-height: 72px;
   border-bottom: 1px solid var(--ev-c-gray-3);
 }
 
@@ -796,16 +783,6 @@
 
 .track-meta {
   color: var(--ev-c-text-2);
-  font-size: 13px;
-}
-
-.track-state {
-  flex-shrink: 0;
-  min-width: 140px;
-  text-align: right;
-}
-
-.status {
   font-size: 13px;
 }
 

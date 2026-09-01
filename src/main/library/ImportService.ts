@@ -31,6 +31,8 @@ export interface ImportServiceOptions {
   notify: (channel: string, payload: unknown) => void
   /** 임포트 직후 LRCLIB 가사 조회 (§4.4). 실패는 서비스 내부에서 삼킨다 */
   fetchLyrics?: (track: Track) => Promise<unknown>
+  /** 임포트 직후 검색용 발음 키 생성 (SearchKeyService.refresh) */
+  refreshSearchKeys?: (track: Track) => void
   onLog?: (line: string) => void
 }
 
@@ -82,6 +84,7 @@ export class ImportService {
     })
     this.notifyTrack(track)
     void this.options.fetchLyrics?.(track)
+    this.options.refreshSearchKeys?.(track)
     this.enqueueSeparation(id)
     return track
   }

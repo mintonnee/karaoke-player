@@ -13,6 +13,7 @@ import type {
 } from '../shared/types'
 import type { ImportService } from './library/ImportService'
 import type { LibraryStore } from './library/LibraryStore'
+import type { SearchKeyService } from './library/SearchKeyService'
 import type { LyricsService } from './lyrics/LyricsService'
 
 const AUDIO_FILE_FILTERS = [{ name: 'Audio', extensions: ['mp3', 'wav', 'flac', 'm4a'] }]
@@ -21,6 +22,7 @@ export interface IpcDeps {
   store: LibraryStore
   importService: ImportService
   lyricsService: LyricsService
+  searchKeyService: SearchKeyService
   tracksDir: string
   notify: (channel: string, payload: unknown) => void
 }
@@ -29,6 +31,7 @@ export function registerIpcHandlers({
   store,
   importService,
   lyricsService,
+  searchKeyService,
   tracksDir,
   notify
 }: IpcDeps): void {
@@ -78,6 +81,7 @@ export function registerIpcHandlers({
     IPC_CHANNELS.updateTrackMeta,
     (_event, trackId: string, meta: TrackMetaInput): Track => {
       const updated = store.updateMeta(trackId, meta)
+      searchKeyService.refresh(updated)
       notify(IPC_CHANNELS.trackUpdated, updated)
       return updated
     }

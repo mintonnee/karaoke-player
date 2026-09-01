@@ -24,7 +24,7 @@
 
 - 마이크 모니터링 / 에코 / 리버브 → v2, 네이티브 오디오 엔진과 함께
 - 채점 → v2
-- YouTube 등 URL 다운로드 → 하지 않음. 로컬 파일 전용으로 고정
+- ~~YouTube 등 URL 다운로드 → 하지 않음. 로컬 파일 전용으로 고정~~ → 2026-09-02 결정 변경: zip 배포 채널 한정으로 도입 (상세는 `docs/specs/001-packaging-distribution.md`)
 - 6-stem 분리, 멀티트랙 믹서 UI
 - 단어 단위 가사 하이라이트 (줄 단위 + 줄 내 진행바로 대체)
 
@@ -123,6 +123,7 @@ export interface AudioEngine {
 - `separate --input <path> --out <dir> [--model htdemucs_ft] [--device auto] [--shifts 1]` → `{inst: path, vocal: path}` (파일 경계 아티팩트 완화를 위해 앞뒤 1초 무음 패딩 후 분리하고 잘라낸다)
 - `align --vocal <path> --lyrics <txt> --lang ja|ko|en --out <lrc>` → `{lrc: path, lines:[{t, text, conf}]}`
 - `transcribe --vocal <path> --lang auto --out <txt>` → `{txt: path}`
+- `pronounce --lyrics <txt> --out <json>` → `{out: path, lines:[{text, hint}]}` (일본어 줄의 한글 통용 표기 발음. 가사 힌트와 검색 키 생성에 사용)
 
 stderr는 로그로만 사용. 취소는 SIGTERM, 워커는 부분 산출물을 삭제한 뒤 종료.
 
@@ -218,6 +219,7 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 - S7.1 electron-builder Windows(NVIDIA/CPU) 빌드
 - S7.2 Python 런타임 + 모델 첫 실행 시 다운로드 (StemDeck 방식 참고)
 - DoD: 클린 Windows 머신에서 설치 → 첫 곡 처리까지 완료
+- 상세 스펙: `docs/specs/001-packaging-distribution.md` (zip/MSIX 이중 타깃, uv 부트스트랩, zip 한정 URL 임포트)
 
 ### v2 (설계만, 구현 안 함)
 
@@ -243,6 +245,7 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 - 줄 단위 하이라이트: 일본어 단어 경계 문제와 정렬 정확도를 고려한 현실적 선택. 실제 노래방 기기와 동일한 UX
 - 오디오 엔진 인터페이스를 S2에서 먼저 고정: v2 네이티브 전환 비용을 렌더러 0 변경으로 묶기 위함
 - 가사 정렬을 ctc-forced-aligner 대신 torchaudio 내장 MMS_FA로 구현 (2026-09-01): 같은 MMS 정렬 모델이지만 ctc-forced-aligner는 PyPI에 없고(git 설치) pybind11 소스 빌드가 필요해 MSVC 없는 환경에서 설치 불가. torchaudio는 이미 의존성에 있어 추가 빌드가 없다. 정렬 결과 conf는 align.json으로 트랙 디렉토리에 저장
+- "URL 다운로드 하지 않음" 결정을 뒤집음 (2026-09-02, 사용자 결정): 개인 사용 목적의 YouTube URL 임포트를 zip 배포 채널 한정으로 도입. 리스크는 배포 채널 분리로 관리 — Microsoft Store(MSIX)판에는 yt-dlp를 포함하지 않는다. 상세는 `docs/specs/001-packaging-distribution.md`
 
 ## 8. 미정 (구현 전 확인)
 

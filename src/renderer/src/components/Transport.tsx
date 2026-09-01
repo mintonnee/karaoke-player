@@ -7,6 +7,7 @@ import {
   MdMusicOff,
   MdPause,
   MdPlayArrow,
+  MdRepeat,
   MdStop,
   MdVolumeOff,
   MdVolumeUp
@@ -125,9 +126,6 @@ function Transport(): React.JSX.Element | null {
             <div className="loop-playhead" style={{ left: `${(position / duration) * 100}%` }} />
           )}
         </div>
-        <button className="loop-clear" disabled={!loop} onClick={() => setLoop(null)}>
-          루프 해제
-        </button>
       </div>
 
       <div className="player-main">
@@ -165,6 +163,14 @@ function Transport(): React.JSX.Element | null {
             onClick={toggleMasterMute}
           >
             {masterMuted ? <MdVolumeOff /> : <MdVolumeUp />}
+          </button>
+          <button
+            className={loop ? 'loop-on' : ''}
+            title={loop ? '루프 해제' : '루프 없음 — 시크바 아래 바를 드래그해 지정'}
+            disabled={!loop}
+            onClick={() => setLoop(null)}
+          >
+            <MdRepeat />
           </button>
           <span className="transport-time">
             {formatTime(position)} / {formatTime(duration)}

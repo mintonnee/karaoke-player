@@ -266,19 +266,10 @@
   pointer-events: none;
 }
 
-.loop-clear {
-  padding: 2px 10px;
-  font-size: 12px;
-  border-radius: 4px;
-  border: 1px solid var(--ev-c-gray-2);
-  background: none;
-  color: var(--ev-c-text-2);
-  cursor: pointer;
-}
-
-.loop-clear:disabled {
-  opacity: 0.4;
-  cursor: default;
+/* 루프 활성 상태 (해제 버튼 하이라이트, loop-region 색과 맞춤) */
+.player-bar button.loop-on {
+  color: #6b9fd8;
+  border-color: #4a7dbd;
 }
 
 .fader {
@@ -405,18 +396,41 @@
 }
 
 .lyrics-line {
-  margin: 0;
-  padding: 10px 0;
+  position: relative;
+  margin: 0 -8px;
+  padding: 10px 8px;
   font-size: 22px;
   font-weight: 700;
   line-height: 1.35;
   color: rgba(235, 235, 245, 0.32);
   cursor: pointer;
+  user-select: none;
   transition:
     color 0.35s ease,
     transform 0.35s ease,
     opacity 0.35s ease;
   transform-origin: left center;
+}
+
+/* 루프/드래그 하이라이트: 줄 간격(패딩)은 그대로 두고
+   배경만 위아래를 안쪽으로 띄워 슬림하게 그린다 */
+.lyrics-line.in-loop::before,
+.lyrics-line.drag-select::before {
+  content: '';
+  position: absolute;
+  inset: 4px 0;
+  border-radius: 6px;
+  z-index: -1;
+}
+
+/* 현재 루프에 포함된 줄 — loop-region과 같은 계열 색 */
+.lyrics-line.in-loop::before {
+  background-color: rgba(74, 125, 189, 0.12);
+}
+
+/* 드래그 선택 중인 줄 (루프 후보 구간) */
+.lyrics-line.drag-select::before {
+  background-color: rgba(74, 125, 189, 0.28);
 }
 
 .lyrics-line:hover {

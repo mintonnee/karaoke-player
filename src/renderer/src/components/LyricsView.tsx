@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { normalizeLoop } from '../audio/audioMath'
 import { currentLineIndex, lineProgress } from '../../../shared/lrc'
 import LyricsSetup from './LyricsSetup'
 import { CONF_WARN_THRESHOLD, useLyricsStore } from '../stores/lyricsStore'
@@ -18,6 +19,8 @@ function LyricsView(): React.JSX.Element | null {
   const position = usePlayerStore((s) => s.position)
   const duration = usePlayerStore((s) => s.duration)
   const seek = usePlayerStore((s) => s.seek)
+  const loop = usePlayerStore((s) => s.loop)
+  const setLoop = usePlayerStore((s) => s.setLoop)
   const {
     lines,
     confs,
@@ -37,6 +40,8 @@ function LyricsView(): React.JSX.Element | null {
 
   const containerRef = useRef<HTMLDivElement>(null)
   const lineRefs = useRef<(HTMLParagraphElement | null)[]>([])
+  /** 가사 줄 드래그 선택 (루프 설정). 한 줄에서 떼면 시크로 처리 */
+  const [dragSel, setDragSel] = useState<{ start: number; end: number } | null>(null)
 
   // 가나가 한 줄이라도 있으면 일본어 가사로 보고 발음 힌트 버튼을 노출한다
   const isJa = useMemo(() => lines.some((line) => /[ぁ-ゟ゠-ヿ]/.test(line.text)), [lines])
@@ -52,6 +57,24 @@ function LyricsView(): React.JSX.Element | null {
     const top = target ? target.offsetTop - container.clientHeight * ANCHOR_RATIO : 0
     container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
   }, [index, lines, correcting])
+
+  // 드래그 종료: 여러 줄이면 [시작 줄 시각, 끝 줄 다음 줄 시각) 루프 설정, 한 줄이면 시크
+  useEffect(() => {
+    if (!dragSel) return
+    const onPointerUp = (): void => {
+      const lo = Math.min(dragSel.start, dragSel.end)
+      const hi = Math.max(dragSel.start, dragSel.end)
+      if (lo === hi) {
+        seek(lines[lo].time)
+      } else {
+        const end = hi + 1 < lines.length ? lines[hi + 1].time : duration
+        setLoop(normalizeLoop(lines[lo].time, end, duration))
+      }
+      setDragSel(null)
+    }
+    window.addEventListener('pointerup', onPointerUp)
+    return () => window.removeEventListener('pointerup', onPointerUp)
+  }, [dragSel, lines, duration, seek, setLoop])
 
   // 보정 모드: Space로 탭
   useEffect(() => {
@@ -121,14 +144,25 @@ function LyricsView(): React.JSX.Element | null {
         </div>
         {lines.map((line, i) => {
           const state = i < index ? 'past' : i === index ? 'current' : 'future'
+          const selected =
+            dragSel !== null &&
+            i >= Math.min(dragSel.start, dragSel.end) &&
+            i <= Math.max(dragSel.start, dragSel.end)
+          const inLoop = loop !== null && line.time >= loop.start && line.time < loop.end
           return (
             <p
               key={`${line.time}-${i}`}
               ref={(el) => {
                 lineRefs.current[i] = el
               }}
-              className={`lyrics-line ${state}`}
-              onClick={() => seek(line.time)}
+              className={`lyrics-line ${state}${selected ? ' drag-select' : ''}${
+                inLoop ? ' in-loop' : ''
+              }`}
+              onPointerDown={(e) => {
+                e.preventDefault()
+                setDragSel({ start: i, end: i })
+              }}
+              onPointerEnter={() => setDragSel((sel) => (sel ? { ...sel, end: i } : sel))}
             >
               {confs && confs[i] < CONF_WARN_THRESHOLD && (
                 <span className="line-warn" title={`정렬 신뢰도 낮음 (${confs[i].toFixed(2)})`}>

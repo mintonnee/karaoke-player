@@ -82,6 +82,7 @@
 - msix 타깃: `win.target=appx`, extraResources에서 `yt-dlp.exe` 제외. appx identity(applicationId, publisher, publisherDisplayName)는 Partner Center 발급값 주입 지점을 만들고 발급 전에는 placeholder를 쓴다.
 - 제품 정체성: productName "Karaoke Player", 창 제목, 아이콘 세트(ico + appx 타일)를 정리한다.
 - `uv.exe`/`yt-dlp.exe` 바이너리는 레포에 커밋하지 않는다 — 빌드 전 스크립트가 릴리즈 URL에서 받아 `resources/bin/`에 배치하고, 해당 경로는 `.gitignore`에 추가한다.
+- 서드파티 고지: `pnpm gen:notices` 산출물을 배포물 루트에 `THIRD-PARTY-NOTICES.txt`로 복사하고, zip 동봉 바이너리(uv/deno/yt-dlp)의 라이선스 전문을 P4에서 보충한다. 앱 내 설정 화면(크레딧·이슈 트래커·라이선스 뷰어)은 2026-09-02 선구현됨 — P4는 배포물 측 완성만 담당한다.
 
 ### 4.3 URL 임포트 (zip 전용)
 
@@ -98,7 +99,7 @@
 | P1       | 부트스트랩 서비스 + UI + 경로 분기       | `src/main/sidecar/SidecarBootstrap.ts`(신규), `src/main/index.ts`, `src/preload/index.ts`, `src/shared/types.ts`, `src/renderer/src/components/Bootstrap*.tsx`(신규), `src/renderer/src/App.tsx` | `sidecar/**`, `electron-builder*` | 없음            | 미착수 |
 | P2       | 빌드 설정 + 리소스 준비 스크립트         | `electron-builder*.yml`(신규), `package.json`, `scripts/prepare-resources.*`(신규), `.gitignore`, `resources/**`(아이콘) | `src/**`                           | P1과 병렬 가능 (리소스 경로 규약 §4.1·§4.2 합의됨) | 미착수 |
 | P3       | URL 임포트 서비스 + UI                   | `src/main/library/YtDlpService.ts`(신규), `src/main/ipc.ts`, `src/renderer/src/components/UrlImport*.tsx`(신규), `src/renderer/src/stores/libraryStore.ts` | `src/main/sidecar/**`              | P1 완료 (preload/types 공유 파일 충돌 회피) | 미착수 |
-| P4       | Store 메타·아이콘·창 제목, 수동 검증 절차 | `resources/**`(아이콘), `electron-builder*.yml`(P2 완료 후), `src/main/index.ts`(P1 완료 후 제목만)      | 그 외 전부                         | P1·P2 완료      | 미착수 |
+| P4       | Store 메타·아이콘·창 제목, THIRD-PARTY-NOTICES 완성·배포물 포함, 수동 검증 절차 | `resources/**`(아이콘), `electron-builder*.yml`(P2 완료 후), `src/main/index.ts`(P1 완료 후 제목만), `scripts/generate-notices.mjs` | 그 외 전부                         | P1·P2 완료      | 미착수 |
 
 - 슬라이스 완료 판정: P1 = 기준 3·4·7·8, P2 = 기준 1·2, P3 = 기준 5·6, P4 = 기준 2 보조(identity)와 제품 정체성.
 - 공유 파일 소유: `package.json`은 P2, `src/main/index.ts`·`src/preload/index.ts`·`src/shared/types.ts`는 P1, `src/main/ipc.ts`는 P3. 다른 슬라이스가 이 파일들을 수정해야 하면 감독자가 순서를 정한다.

@@ -4,6 +4,7 @@ import { DEFAULT_GUIDE_VOCAL_DB, IPC_CHANNELS } from '../shared/types'
 import type {
   AlignLang,
   AlignedLine,
+  AppSettings,
   ImportFilesResponse,
   ImportProgressEvent,
   LyricsPayload,
@@ -53,6 +54,9 @@ const api = {
     const parsed = Number(process.env.KARAOKE_GUIDE_VOCAL_DB)
     return Number.isFinite(parsed) ? parsed : DEFAULT_GUIDE_VOCAL_DB
   })(),
+  getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
+  setSettings: (patch: Partial<AppSettings>): Promise<AppSettings> =>
+    ipcRenderer.invoke(IPC_CHANNELS.settingsSet, patch),
   importFiles: (filePaths: string[]): Promise<ImportFilesResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.importFiles, filePaths),
   importDialog: (): Promise<ImportFilesResponse> => ipcRenderer.invoke(IPC_CHANNELS.importDialog),

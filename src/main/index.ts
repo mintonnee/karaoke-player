@@ -9,6 +9,7 @@ import { ImportService } from './library/ImportService'
 import { JobQueue } from './library/JobQueue'
 import { LibraryStore } from './library/LibraryStore'
 import { SearchKeyService } from './library/SearchKeyService'
+import { SettingsStore } from './settings/SettingsStore'
 import { LyricsService } from './lyrics/LyricsService'
 import { createUvSidecarManager } from './sidecar/SidecarManager'
 
@@ -122,18 +123,27 @@ app.whenReady().then(() => {
     sidecar,
     workDir: join(userData, 'tmp')
   })
+  const settingsStore = new SettingsStore(join(userData, 'settings.json'))
   const importService = new ImportService({
     store,
     sidecar,
     queue: jobQueue,
     tracksDir,
     maxDurationSec: parsePositiveInt(process.env.KARAOKE_MAX_DURATION_SEC, 900),
-    demucsModel: process.env.KARAOKE_DEMUCS_MODEL ?? 'htdemucs_ft',
+    getDemucsModel: () => settingsStore.get().demucsModel,
     notify,
     fetchLyrics: (track) => lyricsService.fetchAndStore(track),
     refreshSearchKeys: (track) => searchKeyService.refresh(track)
   })
-  registerIpcHandlers({ store, importService, lyricsService, searchKeyService, tracksDir, notify })
+  registerIpcHandlers({
+    store,
+    importService,
+    lyricsService,
+    searchKeyService,
+    settingsStore,
+    tracksDir,
+    notify
+  })
   // 기존 트랙의 일본어 메타 발음 키를 백그라운드로 채운다
   searchKeyService.backfill()
   app.on('will-quit', () => store.close())

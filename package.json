@@ -6,6 +6,7 @@
   "author": "mgkwak",
   "scripts": {
     "format": "prettier --write .",
+    "gen:notices": "node scripts/generate-notices.mjs",
     "lint": "eslint --cache .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",

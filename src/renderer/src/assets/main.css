@@ -72,6 +72,124 @@
   cursor: default;
 }
 
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 헤더/모달의 아이콘 버튼: `.panel-header button` 공통 규칙(패딩/폰트)이
+   특이도로 이겨 아이콘이 찌그러지므로 여기서 되돌리고, 색은 본문 흰색으로 */
+.panel-header .icon-btn,
+.modal-header .icon-btn {
+  padding: 0;
+  font-size: 15px;
+  color: var(--ev-c-text-1);
+}
+
+/* 설정/정보 모달 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.55);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, calc(100vw - 48px));
+  max-height: calc(100vh - 96px);
+  border: 1px solid var(--ev-c-gray-2);
+  border-radius: 12px;
+  background-color: var(--ev-c-black-soft);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--ev-c-gray-3);
+}
+
+.modal-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.app-version {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ev-c-text-3);
+}
+
+.modal-body {
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.modal-body section + section {
+  margin-top: 20px;
+}
+
+.modal-body h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--ev-c-text-2);
+}
+
+.modal-body p {
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.modal-body a {
+  color: #6b9fd8;
+}
+
+.settings-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.settings-field select {
+  flex: 1;
+  max-width: 320px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--ev-c-gray-2);
+  background-color: var(--ev-c-black-mute);
+  color: var(--ev-c-text-1);
+}
+
+.settings-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ev-c-text-3);
+}
+
+.notices {
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 6px;
+  background-color: var(--ev-c-black-mute);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ev-c-text-2);
+}
+
 .lyrics-placeholder {
   flex: 1;
   display: flex;
@@ -295,13 +413,14 @@
   gap: 6px;
 }
 
-/* 채널 뮤트용 작은 아이콘 버튼 */
+/* 작은 아이콘 버튼 공통 (뮤트/편집/삭제/설정 등) */
 .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 26px;
   height: 26px;
+  padding: 0;
   font-size: 15px;
   border-radius: 6px;
   border: 1px solid var(--ev-c-gray-2);

@@ -90,6 +90,21 @@ export interface TrackFiles {
   vocal: string
 }
 
+/** 앱 설정 (<userData>/settings.json). 설정창에서 변경한다 */
+export interface AppSettings {
+  /** Demucs 분리 모델. 새로 임포트하는 곡부터 적용 */
+  demucsModel: string
+}
+
+/** 설정창에서 고를 수 있는 Demucs 모델 (§3 분리 스택) */
+export const DEMUCS_MODELS = [
+  { id: 'htdemucs_ft', label: 'htdemucs_ft — 고품질 (기본, 느림)' },
+  { id: 'htdemucs', label: 'htdemucs — 표준 (빠름)' },
+  { id: 'hdemucs_mmi', label: 'hdemucs_mmi — Hybrid v3' },
+  { id: 'mdx_extra', label: 'mdx_extra — MDX 대회 모델' },
+  { id: 'mdx_extra_q', label: 'mdx_extra_q — MDX 양자화 (경량)' }
+] as const
+
 /** §6 KARAOKE_GUIDE_VOCAL_DB 기본값 */
 export const DEFAULT_GUIDE_VOCAL_DB = -20
 
@@ -111,5 +126,7 @@ export const IPC_CHANNELS = {
   lyricsPronounce: 'lyrics:pronounce',
   lyricsProgress: 'lyrics:progress',
   trackUpdated: 'library:track-updated',
-  importProgress: 'library:import-progress'
+  importProgress: 'library:import-progress',
+  settingsGet: 'settings:get',
+  settingsSet: 'settings:set'
 } as const

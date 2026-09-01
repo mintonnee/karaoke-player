@@ -2,10 +2,11 @@ import { dialog, ipcMain } from 'electron'
 import { existsSync } from 'fs'
 import { rm } from 'fs/promises'
 import { join } from 'path'
-import { IPC_CHANNELS } from '../shared/types'
+import { DEMUCS_MODELS, IPC_CHANNELS } from '../shared/types'
 import type {
   AlignLang,
   AlignedLine,
+  AppSettings,
   ImportFilesResponse,
   Track,
   TrackFiles,
@@ -15,6 +16,7 @@ import type { ImportService } from './library/ImportService'
 import type { LibraryStore } from './library/LibraryStore'
 import type { SearchKeyService } from './library/SearchKeyService'
 import type { LyricsService } from './lyrics/LyricsService'
+import type { SettingsStore } from './settings/SettingsStore'
 
 const AUDIO_FILE_FILTERS = [{ name: 'Audio', extensions: ['mp3', 'wav', 'flac', 'm4a'] }]
 
@@ -23,6 +25,7 @@ export interface IpcDeps {
   importService: ImportService
   lyricsService: LyricsService
   searchKeyService: SearchKeyService
+  settingsStore: SettingsStore
   tracksDir: string
   notify: (channel: string, payload: unknown) => void
 }
@@ -32,9 +35,21 @@ export function registerIpcHandlers({
   importService,
   lyricsService,
   searchKeyService,
+  settingsStore,
   tracksDir,
   notify
 }: IpcDeps): void {
+  ipcMain.handle(IPC_CHANNELS.settingsGet, (): AppSettings => settingsStore.get())
+
+  ipcMain.handle(IPC_CHANNELS.settingsSet, (_event, patch: Partial<AppSettings>): AppSettings => {
+    if (
+      patch.demucsModel !== undefined &&
+      !DEMUCS_MODELS.some((model) => model.id === patch.demucsModel)
+    ) {
+      throw new Error(`unknown demucs model: ${patch.demucsModel}`)
+    }
+    return settingsStore.set(patch)
+  })
   ipcMain.handle(IPC_CHANNELS.lyricsGet, (_event, trackId: string) =>
     lyricsService.getLyrics(trackId)
   )

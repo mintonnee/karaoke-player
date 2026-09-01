@@ -25,8 +25,8 @@ export interface ImportServiceOptions {
   tracksDir: string
   /** KARAOKE_MAX_DURATION_SEC, 초과 시 임포트 거부 */
   maxDurationSec: number
-  /** meta.json 기록용 모델명 */
-  demucsModel: string
+  /** 분리 시점의 Demucs 모델 (설정에서 변경 가능하므로 매 작업마다 조회) */
+  getDemucsModel: () => string
   /** 렌더러 브로드캐스트 */
   notify: (channel: string, payload: unknown) => void
   /** 임포트 직후 LRCLIB 가사 조회 (§4.4). 실패는 서비스 내부에서 삼킨다 */
@@ -97,10 +97,11 @@ export class ImportService {
       this.notifyTrack(this.options.store.updateStatus(trackId, 'separating'))
       const trackDir = this.trackDir(trackId)
       const sourceCopy = join(trackDir, `source${extname(track.sourcePath)}`)
+      const model = this.options.getDemucsModel()
 
       try {
         await this.options.sidecar.run(
-          ['separate', '--input', sourceCopy, '--out', trackDir, '--json'],
+          ['separate', '--input', sourceCopy, '--out', trackDir, '--model', model, '--json'],
           {
             onProgress: (event) => {
               const progress: ImportProgressEvent = {
@@ -114,11 +115,7 @@ export class ImportService {
         )
         await writeFile(
           join(trackDir, 'meta.json'),
-          JSON.stringify(
-            { model: this.options.demucsModel, processedAt: new Date().toISOString() },
-            null,
-            2
-          )
+          JSON.stringify({ model, processedAt: new Date().toISOString() }, null, 2)
         )
         this.notifyTrack(this.options.store.updateStatus(trackId, 'ready'))
       } catch (error) {

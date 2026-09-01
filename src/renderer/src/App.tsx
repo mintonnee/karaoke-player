@@ -8,9 +8,11 @@ import {
   MdDeleteOutline,
   MdEdit,
   MdErrorOutline,
-  MdSchedule
+  MdSchedule,
+  MdSettings
 } from 'react-icons/md'
 import LyricsView from './components/LyricsView'
+import SettingsModal from './components/SettingsModal'
 import Transport from './components/Transport'
 import { useLibraryStore } from './stores/libraryStore'
 import { useLyricsStore } from './stores/lyricsStore'
@@ -172,6 +174,7 @@ function App(): React.JSX.Element {
   const loadLyrics = useLyricsStore((s) => s.load)
   const clearLyrics = useLyricsStore((s) => s.clear)
   const [dragOver, setDragOver] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
     void refresh()
@@ -211,9 +214,14 @@ function App(): React.JSX.Element {
         >
           <div className="panel-header">
             <h2>노래 리스트</h2>
-            <button onClick={() => void importViaDialog()} disabled={importing}>
-              {importing ? '임포트 중…' : '+ 가져오기'}
-            </button>
+            <div className="panel-header-actions">
+              <button onClick={() => void importViaDialog()} disabled={importing}>
+                {importing ? '임포트 중…' : '+ 가져오기'}
+              </button>
+              <button className="icon-btn" title="설정" onClick={() => setShowSettings(true)}>
+                <MdSettings />
+              </button>
+            </div>
           </div>
 
           <input
@@ -270,6 +278,7 @@ function App(): React.JSX.Element {
       </div>
 
       <Transport />
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>
   )
 }

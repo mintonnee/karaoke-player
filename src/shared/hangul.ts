@@ -144,3 +144,33 @@ export function hangulIncludes(target: string, query: string): boolean {
   if (toJamo(target).includes(toJamo(query))) return true
   return CONSONANT_ONLY_RE.test(query) && toChoseong(target).includes(query)
 }
+
+/** 거센소리·된소리를 예사소리로 접는다 (발음 표기 변형 흡수: 츠↔즈, 켄↔겐 …) */
+const LOOSE_FOLD_RE = /[ㄲㅋㄸㅌㅃㅍㅉㅊㅆ]/g
+const LOOSE_FOLD: Record<string, string> = {
+  ㄲ: 'ㄱ',
+  ㅋ: 'ㄱ',
+  ㄸ: 'ㄷ',
+  ㅌ: 'ㄷ',
+  ㅃ: 'ㅂ',
+  ㅍ: 'ㅂ',
+  ㅉ: 'ㅈ',
+  ㅊ: 'ㅈ',
+  ㅆ: 'ㅅ'
+}
+
+function looseFold(jamo: string): string {
+  return jamo.replace(LOOSE_FOLD_RE, (ch) => LOOSE_FOLD[ch])
+}
+
+/**
+ * 발음 키 전용 느슨한 부분 일치.
+ * hangulIncludes에 더해 거센소리·된소리 차이를 무시한다 — g2p가 탁음/청음을
+ * 오독하거나(요네즈→요네츠) 통용 표기가 갈리는 경우(카/가)를 흡수한다.
+ * 원문 제목/아티스트 검색에는 쓰지 말 것 (오탐이 늘어난다).
+ */
+export function hangulLooseIncludes(target: string, query: string): boolean {
+  if (query === '') return true
+  if (looseFold(toJamo(target)).includes(looseFold(toJamo(query)))) return true
+  return CONSONANT_ONLY_RE.test(query) && looseFold(toChoseong(target)).includes(looseFold(query))
+}

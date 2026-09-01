@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { hangulIncludes } from '../../shared/hangul'
+import { hangulIncludes, hangulLooseIncludes } from '../../shared/hangul'
 import type { LyricsSource, Track, TrackMetaInput, TrackStatus } from '../../shared/types'
 
 /** §4.3 tracks 스키마. 변경 시 user_version을 올리고 마이그레이션을 추가한다. */
@@ -106,7 +106,7 @@ export class LibraryStore {
             hangulIncludes(row.title, trimmed) ||
             (row.artist !== null && hangulIncludes(row.artist, trimmed)) ||
             (row.album !== null && hangulIncludes(row.album, trimmed)) ||
-            (row.search_keys !== '' && hangulIncludes(row.search_keys, trimmed))
+            (row.search_keys !== '' && hangulLooseIncludes(row.search_keys, trimmed))
         )
       : rows
     return filtered.map(toTrack)

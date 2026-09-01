@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hangulIncludes, toJamo } from '../hangul'
+import { hangulIncludes, hangulLooseIncludes, toJamo } from '../hangul'
 
 describe('toJamo', () => {
   it('음절을 초성·중성·종성 자모로 분해한다', () => {
@@ -56,5 +56,27 @@ describe('hangulIncludes', () => {
 
   it('빈 질의는 항상 일치한다', () => {
     expect(hangulIncludes('아무거나', '')).toBe(true)
+  })
+
+  it('엄격 매칭은 거센소리·된소리를 구분한다', () => {
+    expect(hangulIncludes('요네츠겐시', '요네즈')).toBe(false)
+  })
+})
+
+describe('hangulLooseIncludes', () => {
+  it('거센소리·된소리 차이를 무시한다 (g2p 탁음 오독 흡수)', () => {
+    expect(hangulLooseIncludes('요네츠겐시', '요네즈')).toBe(true)
+    expect(hangulLooseIncludes('요네츠겐시', '켄시')).toBe(true)
+    expect(hangulLooseIncludes('나토리포루타가이스토', '폴타')).toBe(false)
+    expect(hangulLooseIncludes('나토리포루타가이스토', '포루타')).toBe(true)
+  })
+
+  it('미완성 글자·초성 검색도 그대로 동작한다', () => {
+    expect(hangulLooseIncludes('요네츠겐시', '요네즈 켄시'.replace(' ', ''))).toBe(true)
+    expect(hangulLooseIncludes('요네츠겐시', 'ㅇㄴㅈㄱㅅ')).toBe(true)
+  })
+
+  it('무관한 문자열은 여전히 불일치한다', () => {
+    expect(hangulLooseIncludes('요네츠겐시', '요네미')).toBe(false)
   })
 })

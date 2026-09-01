@@ -128,5 +128,6 @@ export const IPC_CHANNELS = {
   trackUpdated: 'library:track-updated',
   importProgress: 'library:import-progress',
   settingsGet: 'settings:get',
-  settingsSet: 'settings:set'
+  settingsSet: 'settings:set',
+  tracksDir: 'library:tracks-dir'
 } as const

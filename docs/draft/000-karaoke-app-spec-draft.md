@@ -124,6 +124,7 @@ export interface AudioEngine {
 - `align --vocal <path> --lyrics <txt> --lang ja|ko|en --out <lrc>` → `{lrc: path, lines:[{t, text, conf}]}`
 - `transcribe --vocal <path> --lang auto --out <txt>` → `{txt: path}`
 - `pronounce --lyrics <txt> --out <json>` → `{out: path, lines:[{text, hint}]}` (일본어 줄의 한글 통용 표기 발음. 가사 힌트와 검색 키 생성에 사용)
+- `cover --input <audio> --out <img>` → `{cover: path | null}` (mutagen으로 내장 앨범 아트 추출. 없으면 null)
 
 stderr는 로그로만 사용. 취소는 SIGTERM, 워커는 부분 산출물을 삭제한 뒤 종료.
 

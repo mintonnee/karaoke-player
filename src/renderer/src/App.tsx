@@ -11,6 +11,7 @@ import {
   MdSchedule,
   MdSettings
 } from 'react-icons/md'
+import CoverArt from './components/CoverArt'
 import LyricsView from './components/LyricsView'
 import SettingsModal from './components/SettingsModal'
 import Transport from './components/Transport'
@@ -117,11 +118,14 @@ function TrackRow({
       className={`track-item${playable ? ' playable' : ''}${isCurrent ? ' current' : ''}`}
       onClick={playable ? onLoad : undefined}
     >
-      <div className="track-info">
-        <span className="track-title">{track.title}</span>
-        <span className="track-meta">
-          {track.artist ?? '(아티스트 없음)'} · {formatDuration(track.duration)}
-        </span>
+      <div className="track-main">
+        <CoverArt trackId={track.id} version={track.updatedAt} className="track-cover" />
+        <div className="track-info">
+          <span className="track-title">{track.title}</span>
+          <span className="track-meta">
+            {track.artist ?? '(아티스트 없음)'} · {formatDuration(track.duration)}
+          </span>
+        </div>
       </div>
       <div className="track-side" onClick={(e) => e.stopPropagation()}>
         {track.status === 'separating' ? (

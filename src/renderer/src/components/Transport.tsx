@@ -14,6 +14,7 @@ import {
 } from 'react-icons/md'
 import { normalizeLoop } from '../audio/audioMath'
 import { usePlayerStore } from '../stores/playerStore'
+import CoverArt from './CoverArt'
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -129,9 +130,13 @@ function Transport(): React.JSX.Element | null {
       </div>
 
       <div className="player-main">
-        <div className="player-art" aria-hidden="true">
-          <MdMusicNote />
-        </div>
+        {track ? (
+          <CoverArt trackId={track.id} version={track.updatedAt} className="player-art" />
+        ) : (
+          <div className="player-art" aria-hidden="true">
+            <MdMusicNote />
+          </div>
+        )}
         <div className="player-track">
           <span className="player-title" title={track?.title}>
             {track?.title ?? '재생할 곡을 선택하세요'}

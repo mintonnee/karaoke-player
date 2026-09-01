@@ -45,6 +45,11 @@ def build_parser() -> argparse.ArgumentParser:
     pronounce_parser.add_argument("--out", required=True)
     pronounce_parser.add_argument("--json", action="store_true", default=True)
 
+    cover_parser = sub.add_parser("cover", help="extract embedded album art")
+    cover_parser.add_argument("--input", required=True)
+    cover_parser.add_argument("--out", required=True)
+    cover_parser.add_argument("--json", action="store_true", default=True)
+
     return parser
 
 
@@ -87,6 +92,10 @@ def main() -> None:
             from .pronounce import pronounce
 
             emit_done(pronounce(args.lyrics, args.out))
+        elif args.command == "cover":
+            from .cover import cover
+
+            emit_done(cover(args.input, args.out))
     except WorkerError as e:
         emit_error(e.code, e.msg)
         sys.exit(1)

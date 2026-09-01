@@ -54,6 +54,7 @@ const api = {
     const parsed = Number(process.env.KARAOKE_GUIDE_VOCAL_DB)
     return Number.isFinite(parsed) ? parsed : DEFAULT_GUIDE_VOCAL_DB
   })(),
+  getTracksDir: (): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.tracksDir),
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
   setSettings: (patch: Partial<AppSettings>): Promise<AppSettings> =>
     ipcRenderer.invoke(IPC_CHANNELS.settingsSet, patch),

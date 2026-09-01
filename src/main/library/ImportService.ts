@@ -33,6 +33,8 @@ export interface ImportServiceOptions {
   fetchLyrics?: (track: Track) => Promise<unknown>
   /** 임포트 직후 검색용 발음 키 생성 (SearchKeyService.refresh) */
   refreshSearchKeys?: (track: Track) => void
+  /** 임포트 직후 앨범 커버 추출 (CoverService.refresh) */
+  extractCover?: (track: Track) => void
   onLog?: (line: string) => void
 }
 
@@ -85,6 +87,7 @@ export class ImportService {
     this.notifyTrack(track)
     void this.options.fetchLyrics?.(track)
     this.options.refreshSearchKeys?.(track)
+    this.options.extractCover?.(track)
     this.enqueueSeparation(id)
     return track
   }

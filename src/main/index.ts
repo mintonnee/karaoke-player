@@ -1,10 +1,12 @@
 import { app, shell, BrowserWindow, net, protocol } from 'electron'
+import { existsSync } from 'fs'
 import { join, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { MEDIA_PROTOCOL_SCHEME } from '../shared/types'
 import { registerIpcHandlers } from './ipc'
+import { CoverService } from './library/CoverService'
 import { ImportService } from './library/ImportService'
 import { JobQueue } from './library/JobQueue'
 import { LibraryStore } from './library/LibraryStore'
@@ -38,6 +40,10 @@ function registerMediaProtocol(tracksDir: string): void {
     const filePath = raw ? resolve(raw) : null
     if (!filePath || !filePath.startsWith(root + sep)) {
       return new Response('forbidden', { status: 403, headers: cors })
+    }
+    // 커버 미추출 등 파일이 없는 경우는 정상 흐름 — 에러 로그 없이 404로 응답
+    if (!existsSync(filePath)) {
+      return new Response('not found', { status: 404, headers: cors })
     }
     const fileResponse = await net.fetch(pathToFileURL(filePath).toString())
     const headers = new Headers(fileResponse.headers)
@@ -124,6 +130,7 @@ app.whenReady().then(() => {
     workDir: join(userData, 'tmp')
   })
   const settingsStore = new SettingsStore(join(userData, 'settings.json'))
+  const coverService = new CoverService({ store, sidecar, tracksDir })
   const importService = new ImportService({
     store,
     sidecar,
@@ -133,7 +140,8 @@ app.whenReady().then(() => {
     getDemucsModel: () => settingsStore.get().demucsModel,
     notify,
     fetchLyrics: (track) => lyricsService.fetchAndStore(track),
-    refreshSearchKeys: (track) => searchKeyService.refresh(track)
+    refreshSearchKeys: (track) => searchKeyService.refresh(track),
+    extractCover: (track) => coverService.refresh(track)
   })
   registerIpcHandlers({
     store,
@@ -144,8 +152,9 @@ app.whenReady().then(() => {
     tracksDir,
     notify
   })
-  // 기존 트랙의 일본어 메타 발음 키를 백그라운드로 채운다
+  // 기존 트랙의 일본어 메타 발음 키와 앨범 커버를 백그라운드로 채운다
   searchKeyService.backfill()
+  coverService.backfill()
   app.on('will-quit', () => store.close())
 
   createWindow()

@@ -39,6 +39,9 @@ export function registerIpcHandlers({
   tracksDir,
   notify
 }: IpcDeps): void {
+  // 렌더러가 cover.jpg 등 트랙 파일의 media:// URL을 만들 때 쓴다
+  ipcMain.handle(IPC_CHANNELS.tracksDir, (): string => tracksDir)
+
   ipcMain.handle(IPC_CHANNELS.settingsGet, (): AppSettings => settingsStore.get())
 
   ipcMain.handle(IPC_CHANNELS.settingsSet, (_event, patch: Partial<AppSettings>): AppSettings => {

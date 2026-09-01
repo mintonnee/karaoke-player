@@ -13,7 +13,10 @@ interface PlayerState {
   duration: number
   instDb: number
   vocalDb: number
+  instMuted: boolean
   vocalMuted: boolean
+  /** 전체 뮤트: 채널별 뮤트 상태를 보존한 채 두 채널을 모두 무음으로 */
+  masterMuted: boolean
   loop: LoopRange | null
   /** 키 변경 (반음, -6..+6) */
   pitch: number
@@ -28,7 +31,9 @@ interface PlayerState {
   seek: (seconds: number) => void
   setInstDb: (db: number) => void
   setVocalDb: (db: number) => void
+  toggleInstMute: () => void
   toggleVocalMute: () => void
+  toggleMasterMute: () => void
   setLoop: (range: LoopRange | null) => void
   setPitch: (semitones: number) => void
 }
@@ -44,9 +49,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
   const syncEngine = (): void => set({ engineState: engine.state })
 
-  const applyVocalGain = (): void => {
-    const { vocalDb, vocalMuted } = get()
-    engine.setGain('vocal', vocalMuted ? Number.NEGATIVE_INFINITY : vocalDb)
+  const applyGains = (): void => {
+    const { instDb, vocalDb, instMuted, vocalMuted, masterMuted } = get()
+    engine.setGain('inst', masterMuted || instMuted ? Number.NEGATIVE_INFINITY : instDb)
+    engine.setGain('vocal', masterMuted || vocalMuted ? Number.NEGATIVE_INFINITY : vocalDb)
   }
 
   return {
@@ -56,7 +62,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     duration: 0,
     instDb: 0,
     vocalDb: window.api.guideVocalDefaultDb,
+    instMuted: false,
     vocalMuted: false,
+    masterMuted: false,
     loop: null,
     pitch: 0,
     loadError: null,
@@ -66,8 +74,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       try {
         const files = await window.api.trackFiles(track.id)
         await engine.load(files)
-        engine.setGain('inst', get().instDb)
-        applyVocalGain()
+        applyGains()
         set({ duration: engine.duration, engineState: engine.state })
       } catch (error) {
         set({
@@ -100,15 +107,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
     setInstDb: (db) => {
       set({ instDb: db })
-      engine.setGain('inst', db)
+      applyGains()
     },
     setVocalDb: (db) => {
       set({ vocalDb: db })
-      applyVocalGain()
+      applyGains()
+    },
+    toggleInstMute: () => {
+      set((state) => ({ instMuted: !state.instMuted }))
+      applyGains()
     },
     toggleVocalMute: () => {
       set((state) => ({ vocalMuted: !state.vocalMuted }))
-      applyVocalGain()
+      applyGains()
+    },
+    toggleMasterMute: () => {
+      set((state) => ({ masterMuted: !state.masterMuted }))
+      applyGains()
     },
     setLoop: (range) => {
       set({ loop: range })

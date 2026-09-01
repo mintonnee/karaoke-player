@@ -1,5 +1,16 @@
 import { useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
+import {
+  MdMic,
+  MdMicOff,
+  MdMusicNote,
+  MdMusicOff,
+  MdPause,
+  MdPlayArrow,
+  MdStop,
+  MdVolumeOff,
+  MdVolumeUp
+} from 'react-icons/md'
 import { normalizeLoop } from '../audio/audioMath'
 import { usePlayerStore } from '../stores/playerStore'
 
@@ -17,7 +28,9 @@ function Transport(): React.JSX.Element | null {
     duration,
     instDb,
     vocalDb,
+    instMuted,
     vocalMuted,
+    masterMuted,
     loop,
     pitch,
     loadError,
@@ -27,7 +40,9 @@ function Transport(): React.JSX.Element | null {
     seek,
     setInstDb,
     setVocalDb,
+    toggleInstMute,
     toggleVocalMute,
+    toggleMasterMute,
     setLoop,
     setPitch
   } = usePlayerStore()
@@ -35,15 +50,15 @@ function Transport(): React.JSX.Element | null {
   const loopBarRef = useRef<HTMLDivElement>(null)
   const [dragRange, setDragRange] = useState<{ start: number; end: number } | null>(null)
 
-  if (loadError) {
-    return <div className="transport transport-error">재생 로드 실패: {loadError}</div>
-  }
-  if (!track || engineState === 'idle') return null
-  if (engineState === 'loading') {
-    return <div className="transport">로딩 중… — {track.title}</div>
-  }
-
+  // 상태와 무관하게 바 구조는 항상 동일하게 유지한다 (레이아웃 점프 방지).
+  // 곡 없음/로딩/에러는 컨트롤 비활성화 + 아티스트 줄의 상태 텍스트로만 표현한다.
+  const active = track !== null && engineState !== 'idle' && engineState !== 'loading'
   const playing = engineState === 'playing'
+  const statusLine = loadError
+    ? `재생 로드 실패: ${loadError}`
+    : engineState === 'loading'
+      ? '로딩 중…'
+      : (track?.artist ?? ' ') // 아티스트가 없어도 줄 높이를 유지한다
 
   const fractionAt = (event: PointerEvent): number => {
     const rect = loopBarRef.current!.getBoundingClientRect()
@@ -51,6 +66,7 @@ function Transport(): React.JSX.Element | null {
   }
 
   const onLoopPointerDown = (event: PointerEvent): void => {
+    if (!active) return
     event.currentTarget.setPointerCapture(event.pointerId)
     const at = fractionAt(event) * duration
     setDragRange({ start: at, end: at })
@@ -75,26 +91,15 @@ function Transport(): React.JSX.Element | null {
     : loop
 
   return (
-    <div className="transport">
-      <div className="transport-title">
-        {track.title} <span className="transport-artist">{track.artist ?? ''}</span>
-      </div>
-
-      <div className="transport-controls">
-        <button onClick={playing ? pause : play}>{playing ? '⏸' : '▶'}</button>
-        <button onClick={stop}>⏹</button>
-        <span className="transport-time">
-          {formatTime(position)} / {formatTime(duration)}
-        </span>
-      </div>
-
+    <div className={`player-bar${active ? '' : ' player-bar-idle'}`}>
       <input
         className="seekbar"
         type="range"
         min={0}
-        max={duration}
+        max={active ? duration : 1}
         step={0.1}
-        value={position}
+        value={active ? position : 0}
+        disabled={!active}
         onChange={(e) => seek(Number(e.target.value))}
       />
 
@@ -116,53 +121,119 @@ function Transport(): React.JSX.Element | null {
               }}
             />
           )}
-          <div className="loop-playhead" style={{ left: `${(position / duration) * 100}%` }} />
+          {active && duration > 0 && (
+            <div className="loop-playhead" style={{ left: `${(position / duration) * 100}%` }} />
+          )}
         </div>
         <button className="loop-clear" disabled={!loop} onClick={() => setLoop(null)}>
           루프 해제
         </button>
       </div>
 
-      <div className="faders">
-        <label className="fader">
-          <span>반주 {instDb} dB</span>
-          <input
-            type="range"
-            min={-60}
-            max={0}
-            step={1}
-            value={instDb}
-            onChange={(e) => setInstDb(Number(e.target.value))}
-          />
-        </label>
-        <label className="fader">
-          <span className={vocalMuted ? 'muted' : ''}>가이드 보컬 {vocalDb} dB</span>
-          <input
-            type="range"
-            min={-60}
-            max={0}
-            step={1}
-            value={vocalDb}
-            disabled={vocalMuted}
-            onChange={(e) => setVocalDb(Number(e.target.value))}
-          />
-        </label>
-        <button className={`mute-toggle${vocalMuted ? ' active' : ''}`} onClick={toggleVocalMute}>
-          {vocalMuted ? '보컬 켜기' : '보컬 뮤트'}
-        </button>
+      <div className="player-main">
+        <div className="player-art" aria-hidden="true">
+          <MdMusicNote />
+        </div>
+        <div className="player-track">
+          <span className="player-title" title={track?.title}>
+            {track?.title ?? '재생할 곡을 선택하세요'}
+          </span>
+          <span
+            className={`player-artist${loadError ? ' player-artist-error' : ''}`}
+            title={loadError ?? track?.artist ?? undefined}
+          >
+            {statusLine}
+          </span>
+        </div>
 
-        <div className="pitch-control">
-          <span className="pitch-label">키</span>
-          <button onClick={() => setPitch(pitch - 1)} disabled={pitch <= -6}>
-            −
+        <div className="player-transport">
+          <button
+            className="play-toggle"
+            title={playing ? '일시정지' : '재생'}
+            disabled={!active}
+            onClick={playing ? pause : play}
+          >
+            {playing ? <MdPause /> : <MdPlayArrow />}
           </button>
-          <span className="pitch-value">{pitch > 0 ? `+${pitch}` : pitch}</span>
-          <button onClick={() => setPitch(pitch + 1)} disabled={pitch >= 6}>
-            +
+          <button title="정지" disabled={!active} onClick={stop}>
+            <MdStop />
           </button>
-          <button className="pitch-reset" onClick={() => setPitch(0)} disabled={pitch === 0}>
-            원키
+          <button
+            className={masterMuted ? 'muted-on' : ''}
+            title={masterMuted ? '전체 뮤트 해제' : '전체 뮤트'}
+            disabled={!active}
+            onClick={toggleMasterMute}
+          >
+            {masterMuted ? <MdVolumeOff /> : <MdVolumeUp />}
           </button>
+          <span className="transport-time">
+            {formatTime(position)} / {formatTime(duration)}
+          </span>
+        </div>
+
+        <div className="player-controls">
+          <div className="fader">
+            <span className={instMuted ? 'muted' : ''}>반주 {instDb} dB</span>
+            <div className="fader-row">
+              <button
+                className={`icon-btn${instMuted ? ' muted-on' : ''}`}
+                title={instMuted ? '반주 뮤트 해제' : '반주 뮤트'}
+                disabled={!active}
+                onClick={toggleInstMute}
+              >
+                {instMuted ? <MdMusicOff /> : <MdMusicNote />}
+              </button>
+              <input
+                type="range"
+                min={-60}
+                max={0}
+                step={1}
+                value={instDb}
+                disabled={!active || instMuted}
+                onChange={(e) => setInstDb(Number(e.target.value))}
+              />
+            </div>
+          </div>
+          <div className="fader">
+            <span className={vocalMuted ? 'muted' : ''}>가이드 보컬 {vocalDb} dB</span>
+            <div className="fader-row">
+              <button
+                className={`icon-btn${vocalMuted ? ' muted-on' : ''}`}
+                title={vocalMuted ? '보컬 뮤트 해제' : '보컬 뮤트'}
+                disabled={!active}
+                onClick={toggleVocalMute}
+              >
+                {vocalMuted ? <MdMicOff /> : <MdMic />}
+              </button>
+              <input
+                type="range"
+                min={-60}
+                max={0}
+                step={1}
+                value={vocalDb}
+                disabled={!active || vocalMuted}
+                onChange={(e) => setVocalDb(Number(e.target.value))}
+              />
+            </div>
+          </div>
+
+          <div className="pitch-control">
+            <span className="pitch-label">키</span>
+            <button onClick={() => setPitch(pitch - 1)} disabled={!active || pitch <= -6}>
+              −
+            </button>
+            <span className="pitch-value">{pitch > 0 ? `+${pitch}` : pitch}</span>
+            <button onClick={() => setPitch(pitch + 1)} disabled={!active || pitch >= 6}>
+              +
+            </button>
+            <button
+              className="pitch-reset"
+              onClick={() => setPitch(0)}
+              disabled={!active || pitch === 0}
+            >
+              원키
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -112,7 +112,7 @@ function LyricsView(): React.JSX.Element | null {
   }
 
   return (
-    <div>
+    <div className="lyrics-pane">
       <div ref={containerRef} className="lyrics">
         <div className={`lyrics-intro${waitingIntro ? ' active' : ''}`}>
           <span />

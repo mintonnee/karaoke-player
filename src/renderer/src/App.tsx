@@ -170,61 +170,77 @@ function App(): React.JSX.Element {
 
   return (
     <div className="app">
-      <h1>Karaoke Player</h1>
+      <div className="main-area">
+        <section
+          className={`panel library-panel${dragOver ? ' drag-over' : ''}`}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setDragOver(true)
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+        >
+          <div className="panel-header">
+            <h2>노래 리스트</h2>
+            <button onClick={() => void importViaDialog()} disabled={importing}>
+              {importing ? '임포트 중…' : '+ 가져오기'}
+            </button>
+          </div>
 
-      <div
-        className={`dropzone${dragOver ? ' drag-over' : ''}`}
-        onClick={() => void importViaDialog()}
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDragOver(true)
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
-      >
-        {importing ? '임포트 중…' : '오디오 파일을 끌어다 놓거나 클릭해서 선택 (MP3/WAV/FLAC/M4A)'}
+          <input
+            className="search"
+            type="search"
+            placeholder="제목/아티스트/앨범 검색"
+            value={search}
+            onChange={(e) => void setSearch(e.target.value)}
+          />
+
+          {rejections.length > 0 && (
+            <div className="rejections">
+              {rejections.map((rejection, i) => (
+                <p key={i}>
+                  {rejection.filePath} — {rejection.reason}
+                </p>
+              ))}
+              <button onClick={dismissRejections}>닫기</button>
+            </div>
+          )}
+
+          <ul className="track-list">
+            {tracks.map((track) => (
+              <TrackRow
+                key={track.id}
+                track={track}
+                progressPct={progress[track.id]?.pct}
+                isCurrent={track.id === currentTrackId}
+                onLoad={() => void loadTrack(track)}
+                onDelete={() => void onDelete(track)}
+                onSaveMeta={(meta) => updateTrackMeta(track.id, meta)}
+              />
+            ))}
+            {tracks.length === 0 && (
+              <li className="track-empty">
+                {search
+                  ? '검색 결과가 없습니다.'
+                  : '오디오 파일을 이 패널에 끌어다 놓거나 [+ 가져오기]를 누르세요 (MP3/WAV/FLAC/M4A)'}
+              </li>
+            )}
+          </ul>
+        </section>
+
+        <section className="panel lyrics-panel">
+          <div className="panel-header">
+            <h2>가사</h2>
+          </div>
+          {currentTrackId ? (
+            <LyricsView />
+          ) : (
+            <div className="lyrics-placeholder">노래 리스트에서 곡을 선택하세요</div>
+          )}
+        </section>
       </div>
 
-      {rejections.length > 0 && (
-        <div className="rejections">
-          {rejections.map((rejection, i) => (
-            <p key={i}>
-              {rejection.filePath} — {rejection.reason}
-            </p>
-          ))}
-          <button onClick={dismissRejections}>닫기</button>
-        </div>
-      )}
-
       <Transport />
-      <LyricsView />
-
-      <input
-        className="search"
-        type="search"
-        placeholder="제목/아티스트/앨범 검색"
-        value={search}
-        onChange={(e) => void setSearch(e.target.value)}
-      />
-
-      <ul className="track-list">
-        {tracks.map((track) => (
-          <TrackRow
-            key={track.id}
-            track={track}
-            progressPct={progress[track.id]?.pct}
-            isCurrent={track.id === currentTrackId}
-            onLoad={() => void loadTrack(track)}
-            onDelete={() => void onDelete(track)}
-            onSaveMeta={(meta) => updateTrackMeta(track.id, meta)}
-          />
-        ))}
-        {tracks.length === 0 && (
-          <li className="track-empty">
-            {search ? '검색 결과가 없습니다.' : '아직 임포트한 곡이 없습니다.'}
-          </li>
-        )}
-      </ul>
     </div>
   )
 }

@@ -1,35 +1,88 @@
 @import './base.css';
 
 .app {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 40px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100vh;
+  padding: 16px;
 }
 
-.app h1 {
-  font-size: 24px;
-  margin-bottom: 24px;
+/* 상단: 노래 리스트(좌) + 가사(우) 2패널 */
+.main-area {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
 }
 
-.dropzone {
-  border: 2px dashed var(--ev-c-gray-1);
-  border-radius: 8px;
-  padding: 40px 24px;
-  text-align: center;
-  color: var(--ev-c-text-2);
-  cursor: pointer;
-  user-select: none;
-}
-
-.dropzone:hover,
-.dropzone.drag-over {
-  border-color: var(--ev-c-text-2);
-  color: var(--ev-c-text-1);
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--ev-c-gray-3);
+  border-radius: 12px;
   background-color: var(--ev-c-black-soft);
 }
 
+.library-panel {
+  flex: 3;
+}
+
+.lyrics-panel {
+  flex: 2;
+}
+
+/* 패널 전체가 드롭 대상 (임포트) */
+.library-panel.drag-over {
+  border-color: #4a7dbd;
+  background-color: rgba(74, 125, 189, 0.08);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.panel-header h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.panel-header button {
+  padding: 5px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--ev-c-gray-2);
+  background-color: var(--ev-c-black-mute);
+  color: var(--ev-c-text-1);
+  cursor: pointer;
+}
+
+.panel-header button:hover:not(:disabled) {
+  border-color: var(--ev-c-gray-1);
+}
+
+.panel-header button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.lyrics-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ev-c-text-3);
+  font-size: 14px;
+}
+
 .rejections {
-  margin-top: 16px;
+  margin-top: 12px;
   padding: 12px;
   border-radius: 6px;
   background-color: rgba(230, 102, 102, 0.1);
@@ -53,69 +106,142 @@
   cursor: pointer;
 }
 
-.transport {
-  margin-top: 24px;
-  padding: 16px;
+/* 하단 플레이어 바: 앨범아트 | 제목/아티스트 | 재생 | 루프·페이더·키 */
+.player-bar {
+  padding: 8px 16px 12px;
   border: 1px solid var(--ev-c-gray-3);
-  border-radius: 8px;
+  border-radius: 12px;
   background-color: var(--ev-c-black-soft);
 }
 
-.transport-error {
+.player-artist.player-artist-error {
   color: #e66;
 }
 
-.transport-title {
-  font-weight: 600;
-  margin-bottom: 12px;
+.player-bar button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
-.transport-artist {
-  color: var(--ev-c-text-2);
+.player-bar input:disabled {
+  opacity: 0.5;
+}
+
+.player-bar-idle .player-title {
+  color: var(--ev-c-text-3);
   font-weight: 400;
-  font-size: 13px;
 }
 
-.transport-controls {
+.player-bar-idle .loop-bar {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.player-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.player-art {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background-color: var(--ev-c-black-mute);
+  color: var(--ev-c-text-3);
+  font-size: 24px;
+  user-select: none;
+}
+
+/* 제목/아티스트: 남는 폭을 전부 쓰고, 넘치면 말줄임 + 호버 툴팁(title 속성) */
+.player-track {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 120px;
+}
+
+.player-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-artist {
+  font-size: 12px;
+  color: var(--ev-c-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-transport {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
 }
 
-.transport-controls button {
-  width: 40px;
-  height: 32px;
-  font-size: 15px;
-  border-radius: 6px;
+.player-transport button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  border-radius: 50%;
   border: 1px solid var(--ev-c-gray-2);
   background-color: var(--ev-c-black-mute);
   color: var(--ev-c-text-1);
   cursor: pointer;
 }
 
+.player-transport button:hover:not(:disabled) {
+  border-color: var(--ev-c-gray-1);
+}
+
+.player-transport .play-toggle {
+  width: 44px;
+  height: 44px;
+  font-size: 24px;
+}
+
 .transport-time {
-  margin-left: 8px;
+  margin-left: 4px;
   font-size: 13px;
   color: var(--ev-c-text-2);
   font-variant-numeric: tabular-nums;
+}
+
+.player-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .seekbar {
   width: 100%;
 }
 
+/* 루프 바: 시크바 바로 아래 전폭 스택 */
 .loop-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 2px;
 }
 
 .loop-bar {
   position: relative;
   flex: 1;
-  height: 16px;
+  height: 14px;
   border-radius: 4px;
   background-color: var(--ev-c-black-mute);
   cursor: crosshair;
@@ -155,19 +281,16 @@
   cursor: default;
 }
 
-.faders {
-  display: flex;
-  align-items: flex-end;
-  gap: 24px;
-  margin-top: 16px;
-}
-
 .fader {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
+  gap: 2px;
+  font-size: 12px;
   color: var(--ev-c-text-2);
+}
+
+.fader input {
+  width: 96px;
 }
 
 .fader .muted {
@@ -175,19 +298,36 @@
   opacity: 0.6;
 }
 
-.mute-toggle {
-  padding: 6px 14px;
-  font-size: 13px;
+.fader-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 채널 뮤트용 작은 아이콘 버튼 */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  font-size: 15px;
   border-radius: 6px;
   border: 1px solid var(--ev-c-gray-2);
-  background-color: var(--ev-c-black-mute);
-  color: var(--ev-c-text-1);
+  background: none;
+  color: var(--ev-c-text-2);
   cursor: pointer;
 }
 
-.mute-toggle.active {
-  border-color: #e66;
+.icon-btn:hover:not(:disabled) {
+  color: var(--ev-c-text-1);
+  border-color: var(--ev-c-gray-1);
+}
+
+/* 뮤트 활성 상태 (전체/반주/보컬 공통) */
+.player-bar button.muted-on {
   color: #e66;
+  border-color: #e66;
 }
 
 .pitch-control {
@@ -231,11 +371,19 @@
   font-weight: 600;
 }
 
+/* LyricsView 루트: 가사 패널을 세로로 채운다 (본문 flex:1 + 하단 도구 막대) */
+.lyrics-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .lyrics {
   /* offsetTop이 이 컨테이너 기준으로 측정되도록 한다 (자동 스크롤 계산의 기준점) */
   position: relative;
-  margin-top: 16px;
-  height: 320px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-width: none;
   /* 첫 줄/인트로가 상단 페이드 마스크에 붙지 않도록 위쪽 여백을 넉넉히 */
@@ -447,7 +595,10 @@
 }
 
 .lyrics-correct {
-  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   border: 1px solid var(--ev-c-gray-3);
   border-radius: 8px;
   background-color: var(--ev-c-black-soft);
@@ -468,7 +619,7 @@
 }
 
 .lyrics-correct-list {
-  max-height: 300px;
+  flex: 1;
   overflow-y: auto;
   padding: 6px 0;
 }
@@ -509,16 +660,18 @@
 
 .search {
   width: 100%;
-  margin-top: 24px;
   padding: 8px 12px;
   font-size: 14px;
   border-radius: 6px;
   border: 1px solid var(--ev-c-gray-2);
-  background-color: var(--ev-c-black-soft);
+  background-color: var(--ev-c-black-mute);
   color: var(--ev-c-text-1);
 }
 
 .track-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   margin-top: 12px;
   list-style: none;
   padding: 0;

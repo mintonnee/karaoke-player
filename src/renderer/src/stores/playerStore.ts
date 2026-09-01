@@ -13,6 +13,8 @@ interface PlayerState {
   duration: number
   instDb: number
   vocalDb: number
+  /** 전체(마스터) 음량. 두 채널 게인에 합산 적용 (-60..0 dB) */
+  masterDb: number
   instMuted: boolean
   vocalMuted: boolean
   /** 전체 뮤트: 채널별 뮤트 상태를 보존한 채 두 채널을 모두 무음으로 */
@@ -31,6 +33,7 @@ interface PlayerState {
   seek: (seconds: number) => void
   setInstDb: (db: number) => void
   setVocalDb: (db: number) => void
+  setMasterDb: (db: number) => void
   toggleInstMute: () => void
   toggleVocalMute: () => void
   toggleMasterMute: () => void
@@ -50,9 +53,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
   const syncEngine = (): void => set({ engineState: engine.state })
 
   const applyGains = (): void => {
-    const { instDb, vocalDb, instMuted, vocalMuted, masterMuted } = get()
-    engine.setGain('inst', masterMuted || instMuted ? Number.NEGATIVE_INFINITY : instDb)
-    engine.setGain('vocal', masterMuted || vocalMuted ? Number.NEGATIVE_INFINITY : vocalDb)
+    const { instDb, vocalDb, masterDb, instMuted, vocalMuted, masterMuted } = get()
+    engine.setGain('inst', masterMuted || instMuted ? Number.NEGATIVE_INFINITY : instDb + masterDb)
+    engine.setGain(
+      'vocal',
+      masterMuted || vocalMuted ? Number.NEGATIVE_INFINITY : vocalDb + masterDb
+    )
   }
 
   return {
@@ -62,6 +68,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     duration: 0,
     instDb: 0,
     vocalDb: window.api.guideVocalDefaultDb,
+    masterDb: 0,
     instMuted: false,
     vocalMuted: false,
     masterMuted: false,
@@ -111,6 +118,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
     setVocalDb: (db) => {
       set({ vocalDb: db })
+      applyGains()
+    },
+    setMasterDb: (db) => {
+      set({ masterDb: Math.max(-60, Math.min(0, Math.round(db))) })
       applyGains()
     },
     toggleInstMute: () => {

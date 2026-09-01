@@ -3,6 +3,7 @@ import { MdClose } from 'react-icons/md'
 import { DEMUCS_MODELS } from '../../../shared/types'
 import type { AppSettings } from '../../../shared/types'
 import notices from '../generated/third-party-notices.txt?raw'
+import ShortcutList from './ShortcutList'
 
 const REPO_URL = 'https://github.com/plan12be/karaoke-player'
 
@@ -62,6 +63,10 @@ function SettingsModal({ onClose }: SettingsModalProps): React.JSX.Element {
               새로 임포트하는 곡부터 적용됩니다. 처음 쓰는 모델은 첫 분리 때 자동으로
               다운로드됩니다. 이미 분리된 곡을 새 모델로 다시 처리하려면 삭제 후 재임포트하세요.
             </p>
+          </section>
+          <section>
+            <h3>단축키</h3>
+            <ShortcutList />
           </section>
           <section>
             <h3>크레딧</h3>

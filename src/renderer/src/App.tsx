@@ -14,6 +14,7 @@ import {
 import CoverArt from './components/CoverArt'
 import LyricsView from './components/LyricsView'
 import SettingsModal from './components/SettingsModal'
+import ShortcutHelp from './components/ShortcutHelp'
 import Transport from './components/Transport'
 import { useLibraryStore } from './stores/libraryStore'
 import { useLyricsStore } from './stores/lyricsStore'
@@ -179,10 +180,89 @@ function App(): React.JSX.Element {
   const clearLyrics = useLyricsStore((s) => s.clear)
   const [dragOver, setDragOver] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
 
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // 재생 단축키: Space 재생/일시정지, ←/→ 시크, ↑/↓(+Ctrl/Alt) 음량, −/= 키, M/V/L, / 도움말
+  useEffect(() => {
+    const clampDb = (db: number): number => Math.max(-60, Math.min(0, db))
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (showSettings) return
+      if (event.metaKey) return
+      const target = event.target as HTMLElement
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target.isContentEditable
+      ) {
+        return
+      }
+
+      // 도움말 토글은 트랙이 없어도 동작
+      if (event.code === 'Slash' && !event.ctrlKey && !event.altKey) {
+        event.preventDefault()
+        setShowHelp((visible) => !visible)
+        return
+      }
+
+      const player = usePlayerStore.getState()
+      const active =
+        player.track !== null && player.engineState !== 'idle' && player.engineState !== 'loading'
+      if (!active) return
+
+      // 음량: ↑/↓ 전체, Ctrl+↑/↓ 반주, Alt+↑/↓ 보컬 (2 dB 스텝)
+      if (event.code === 'ArrowUp' || event.code === 'ArrowDown') {
+        event.preventDefault()
+        const delta = event.code === 'ArrowUp' ? 2 : -2
+        if (event.ctrlKey) player.setInstDb(clampDb(player.instDb + delta))
+        else if (event.altKey) player.setVocalDb(clampDb(player.vocalDb + delta))
+        else player.setMasterDb(player.masterDb + delta)
+        return
+      }
+      if (event.ctrlKey || event.altKey) return
+
+      switch (event.code) {
+        case 'Space':
+          // 보정 모드의 탭(Space)과 포커스된 버튼의 네이티브 활성화가 우선
+          if (useLyricsStore.getState().correcting) return
+          if (target instanceof HTMLButtonElement) return
+          event.preventDefault()
+          if (player.engineState === 'playing') player.pause()
+          else player.play()
+          break
+        case 'ArrowLeft':
+          event.preventDefault()
+          player.seek(Math.max(0, player.position - 5))
+          break
+        case 'ArrowRight':
+          event.preventDefault()
+          player.seek(Math.min(player.duration, player.position + 5))
+          break
+        case 'Minus':
+          player.setPitch(player.pitch - 1)
+          break
+        case 'Equal':
+          player.setPitch(player.pitch + 1)
+          break
+        case 'KeyM':
+          player.toggleMasterMute()
+          break
+        case 'KeyV':
+          player.toggleVocalMute()
+          break
+        case 'KeyL':
+          if (player.loop) player.setLoop(null)
+          break
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showSettings])
 
   useEffect(() => {
     if (currentTrackId) void loadLyrics(currentTrackId)
@@ -283,6 +363,7 @@ function App(): React.JSX.Element {
 
       <Transport />
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} />}
     </div>
   )
 }

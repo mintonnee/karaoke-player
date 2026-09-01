@@ -109,6 +109,10 @@
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 
+.modal-sm {
+  width: min(440px, calc(100vw - 48px));
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -169,6 +173,28 @@
   border: 1px solid var(--ev-c-gray-2);
   background-color: var(--ev-c-black-mute);
   color: var(--ev-c-text-1);
+}
+
+.shortcut-list {
+  padding: 0;
+  font-size: 13px;
+}
+
+.shortcut-list li {
+  margin-bottom: 4px;
+}
+
+.shortcut-list kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 6px;
+  border: 1px solid var(--ev-c-gray-2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background-color: var(--ev-c-black-mute);
+  font-family: inherit;
+  font-size: 11px;
+  text-align: center;
 }
 
 .settings-note {

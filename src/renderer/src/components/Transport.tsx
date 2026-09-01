@@ -30,6 +30,7 @@ function Transport(): React.JSX.Element | null {
     duration,
     instDb,
     vocalDb,
+    masterDb,
     instMuted,
     vocalMuted,
     masterMuted,
@@ -42,6 +43,7 @@ function Transport(): React.JSX.Element | null {
     seek,
     setInstDb,
     setVocalDb,
+    setMasterDb,
     toggleInstMute,
     toggleVocalMute,
     toggleMasterMute,
@@ -152,7 +154,7 @@ function Transport(): React.JSX.Element | null {
         <div className="player-transport">
           <button
             className="play-toggle"
-            title={playing ? '일시정지' : '재생'}
+            title={playing ? '일시정지 (Space)' : '재생 (Space)'}
             disabled={!active}
             onClick={playing ? pause : play}
           >
@@ -162,16 +164,8 @@ function Transport(): React.JSX.Element | null {
             <MdStop />
           </button>
           <button
-            className={masterMuted ? 'muted-on' : ''}
-            title={masterMuted ? '전체 뮤트 해제' : '전체 뮤트'}
-            disabled={!active}
-            onClick={toggleMasterMute}
-          >
-            {masterMuted ? <MdVolumeOff /> : <MdVolumeUp />}
-          </button>
-          <button
             className={loop ? 'loop-on' : ''}
-            title={loop ? '루프 해제' : '루프 없음 — 시크바 아래 바를 드래그해 지정'}
+            title={loop ? '루프 해제 (L)' : '루프 없음 — 시크바 아래 바를 드래그해 지정'}
             disabled={!loop}
             onClick={() => setLoop(null)}
           >
@@ -183,6 +177,28 @@ function Transport(): React.JSX.Element | null {
         </div>
 
         <div className="player-controls">
+          <div className="fader">
+            <span className={masterMuted ? 'muted' : ''}>전체 {masterDb} dB</span>
+            <div className="fader-row">
+              <button
+                className={`icon-btn${masterMuted ? ' muted-on' : ''}`}
+                title={masterMuted ? '전체 뮤트 해제 (M)' : '전체 뮤트 (M)'}
+                disabled={!active}
+                onClick={toggleMasterMute}
+              >
+                {masterMuted ? <MdVolumeOff /> : <MdVolumeUp />}
+              </button>
+              <input
+                type="range"
+                min={-60}
+                max={0}
+                step={1}
+                value={masterDb}
+                disabled={!active || masterMuted}
+                onChange={(e) => setMasterDb(Number(e.target.value))}
+              />
+            </div>
+          </div>
           <div className="fader">
             <span className={instMuted ? 'muted' : ''}>반주 {instDb} dB</span>
             <div className="fader-row">
@@ -210,7 +226,7 @@ function Transport(): React.JSX.Element | null {
             <div className="fader-row">
               <button
                 className={`icon-btn${vocalMuted ? ' muted-on' : ''}`}
-                title={vocalMuted ? '보컬 뮤트 해제' : '보컬 뮤트'}
+                title={vocalMuted ? '보컬 뮤트 해제 (V)' : '보컬 뮤트 (V)'}
                 disabled={!active}
                 onClick={toggleVocalMute}
               >

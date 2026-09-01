@@ -44,7 +44,7 @@
 2. `pnpm build:msix`가 `dist/`에 appx 패키지를 생성하고, 패키지 안에 `yt-dlp.exe`가 없다 (그 외 리소스 구성은 기준 1과 동일).
 3. venv가 없는 상태(첫 실행 또는 `<userData>/sidecar` 삭제 후)에서 패키징된 앱을 실행하면 부트스트랩 UI가 단계/진행 상태를 표시하고, 완료 후 로컬 파일 임포트 → 분리 → 재생이 동작한다.
 4. 부트스트랩 완료 후 앱을 재시작하면 부트스트랩 UI 없이 즉시 라이브러리 화면이 뜬다 (venv 재사용, 준비 판정은 uv.lock 해시 마커).
-5. zip판에서 YouTube URL을 입력하면 다운로드 진행률이 표시되고, 완료 시 트랙이 라이브러리에 추가되며 기존 파이프라인(분리 → 가사)이 자동 시작된다.
+5. zip판에서 YouTube URL을 입력하면 다운로드 진행률이 표시되고, 완료 시 트랙이 라이브러리에 추가되며 기존 파이프라인(분리 → 가사)이 자동 시작된다. 트랙 커버로 YouTube 썸네일이 표시된다.
 6. yt-dlp 리소스가 없는 실행(MSIX판 또는 dev에서 리소스 미배치)에서는 URL 임포트 UI가 렌더링되지 않는다.
 7. 부트스트랩 실패(네트워크 차단으로 재현) 시 오류 메시지와 재시도 버튼이 표시되고 앱이 크래시하지 않는다. 재시도로 이어서 진행할 수 있다.
 8. `pnpm dev`는 기존과 동일하게 동작한다 — 레포의 `sidecar/`를 `uv run`으로 실행하고 부트스트랩을 건너뛴다.
@@ -88,7 +88,8 @@
 
 - 활성화 조건: 메인 프로세스가 시작 시 `resources/bin/yt-dlp.exe`와 `resources/bin/deno.exe` **둘 다** 존재하는지 확인해 preload 플래그로 렌더러에 노출한다. dev에서는 `resources/bin`에 두 파일을 두면 켜진다 (기준 6의 dev 검증 경로).
 - UI: 라이브러리 패널 헤더의 `+ 가져오기` 옆에 URL 입력 진입점을 추가한다. 다운로드 중에는 진행률(yt-dlp stdout의 `%` 파싱)을 표시한다.
-- 다운로드: `yt-dlp -f "bestaudio[ext=m4a]" --no-playlist --js-runtimes deno:<resources>/bin/deno.exe -o <scratch>/%(title)s [%(id)s].%(ext)s <url>`. m4a 고정으로 ffmpeg 동봉을 회피하고, JS 런타임은 동봉 `deno.exe`를 경로로 지정해 PATH에 의존하지 않는다. m4a 미제공 영상은 오류로 안내한다 (비목표 표 참조).
+- 다운로드: `yt-dlp -f "bestaudio[ext=m4a]" --no-playlist --write-thumbnail --js-runtimes deno:<resources>/bin/deno.exe -o <scratch>/%(title)s [%(id)s].%(ext)s <url>`. m4a 고정으로 ffmpeg 동봉을 회피하고, JS 런타임은 동봉 `deno.exe`를 경로로 지정해 PATH에 의존하지 않는다. m4a 미제공 영상은 오류로 안내한다 (비목표 표 참조).
+- 커버: YouTube m4a에는 내장 앨범 아트가 없으므로 `--write-thumbnail`로 받은 썸네일 파일(보통 webp)을 임포트 성공 후 `tracks/<id>/cover.jpg`로 복사한다. 파일명은 확장자와 무관하게 고정한다 — 렌더러 `<img>`가 매직 바이트로 포맷을 판별하는 기존 관례(사이드카 `cover` 명령과 동일). 썸네일 변환(`--convert-thumbnails`)과 태그 내장(`--embed-thumbnail`)은 ffmpeg가 필요해 쓰지 않는다. 기존 `CoverService`는 내장 아트 부재 시 `cover.none` 마커만 남기고 `cover.jpg`를 쓰지 않으므로 충돌이 없다.
 - 완료된 파일 경로를 기존 `importService.importFiles([path])`에 전달한다 — probe/분리/가사 파이프라인은 수정하지 않는다. 임포트 성공 후 스크래치 파일은 삭제한다 (원본은 §4.3 데이터 레이아웃대로 트랙 디렉토리에 복사돼 있음).
 - 실패(잘못된 URL, 지역 제한, m4a 없음)는 기존 임포트 거부(`rejections`) UI로 표면화한다.
 

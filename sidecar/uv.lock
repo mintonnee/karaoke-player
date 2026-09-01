@@ -368,6 +368,7 @@ dependencies = [
     { name = "demucs", version = "4.0.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
     { name = "demucs", version = "4.1.0", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
     { name = "faster-whisper" },
+    { name = "lemon-pyopenjtalk-prebuilt" },
     { name = "mutagen" },
     { name = "soundfile" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
@@ -377,17 +378,12 @@ dependencies = [
     { name = "uroman" },
 ]
 
-[package.optional-dependencies]
-ja = [
-    { name = "pyopenjtalk" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "demucs", specifier = ">=4.0.1" },
     { name = "faster-whisper", specifier = ">=1.1" },
+    { name = "lemon-pyopenjtalk-prebuilt", specifier = ">=0.0.9" },
     { name = "mutagen", specifier = ">=1.47" },
-    { name = "pyopenjtalk", marker = "extra == 'ja'", specifier = ">=0.4" },
     { name = "soundfile", specifier = ">=0.12" },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = "==2.8.*" },
     { name = "torch", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = "==2.8.*", index = "https://download.pytorch.org/whl/cu128" },
@@ -395,7 +391,6 @@ requires-dist = [
     { name = "torchaudio", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = "==2.8.*", index = "https://download.pytorch.org/whl/cu128" },
     { name = "uroman", specifier = ">=1.3" },
 ]
-provides-extras = ["ja"]
 
 [[package]]
 name = "lameenc"
@@ -430,6 +425,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b0/d2/0a06cee4ebec732a0d89a3467093e268078c2fc96c52cdbd1989e433d542/lameenc-1.8.4-pp311-pypy311_pp73-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_34_aarch64.whl", hash = "sha256:e24a0358e1bc8f791c5b861f458ba568e7bdc42a9912b7415bd6f15c2df45388", size = 238274, upload-time = "2026-06-27T15:08:07.472Z" },
     { url = "https://files.pythonhosted.org/packages/0f/d4/086da93a95a53b641511d46f7f757f8c3a46041079a6250dfe1c23a4a53b/lameenc-1.8.4-pp311-pypy311_pp73-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8dda5242e426d73ce915c765147dc0b9fc7f4b639745a1a45dabde0104f88595", size = 233700, upload-time = "2026-06-27T14:59:03.197Z" },
     { url = "https://files.pythonhosted.org/packages/86/1c/2e18b64d729d42d28bcce4f974d9f2c0bc69749abe7c8733a3e1368f10a0/lameenc-1.8.4-pp311-pypy311_pp73-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_34_x86_64.whl", hash = "sha256:2d2fd072c981e85777f3eb3c6f2e28da0a276934830bda8c9a32d64ffdd52130", size = 233700, upload-time = "2026-06-27T15:03:09.375Z" },
+]
+
+[[package]]
+name = "lemon-pyopenjtalk-prebuilt"
+version = "0.0.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1b/0d/2ce01764e21d83a8e34a8e37fc8cfe71af251872041f7a78df8366d4e523/lemon_pyopenjtalk_prebuilt-0.0.10.tar.gz", hash = "sha256:1fab0b6b34331d87246288ea3ad2faa151252b1ef72676f4b252ce6ea266a03a", size = 24890137, upload-time = "2026-04-17T05:36:56.203Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/7f/a330e03edf9a87fdcc6e39ae1268ee75bcf0bd35c0ee1a17ca1006dbda8b/lemon_pyopenjtalk_prebuilt-0.0.10-cp311-cp311-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:1aab80c9d7a480c598abfe0c81e13dddb54de63819285a597269abc435a20d5c", size = 30279745, upload-time = "2026-04-17T05:36:11.522Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/9a/7050263f10def6c5d93479d95515f86818ff4fdcc20b835c4822f3807989/lemon_pyopenjtalk_prebuilt-0.0.10-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:57885455756ffdaffef4284cf43d4683d754381c1c245af8004c8d3aad64ea3e", size = 30334234, upload-time = "2026-04-17T05:36:15.069Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/bf/381dc4ff39d45facaa1c1ea9df2cb1db7340baba09ced51d1f0e4dad36f2/lemon_pyopenjtalk_prebuilt-0.0.10-cp311-cp311-win_amd64.whl", hash = "sha256:202df73f98f85ce41a2e4f215868378f24f51a43b7297e56e1e55cfffcf630ff", size = 24652353, upload-time = "2026-04-17T05:36:18.378Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/b1/774aeea550a8dd21e1565fcfd54312e501d2ae28dd5d1fb3c85088fb8baa/lemon_pyopenjtalk_prebuilt-0.0.10-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:63b86cddb8129a8a02f39dc2e9f00d4f0649bc37e6e6d591cda7a59490a91f16", size = 30285567, upload-time = "2026-04-17T05:36:22.603Z" },
+    { url = "https://files.pythonhosted.org/packages/53/1c/e05e672b24f920eb038914eaf13a7b430f27e322f02907a43625dcf295f5/lemon_pyopenjtalk_prebuilt-0.0.10-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:f1c0becec103e8ec514c98eb923e53dbab46709eb141bb5c26c7e99c40a9d233", size = 30346301, upload-time = "2026-04-17T05:36:26.566Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/ba/d80cf0e9b9be9c8d8d497fd1fc44bc34d93faa4046da707b59fa24f0751c/lemon_pyopenjtalk_prebuilt-0.0.10-cp312-cp312-win_amd64.whl", hash = "sha256:dfca71c1e5ffe548b9e7490acb1ec946f1603c43f110d7783c1409188badb549", size = 24653790, upload-time = "2026-04-17T05:36:30.227Z" },
 ]
 
 [[package]]
@@ -766,17 +780,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/1b/7d/92392ff7815c21062
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl", hash = "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992", size = 48172, upload-time = "2026-01-21T14:26:50.693Z" },
 ]
-
-[[package]]
-name = "pyopenjtalk"
-version = "0.4.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "tqdm" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/58/74/ccd31c696f047ba381f9b11a504bf1199756c3f30f3de64e3eeb83e10b4a/pyopenjtalk-0.4.1.tar.gz", hash = "sha256:d5ada46f7fc2b52c1c79c273eb9668ff6ad7ab276a8db9d8be119ef93440f0dc", size = 1397999, upload-time = "2025-04-08T06:27:46.528Z" }
 
 [[package]]
 name = "pyyaml"

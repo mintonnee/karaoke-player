@@ -4,7 +4,8 @@ import type { AlignLang } from '../../../shared/types'
 
 function guessLang(text: string): AlignLang {
   if (/[가-힣]/.test(text)) return 'ko'
-  if (/[ぁ-んァ-ヶ]/.test(text)) return 'ja'
+  // 가나 외에 한자도 검사 — 한자 비중이 높은 일본어 가사가 en으로 오판되는 것을 막는다
+  if (/[ぁ-んァ-ヶ一-鿿々]/.test(text)) return 'ja'
   return 'en'
 }
 

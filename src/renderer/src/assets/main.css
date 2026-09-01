@@ -284,6 +284,16 @@
   transform: scale(1.04);
 }
 
+/* 일본어 가사 아래 한글 발음 힌트 (통용 표기). 색은 줄 상태(past/current)를 상속 */
+.lyrics-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  opacity: 0.75;
+}
+
 .lyrics-line-progress {
   display: block;
   margin-top: 6px;
@@ -409,6 +419,8 @@
 .lyrics-tools {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
   margin-top: 6px;
 }
 

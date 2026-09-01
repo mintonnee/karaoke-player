@@ -56,6 +56,10 @@ export function registerIpcHandlers({
     lyricsService.saveLines(trackId, lines)
   )
 
+  ipcMain.handle(IPC_CHANNELS.lyricsPronounce, (_event, trackId: string) =>
+    lyricsService.pronounce(trackId)
+  )
+
   ipcMain.handle(IPC_CHANNELS.listTracks, (_event, query?: string): Track[] =>
     store.listTracks(query)
   )

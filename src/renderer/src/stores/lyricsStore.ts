@@ -5,7 +5,8 @@ import type {
   AlignLang,
   LyricsPayload,
   LyricsProgressEvent,
-  LyricsSource
+  LyricsSource,
+  PronunciationLine
 } from '../../../shared/types'
 
 /** §4.4: 가창 특성상 이 값 미만이면 정렬을 의심하고 UI에 경고한다 */
@@ -19,9 +20,13 @@ interface LyricsState {
   source: LyricsSource
   /** 싱크는 없지만 plain 가사는 있는 경우 (정렬 입력으로 사용) */
   plain: string | null
+  /** 줄별 한글 발음 힌트. 생성 전이거나 매칭되는 힌트가 없으면 null */
+  hints: (string | null)[] | null
+  /** 힌트 표시 여부 (세션 단위 토글) */
+  showHints: boolean
   loading: boolean
-  /** 정렬/전사 진행 상태 */
-  working: 'align' | 'transcribe' | null
+  /** 정렬/전사/발음 생성 진행 상태 */
+  working: 'align' | 'transcribe' | 'pronounce' | null
   progress: LyricsProgressEvent | null
   workError: string | null
   /** S5.3 수동 보정 모드 */
@@ -32,6 +37,9 @@ interface LyricsState {
   refetch: (trackId: string) => Promise<void>
   align: (trackId: string, text: string, lang: AlignLang, fromLrclibPlain: boolean) => Promise<void>
   transcribe: (trackId: string) => Promise<string>
+  /** 일본어 가사에 한글 발음 힌트 생성 (사이드카 pronounce) */
+  pronounce: (trackId: string) => Promise<void>
+  toggleHints: () => void
   toggleCorrection: () => void
   selectLine: (index: number) => void
   /** 재생 중 탭: 선택 줄 시작점을 현재 위치로 지정하고 저장 후 다음 줄 선택 */
@@ -41,21 +49,33 @@ interface LyricsState {
 
 function fromPayload(
   payload: LyricsPayload
-): Pick<LyricsState, 'lines' | 'confs' | 'source' | 'plain'> {
-  if (payload.lines && payload.lines.length > 0) {
-    return {
-      lines: payload.lines.map((line) => ({ time: line.t, text: line.text })),
-      confs: payload.lines.map((line) => line.conf),
-      source: payload.source,
-      plain: payload.plain
-    }
-  }
+): Pick<LyricsState, 'lines' | 'confs' | 'source' | 'plain' | 'hints'> {
+  const aligned = payload.lines && payload.lines.length > 0 ? payload.lines : null
+  const lines: LyricLine[] = aligned
+    ? aligned.map((line) => ({ time: line.t, text: line.text }))
+    : payload.lrc
+      ? parseLrc(payload.lrc)
+      : []
   return {
-    lines: payload.lrc ? parseLrc(payload.lrc) : [],
-    confs: null,
+    lines,
+    confs: aligned ? aligned.map((line) => line.conf) : null,
     source: payload.source,
-    plain: payload.plain
+    plain: payload.plain,
+    hints: resolveHints(lines, payload.pronunciation)
   }
+}
+
+/** 발음 힌트를 표시 줄에 인덱스로 매칭한다. 생성 후 가사가 바뀐 줄의 힌트는 버린다 */
+function resolveHints(
+  lines: LyricLine[],
+  pronunciation: PronunciationLine[] | null
+): (string | null)[] | null {
+  if (!pronunciation) return null
+  const hints = lines.map((line, i) => {
+    const entry = pronunciation[i]
+    return entry && entry.text === line.text && entry.hint !== '' ? entry.hint : null
+  })
+  return hints.some((hint) => hint !== null) ? hints : null
 }
 
 export const useLyricsStore = create<LyricsState>((set, get) => {
@@ -71,6 +91,8 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
     confs: null,
     source: 'none',
     plain: null,
+    hints: null,
+    showHints: true,
     loading: false,
     working: null,
     progress: null,
@@ -83,7 +105,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
       try {
         apply(await window.api.getLyrics(trackId))
       } catch {
-        set({ lines: [], confs: null, source: 'none', plain: null, loading: false })
+        set({ lines: [], confs: null, source: 'none', plain: null, hints: null, loading: false })
       }
     },
     refetch: async (trackId) => {
@@ -121,6 +143,19 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
         return ''
       }
     },
+    pronounce: async (trackId) => {
+      set({ working: 'pronounce', workError: null, progress: null })
+      try {
+        apply(await window.api.pronounceLyrics(trackId))
+      } catch (error) {
+        set({
+          working: null,
+          progress: null,
+          workError: error instanceof Error ? error.message : String(error)
+        })
+      }
+    },
+    toggleHints: () => set((state) => ({ showHints: !state.showHints })),
     toggleCorrection: () => set((state) => ({ correcting: !state.correcting, selectedIndex: 0 })),
     selectLine: (index) => set({ selectedIndex: index }),
     tap: async (trackId, positionSec) => {
@@ -148,6 +183,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
         confs: null,
         source: 'none',
         plain: null,
+        hints: null,
         loading: false,
         working: null,
         progress: null,

@@ -44,6 +44,8 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.lyricsTranscribe, trackId),
   saveLyricsLines: (trackId: string, lines: AlignedLine[]): Promise<LyricsPayload> =>
     ipcRenderer.invoke(IPC_CHANNELS.lyricsSaveLines, trackId, lines),
+  pronounceLyrics: (trackId: string): Promise<LyricsPayload> =>
+    ipcRenderer.invoke(IPC_CHANNELS.lyricsPronounce, trackId),
   onLyricsProgress: (callback: (event: LyricsProgressEvent) => void): (() => void) =>
     subscribe(IPC_CHANNELS.lyricsProgress, callback),
   /** §6 KARAOKE_GUIDE_VOCAL_DB (기본 -20 dB) */

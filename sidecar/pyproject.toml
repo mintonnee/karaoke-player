@@ -11,11 +11,9 @@ dependencies = [
     "soundfile>=0.12",
     "uroman>=1.3",
     "faster-whisper>=1.1",
+    # 일본어 한자→가나 변환 (정렬·발음 힌트). prebuilt 휠이라 Windows에서도 기본 설치 가능
+    "lemon-pyopenjtalk-prebuilt>=0.0.9",
 ]
-
-[project.optional-dependencies]
-# 일본어 정렬(한자→가나 변환). Windows 휠이 없으면 별도 설치 필요해 extra로 분리
-ja = ["pyopenjtalk>=0.4"]
 
 [project.scripts]
 karaoke_worker = "karaoke_worker.cli:main"

@@ -40,6 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
     transcribe_parser.add_argument("--out", required=True)
     transcribe_parser.add_argument("--json", action="store_true", default=True)
 
+    pronounce_parser = sub.add_parser("pronounce", help="hangul pronunciation hints for ja lyrics")
+    pronounce_parser.add_argument("--lyrics", required=True)
+    pronounce_parser.add_argument("--out", required=True)
+    pronounce_parser.add_argument("--json", action="store_true", default=True)
+
     return parser
 
 
@@ -78,6 +83,10 @@ def main() -> None:
             from .transcribe import transcribe
 
             emit_done(transcribe(args.vocal, args.lang, args.out))
+        elif args.command == "pronounce":
+            from .pronounce import pronounce
+
+            emit_done(pronounce(args.lyrics, args.out))
     except WorkerError as e:
         emit_error(e.code, e.msg)
         sys.exit(1)

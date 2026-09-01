@@ -38,7 +38,7 @@
 | 오디오 (v1)     | Web Audio API + AudioWorklet        | `AudioEngine` 인터페이스 뒤에 숨김                      |
 | 피치 시프트     | soundtouchjs (WASM/Worklet)         | Rubber Band WASM으로 교체 가능하게                      |
 | 분리            | Python 사이드카 + Demucs            | 모델 `htdemucs_ft`, `--two-stems=vocals`                |
-| 가사 정렬       | Python 사이드카 + torchaudio MMS_FA | 일본어는 pyopenjtalk로 가나 변환 후 정렬 (`--extra ja`) |
+| 가사 정렬       | Python 사이드카 + torchaudio MMS_FA | 일본어는 pyopenjtalk로 가나 변환 후 정렬 (기본 설치)    |
 | 전사 (fallback) | faster-whisper                      | 가사 텍스트가 전혀 없을 때만                            |
 | 가사 소스       | LRCLIB API                          | https://lrclib.net/api                                  |
 | DB              | SQLite (better-sqlite3)             | 라이브러리 메타데이터                                   |

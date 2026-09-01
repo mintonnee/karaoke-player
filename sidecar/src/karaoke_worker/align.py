@@ -47,7 +47,7 @@ def _to_kana(text: str) -> str:
     except ImportError as e:
         raise WorkerError(
             "JA_NOT_AVAILABLE",
-            "pyopenjtalk가 설치되지 않았습니다. `uv sync --extra ja`로 설치하세요.",
+            "pyopenjtalk가 설치되지 않았습니다. sidecar에서 `uv sync`로 설치하세요.",
         ) from e
     return pyopenjtalk.g2p(text, kana=True)
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { currentLineIndex, lineProgress } from '../../../shared/lrc'
 import LyricsSetup from './LyricsSetup'
 import { CONF_WARN_THRESHOLD, useLyricsStore } from '../stores/lyricsStore'
@@ -18,11 +18,28 @@ function LyricsView(): React.JSX.Element | null {
   const position = usePlayerStore((s) => s.position)
   const duration = usePlayerStore((s) => s.duration)
   const seek = usePlayerStore((s) => s.seek)
-  const { lines, confs, loading, correcting, selectedIndex, toggleCorrection, selectLine, tap } =
-    useLyricsStore()
+  const {
+    lines,
+    confs,
+    hints,
+    showHints,
+    working,
+    workError,
+    loading,
+    correcting,
+    selectedIndex,
+    toggleCorrection,
+    selectLine,
+    tap,
+    pronounce,
+    toggleHints
+  } = useLyricsStore()
 
   const containerRef = useRef<HTMLDivElement>(null)
   const lineRefs = useRef<(HTMLParagraphElement | null)[]>([])
+
+  // 가나가 한 줄이라도 있으면 일본어 가사로 보고 발음 힌트 버튼을 노출한다
+  const isJa = useMemo(() => lines.some((line) => /[ぁ-ゟ゠-ヿ]/.test(line.text)), [lines])
 
   const index = currentLineIndex(lines, position)
   const waitingIntro = lines.length > 0 && index === -1
@@ -119,6 +136,7 @@ function LyricsView(): React.JSX.Element | null {
                 </span>
               )}
               {line.text === '' ? '♪' : line.text}
+              {showHints && hints?.[i] && <span className="lyrics-hint">{hints[i]}</span>}
               {state === 'current' && (
                 <span className="lyrics-line-progress">
                   <span style={{ width: `${progress * 100}%` }} />
@@ -129,9 +147,20 @@ function LyricsView(): React.JSX.Element | null {
         })}
         <div className="lyrics-tail" />
       </div>
-      {confs && (
+      {(confs || isJa) && (
         <div className="lyrics-tools">
-          <button onClick={toggleCorrection}>타이밍 보정</button>
+          {workError && <span className="lyrics-error">실패: {workError}</span>}
+          {isJa &&
+            (hints ? (
+              <button onClick={toggleHints}>
+                {showHints ? '한글 발음 끄기' : '한글 발음 켜기'}
+              </button>
+            ) : (
+              <button disabled={working === 'pronounce'} onClick={() => void pronounce(track.id)}>
+                {working === 'pronounce' ? '발음 생성 중…' : '한글 발음 달기'}
+              </button>
+            ))}
+          {confs && <button onClick={toggleCorrection}>타이밍 보정</button>}
         </div>
       )}
     </div>

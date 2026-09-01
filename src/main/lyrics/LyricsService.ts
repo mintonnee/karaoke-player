@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { formatLrc } from '../../shared/lrc'
+import { formatLrc, parseLrc } from '../../shared/lrc'
 import { IPC_CHANNELS } from '../../shared/types'
 import type {
   AlignLang,
@@ -8,6 +8,7 @@ import type {
   LyricsPayload,
   LyricsProgressEvent,
   LyricsSource,
+  PronunciationLine,
   Track
 } from '../../shared/types'
 import type { JobQueue } from '../library/JobQueue'
@@ -46,11 +47,15 @@ export class LyricsService {
     if (!track) throw new Error(`track not found: ${trackId}`)
     const dir = this.trackDir(trackId)
     const alignJson = await readIfExists(join(dir, 'align.json'))
+    const pronunciationJson = await readIfExists(join(dir, 'pronunciation.json'))
     return {
       source: track.lyricsSource,
       lrc: await readIfExists(join(dir, 'lyrics.lrc')),
       plain: await readIfExists(join(dir, 'lyrics.txt')),
-      lines: alignJson ? (JSON.parse(alignJson) as AlignedLine[]) : null
+      lines: alignJson ? (JSON.parse(alignJson) as AlignedLine[]) : null,
+      pronunciation: pronunciationJson
+        ? (JSON.parse(pronunciationJson) as PronunciationLine[])
+        : null
     }
   }
 
@@ -119,6 +124,31 @@ export class LyricsService {
       await this.writeAlignJson(trackId, result.lines)
       this.updateSource(trackId, fromLrclibPlain ? 'lrclib_plain_aligned' : 'user_aligned')
     })
+    return this.getLyrics(trackId)
+  }
+
+  /**
+   * 일본어 가사에 한글 발음 힌트(통용 표기)를 생성해 pronunciation.json에 저장한다.
+   * 표시 우선순위(align.json → lyrics.lrc)와 같은 줄 목록을 입력으로 쓴다.
+   * GPU를 쓰지 않는 가벼운 작업이라 JobQueue를 거치지 않는다.
+   */
+  async pronounce(trackId: string): Promise<LyricsPayload> {
+    const payload = await this.getLyrics(trackId)
+    const texts =
+      payload.lines && payload.lines.length > 0
+        ? payload.lines.map((line) => line.text)
+        : payload.lrc
+          ? parseLrc(payload.lrc).map((line) => line.text)
+          : []
+    if (texts.length === 0) throw new Error('발음을 생성할 가사가 없습니다')
+
+    const dir = this.trackDir(trackId)
+    const inputPath = join(dir, 'pronounce-input.txt')
+    await writeFile(inputPath, texts.join('\n'), 'utf-8')
+    await this.options.sidecar.run(
+      ['pronounce', '--lyrics', inputPath, '--out', join(dir, 'pronunciation.json'), '--json'],
+      { onProgress: (event) => this.notifyProgress(trackId, 'pronounce', event.pct, event.msg) }
+    )
     return this.getLyrics(trackId)
   }
 

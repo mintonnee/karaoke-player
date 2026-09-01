@@ -35,6 +35,12 @@ export interface AlignedLine {
 
 export type AlignLang = 'ja' | 'ko' | 'en'
 
+/** 한글 발음 힌트 한 줄 (pronunciation.json). text는 생성 시점의 가사 원문(스테일 검출용) */
+export interface PronunciationLine {
+  text: string
+  hint: string
+}
+
 /** 트랙의 저장된 가사 (§4.3 lyrics.lrc / lyrics.txt / align.json) */
 export interface LyricsPayload {
   source: LyricsSource
@@ -44,11 +50,13 @@ export interface LyricsPayload {
   plain: string | null
   /** 정렬 결과(conf 포함). forced alignment를 거친 경우에만 존재 */
   lines: AlignedLine[] | null
+  /** 일본어 가사의 한글 발음 힌트. 생성한 경우에만 존재 */
+  pronunciation: PronunciationLine[] | null
 }
 
 export interface LyricsProgressEvent {
   trackId: string
-  stage: 'align' | 'transcribe'
+  stage: 'align' | 'transcribe' | 'pronounce'
   pct: number
   msg?: string
 }
@@ -100,6 +108,7 @@ export const IPC_CHANNELS = {
   lyricsAlign: 'lyrics:align',
   lyricsTranscribe: 'lyrics:transcribe',
   lyricsSaveLines: 'lyrics:save-lines',
+  lyricsPronounce: 'lyrics:pronounce',
   lyricsProgress: 'lyrics:progress',
   trackUpdated: 'library:track-updated',
   importProgress: 'library:import-progress'

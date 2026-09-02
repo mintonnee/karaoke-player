@@ -1,0 +1,129 @@
+# Karaoke Player
+
+로컬 음원 파일을 Demucs로 보컬/반주 분리한 뒤, 반주 + 가이드 보컬 + 싱크 가사 + 키 변경으로 노래방처럼 부를 수 있게 하는 Windows 데스크톱 앱. 모든 처리는 로컬에서 수행하며 외부 업로드가 없다.
+
+## 기능
+
+- **임포트**: MP3 / WAV / FLAC / M4A 파일을 드래그 앤 드롭하거나 `+ 가져오기`로 추가. zip 배포판에서는 YouTube URL 입력으로도 가져올 수 있다 (동봉된 yt-dlp 사용, MSIX/Store판에는 없음).
+- **분리**: Demucs 2-stem(vocals / no_vocals). 모델은 설정에서 선택 (기본 `htdemucs_ft`).
+- **재생**: 반주 + 가이드 보컬(기본 -20 dB, 뮤트 가능), 시크, 구간 루프, 전체/반주/보컬 개별 음량.
+- **가사**: LRCLIB에서 싱크 가사를 받아 줄 단위 하이라이트. 싱크 가사가 없으면 텍스트를 강제 정렬(torchaudio MMS_FA)하고, 텍스트조차 없으면 faster-whisper로 전사. 일본어 가사는 한글 발음 힌트를 붙인다.
+- **키 변경**: ±6 반음 (soundtouchjs AudioWorklet).
+- **라이브러리**: 처리한 곡 목록, 검색(한글 초성·일본어 발음 키 포함), 메타 편집, 앨범 커버, 삭제.
+
+## 설치 (사용자)
+
+### 요구 사항
+
+- Windows 11 x64. 시스템 Python은 필요 없다 (uv가 관리형 Python을 내려받는다).
+- 첫 실행에 인터넷 연결 필수. Python 환경(torch cu128 포함, 수 GB)을 사용자 디렉터리에 내려받는다.
+- NVIDIA GPU를 권장한다. CUDA가 없으면 CPU로 동작하지만 분리·정렬이 매우 느리다 (`KARAOKE_DEVICE=cpu`로 강제 가능).
+
+### zip (포터블)
+
+1. 릴리즈 zip을 원하는 폴더에 푼다 (예: `%USERPROFILE%\.local\share\karaoke-player`).
+2. `karaoke-player.exe`를 실행한다. 무서명이라 SmartScreen 경고가 뜨면 "추가 정보 → 실행"을 누른다.
+3. 첫 실행에서 부트스트랩 화면이 뜨고 Python 환경을 구성한다. 실패하면 오류와 함께 "다시 시도" 버튼이 나온다. 이미 받은 파일은 재사용된다.
+4. 완료되면 라이브러리 화면으로 전환된다. 이후 실행에서는 부트스트랩을 건너뛴다.
+
+### MSIX (Microsoft Store)
+
+Store 제출용 패키지다. URL 임포트(yt-dlp)는 포함하지 않는다. 그 외 동작은 zip판과 같다.
+
+### 데이터 위치
+
+모든 데이터는 `%APPDATA%\karaoke-player` 아래에 있다 (dev 실행과 패키징 앱이 같은 경로를 쓴다).
+
+| 경로                      | 내용                                  |
+| ------------------------- | ------------------------------------- |
+| `library.sqlite`          | 라이브러리 메타데이터                 |
+| `tracks/<id>/`            | 원본 복사본, 분리 스템, 가사, 커버    |
+| `sidecar/`                | 첫 실행에 구성한 Python 환경(`.venv`) |
+| `uv-cache/`, `uv-python/` | uv 캐시와 관리형 Python               |
+| `settings.json`           | 앱 설정                               |
+
+Demucs / whisper 모델은 각 라이브러리의 자체 캐시(torch hub, Hugging Face)에 첫 사용 시 내려받는다.
+
+## 단축키
+
+| 키               | 동작                                        |
+| ---------------- | ------------------------------------------- |
+| `Space`          | 재생 / 일시정지 (타이밍 보정 모드에서는 탭) |
+| `←` `→`          | 5초 뒤로 / 앞으로                           |
+| `↑` `↓`          | 전체 음량                                   |
+| `Ctrl` + `↑` `↓` | 반주 음량                                   |
+| `Alt` + `↑` `↓`  | 보컬 음량                                   |
+| `−` `=`          | 키 내림 / 올림                              |
+| `M` / `V` / `L`  | 전체 뮤트 / 보컬 뮤트 / 루프 해제           |
+| `/`              | 단축키 도움말                               |
+
+## 환경 변수
+
+| 변수                       | 기본 | 설명                                         |
+| -------------------------- | ---- | -------------------------------------------- |
+| `KARAOKE_DEVICE`           | auto | torch 디바이스 강제 (`cpu` / `cuda` / `mps`) |
+| `KARAOKE_DEMUCS_SHIFTS`    | 2    | Demucs 랜덤 시프트 평균화 횟수 (품질↑ 시간↑) |
+| `KARAOKE_MAX_DURATION_SEC` | 900  | 초과 시 임포트 거부                          |
+| `KARAOKE_GUIDE_VOCAL_DB`   | -20  | 가이드 보컬 기본 게인                        |
+
+## 개발
+
+### 요구 사항
+
+- Node.js 24, pnpm 11
+- [uv](https://docs.astral.sh/uv/) (PATH에 있어야 함). dev 모드는 레포의 `sidecar/`를 `uv run`으로 실행하고 부트스트랩을 건너뛴다.
+
+### 실행
+
+```bash
+pnpm install
+pnpm dev          # Electron + Vite HMR
+```
+
+URL 임포트를 dev에서 켜려면 `pnpm prepare:resources`로 `resources/bin/`에 `yt-dlp.exe`·`deno.exe`를 내려받는다 (gitignore 대상).
+
+### 검증
+
+```bash
+pnpm typecheck && pnpm lint && pnpm test
+```
+
+### 빌드
+
+```bash
+pnpm build:zip    # dist/karaoke-player-<ver>-win-x64.zip (uv + yt-dlp + deno 동봉)
+pnpm build:msix   # dist/karaoke-player-<ver>-win-x64.appx (yt-dlp 제외)
+```
+
+두 스크립트 모두 `prepare:resources`를 먼저 돌려 uv / yt-dlp / deno 바이너리를 GitHub 릴리즈에서 받고 `sidecar/`를 `resources/sidecar/`에 스테이징한다. 버전은 `scripts/prepare-resources.mjs` 상단 상수로 고정돼 있다.
+
+MSIX identity는 환경 변수로 주입한다. 미설정 시 placeholder로 빌드된다.
+
+| 변수                          | 의미                         |
+| ----------------------------- | ---------------------------- |
+| `APPX_IDENTITY_NAME`          | Partner Center Identity Name |
+| `APPX_PUBLISHER`              | `CN=...` Publisher           |
+| `APPX_PUBLISHER_DISPLAY_NAME` | Publisher 표시명             |
+| `APPX_APPLICATION_ID`         | Application Id               |
+
+아이콘은 `uv run --with pillow python scripts/generate-icons.py`, 서드파티 고지는 `pnpm gen:notices`로 재생성한다.
+
+### 구조
+
+```
+src/main/        Electron 메인: 사이드카 관리, 부트스트랩, 라이브러리(SQLite), 가사, IPC
+src/preload/     contextBridge API (window.api)
+src/renderer/    React UI (zustand 스토어, Web Audio 엔진, AudioWorklet)
+src/shared/      메인·렌더러 공용 타입과 IPC 채널
+sidecar/         Python 워커 (uv 프로젝트): probe / separate / align / transcribe / pronounce / cover
+scripts/         리소스 준비, 아이콘·고지 생성
+docs/            스펙 문서 (docs/specs/README.md 인덱스)
+```
+
+메인과 사이드카는 stdout JSONL(`progress` / `done` / `error`)로 통신한다. 자세한 설계는 `docs/draft/000-karaoke-app-spec-draft.md`, 패키징·배포는 `docs/specs/001-packaging-distribution.md`를 본다.
+
+## 라이선스
+
+이 저장소 자체의 라이선스는 아직 정하지 않았다. 배포물에 포함되거나 실행 시 내려받는 서드파티 소프트웨어의 고지는 배포물 루트의 `THIRD-PARTY-NOTICES.txt`와 앱 설정 화면에서 볼 수 있다. YouTube URL 임포트는 개인 사용 목적의 기능이며, 콘텐츠 이용 약관과 저작권 준수는 사용자 책임이다.
+
+이슈: https://github.com/plan12be/karaoke-player/issues

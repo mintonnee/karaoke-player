@@ -100,7 +100,7 @@ function createWindow(): void {
     title: 'Karaoke Player',
     width: 1200,
     height: 760,
-    minWidth: 960,
+    minWidth: 1040,
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,

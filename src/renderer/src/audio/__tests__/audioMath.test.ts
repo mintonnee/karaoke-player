@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { dbToGain, normalizeLoop, wrapLoopPosition } from '../audioMath'
+import { dbToGain, normalizeLoop, rmsDb, wrapLoopPosition } from '../audioMath'
+
+/** 진폭 amplitude, 한 주기 length 샘플의 정현파 */
+function sine(amplitude: number, length = 256): Float32Array {
+  const samples = new Float32Array(length)
+  for (let i = 0; i < length; i++) {
+    samples[i] = amplitude * Math.sin((2 * Math.PI * i) / length)
+  }
+  return samples
+}
 
 describe('dbToGain', () => {
   it('0 dB는 1, -20 dB는 0.1', () => {
@@ -47,5 +56,40 @@ describe('normalizeLoop', () => {
 
   it('최소 길이 미만이면 null', () => {
     expect(normalizeLoop(10, 10.2, 60)).toBeNull()
+  })
+})
+
+describe('rmsDb', () => {
+  it('정현파 RMS는 진폭/√2', () => {
+    expect(rmsDb(sine(1))).toBeCloseTo(-3.01, 2)
+    expect(Math.abs(rmsDb(sine(1)) - -3.01)).toBeLessThan(0.05)
+    expect(Math.abs(rmsDb(sine(0.5)) - -9.03)).toBeLessThan(0.05)
+  })
+
+  it('무음과 빈 배열은 floorDb', () => {
+    expect(rmsDb(new Float32Array(256))).toBe(-60)
+    expect(rmsDb(new Float32Array(0))).toBe(-60)
+  })
+
+  it('NaN·비유한값이 섞이면 floorDb', () => {
+    const samples = sine(1)
+    samples[10] = Number.NaN
+    expect(rmsDb(samples)).toBe(-60)
+    const infinite = sine(1)
+    infinite[20] = Number.POSITIVE_INFINITY
+    expect(rmsDb(infinite)).toBe(-60)
+  })
+
+  it('0 dBFS 초과는 0으로 클램프', () => {
+    const square = new Float32Array(256)
+    square.fill(2)
+    expect(rmsDb(square)).toBe(0)
+  })
+
+  it('floorDb 인자를 적용한다', () => {
+    expect(rmsDb(new Float32Array(256), -40)).toBe(-40)
+    const quiet = sine(0.0001)
+    expect(rmsDb(quiet, -40)).toBe(-40)
+    expect(rmsDb(sine(1), -40)).toBeCloseTo(-3.01, 2)
   })
 })

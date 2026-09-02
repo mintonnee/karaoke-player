@@ -1,20 +1,9 @@
 import { useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
-import {
-  MdMic,
-  MdMicOff,
-  MdMusicNote,
-  MdMusicOff,
-  MdPause,
-  MdPlayArrow,
-  MdRepeat,
-  MdStop,
-  MdVolumeOff,
-  MdVolumeUp
-} from 'react-icons/md'
+import { MdMusicNote, MdPause, MdPlayArrow, MdRepeat, MdStop } from 'react-icons/md'
 import { normalizeLoop } from '../audio/audioMath'
 import { usePlayerStore } from '../stores/playerStore'
-import { formatKeyDisplay, transposeKey } from '../../../shared/musicKey'
+import { formatBpmDisplay } from '../../../shared/analysisFormat'
 import CoverArt from './CoverArt'
 
 function formatTime(seconds: number): string {
@@ -29,27 +18,13 @@ function Transport(): React.JSX.Element | null {
     engineState,
     position,
     duration,
-    instDb,
-    vocalDb,
-    masterDb,
-    instMuted,
-    vocalMuted,
-    masterMuted,
     loop,
-    pitch,
     loadError,
     play,
     pause,
     stop,
     seek,
-    setInstDb,
-    setVocalDb,
-    setMasterDb,
-    toggleInstMute,
-    toggleVocalMute,
-    toggleMasterMute,
-    setLoop,
-    setPitch
+    setLoop
   } = usePlayerStore()
 
   const loopBarRef = useRef<HTMLDivElement>(null)
@@ -88,10 +63,7 @@ function Transport(): React.JSX.Element | null {
     setDragRange(null)
   }
 
-  // 원키는 playerStore의 track에서 읽는다. 분석 완료 시 trackUpdated 구독이 갱신해 준다
-  const originalKey = formatKeyDisplay(track?.musicKey)
-  // pitch가 0이면 원키만 표시한다 (스펙 002 §4.3)
-  const shiftedKey = pitch === 0 ? null : transposeKey(track?.musicKey, pitch)
+  const bpmText = track ? formatBpmDisplay(track.bpm, track.bpmConf) : null
 
   const shownLoop = dragRange
     ? {
@@ -177,101 +149,15 @@ function Transport(): React.JSX.Element | null {
           >
             <MdRepeat />
           </button>
+          <span
+            className={`transport-bpm${bpmText ? '' : ' transport-bpm-empty'}`}
+            title="BPM (분석값 또는 메타 편집값)"
+          >
+            {bpmText ?? '—'}
+          </span>
           <span className="transport-time">
             {formatTime(position)} / {formatTime(duration)}
           </span>
-        </div>
-
-        <div className="player-controls">
-          <div className="fader">
-            <span className={masterMuted ? 'muted' : ''}>전체 {masterDb} dB</span>
-            <div className="fader-row">
-              <button
-                className={`icon-btn${masterMuted ? ' muted-on' : ''}`}
-                title={masterMuted ? '전체 뮤트 해제 (M)' : '전체 뮤트 (M)'}
-                disabled={!active}
-                onClick={toggleMasterMute}
-              >
-                {masterMuted ? <MdVolumeOff /> : <MdVolumeUp />}
-              </button>
-              <input
-                type="range"
-                min={-60}
-                max={0}
-                step={1}
-                value={masterDb}
-                disabled={!active || masterMuted}
-                onChange={(e) => setMasterDb(Number(e.target.value))}
-              />
-            </div>
-          </div>
-          <div className="fader">
-            <span className={instMuted ? 'muted' : ''}>반주 {instDb} dB</span>
-            <div className="fader-row">
-              <button
-                className={`icon-btn${instMuted ? ' muted-on' : ''}`}
-                title={instMuted ? '반주 뮤트 해제' : '반주 뮤트'}
-                disabled={!active}
-                onClick={toggleInstMute}
-              >
-                {instMuted ? <MdMusicOff /> : <MdMusicNote />}
-              </button>
-              <input
-                type="range"
-                min={-60}
-                max={0}
-                step={1}
-                value={instDb}
-                disabled={!active || instMuted}
-                onChange={(e) => setInstDb(Number(e.target.value))}
-              />
-            </div>
-          </div>
-          <div className="fader">
-            <span className={vocalMuted ? 'muted' : ''}>가이드 보컬 {vocalDb} dB</span>
-            <div className="fader-row">
-              <button
-                className={`icon-btn${vocalMuted ? ' muted-on' : ''}`}
-                title={vocalMuted ? '보컬 뮤트 해제 (V)' : '보컬 뮤트 (V)'}
-                disabled={!active}
-                onClick={toggleVocalMute}
-              >
-                {vocalMuted ? <MdMicOff /> : <MdMic />}
-              </button>
-              <input
-                type="range"
-                min={-60}
-                max={0}
-                step={1}
-                value={vocalDb}
-                disabled={!active || vocalMuted}
-                onChange={(e) => setVocalDb(Number(e.target.value))}
-              />
-            </div>
-          </div>
-
-          <div className="pitch-control">
-            <span className="pitch-label">키</span>
-            <button onClick={() => setPitch(pitch - 1)} disabled={!active || pitch <= -6}>
-              −
-            </button>
-            <span className="pitch-value">{pitch > 0 ? `+${pitch}` : pitch}</span>
-            <button onClick={() => setPitch(pitch + 1)} disabled={!active || pitch >= 6}>
-              +
-            </button>
-            <button
-              className="pitch-reset"
-              onClick={() => setPitch(0)}
-              disabled={!active || pitch === 0}
-            >
-              원키
-            </button>
-            {originalKey !== null && (
-              <span className="pitch-key" title="원키 → 현재 키">
-                {shiftedKey === null ? originalKey : `${originalKey} → ${shiftedKey}`}
-              </span>
-            )}
-          </div>
         </div>
       </div>
     </div>

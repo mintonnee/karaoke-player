@@ -1,0 +1,91 @@
+/* 사이드 컬럼 키 패널 (스펙 003 §4.3) */
+.key-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.key-panel-title {
+  font-size: 12px;
+  color: var(--ev-c-text-2);
+}
+
+.key-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 원키: 항상 파란 계열 */
+.key-original {
+  background-color: rgba(74, 125, 189, 0.18);
+  border-color: #4a7dbd;
+  color: var(--ev-c-text-1);
+}
+
+/* 변경 키: pitch === 0이면 중립색 */
+.key-current {
+  background-color: var(--ev-c-black-mute);
+  border-color: var(--ev-c-gray-2);
+  color: var(--ev-c-text-1);
+}
+
+/* 변경 키: 이동 중이면 붉은 계열로 강조 */
+.key-current.shifted {
+  background-color: rgba(230, 102, 102, 0.18);
+  border-color: #e66;
+}
+
+.key-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.key-row button {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--ev-c-gray-2);
+  background-color: var(--ev-c-black-mute);
+  color: var(--ev-c-text-1);
+  cursor: pointer;
+}
+
+.key-row button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.key-row .key-reset {
+  width: auto;
+  min-width: 40px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 트랜스포트 BPM 칩 */
+.transport-bpm {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background-color: rgba(74, 125, 189, 0.18);
+  border: 1px solid #4a7dbd;
+  color: var(--ev-c-text-1);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.transport-bpm-empty {
+  opacity: 0.5;
+}

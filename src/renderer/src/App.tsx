@@ -8,13 +8,16 @@ import {
   MdDeleteOutline,
   MdEdit,
   MdErrorOutline,
+  MdHelpOutline,
   MdLink,
   MdSchedule,
   MdSettings
 } from 'react-icons/md'
 import BootstrapScreen from './components/BootstrapScreen'
 import CoverArt from './components/CoverArt'
+import KeyPanel from './components/KeyPanel'
 import LyricsView from './components/LyricsView'
+import MixerPanel from './components/MixerPanel'
 import SettingsModal from './components/SettingsModal'
 import ShortcutHelp from './components/ShortcutHelp'
 import Transport from './components/Transport'
@@ -22,20 +25,15 @@ import UrlImportForm from './components/UrlImportForm'
 import { useLibraryStore } from './stores/libraryStore'
 import { useLyricsStore } from './stores/lyricsStore'
 import { usePlayerStore } from './stores/playerStore'
-import { formatKeyDisplay, lowConfSuffix } from '../../shared/musicKey'
-import { BPM_LOW_CONF, BPM_MAX, BPM_MIN, MUSIC_KEY_RE } from '../../shared/types'
+import { formatBpmDisplay } from '../../shared/analysisFormat'
+import { formatKeyDisplay } from '../../shared/musicKey'
+import { BPM_MAX, BPM_MIN, MUSIC_KEY_RE } from '../../shared/types'
 import type { BootstrapState, Track, TrackMetaInput } from '../../shared/types'
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${m}:${String(s).padStart(2, '0')}`
-}
-
-/** 메타 줄의 BPM 표기. 신뢰도가 낮으면 '?' 접미 (스펙 002 §4.3) */
-function formatBpmDisplay(bpm: number | null, conf: number | null): string | null {
-  if (bpm === null) return null
-  return `${Math.round(bpm)} BPM${lowConfSuffix(conf, BPM_LOW_CONF)}`
 }
 
 /**
@@ -308,7 +306,7 @@ function App(): React.JSX.Element {
         player.track !== null && player.engineState !== 'idle' && player.engineState !== 'loading'
       if (!active) return
 
-      // 음량: ↑/↓ 전체, Ctrl+↑/↓ 반주, Alt+↑/↓ 보컬 (2 dB 스텝)
+      // 음량: ↑/↓ 메인, Ctrl+↑/↓ 반주, Alt+↑/↓ 보컬 (2 dB 스텝)
       if (event.code === 'ArrowUp' || event.code === 'ArrowDown') {
         event.preventDefault()
         const delta = event.code === 'ArrowUp' ? 2 : -2
@@ -410,9 +408,6 @@ function App(): React.JSX.Element {
                   <MdLink />
                 </button>
               )}
-              <button className="icon-btn" title="설정" onClick={() => setShowSettings(true)}>
-                <MdSettings />
-              </button>
             </div>
           </div>
 
@@ -474,6 +469,29 @@ function App(): React.JSX.Element {
       </div>
 
       <Transport />
+
+      {/* 사이드 컬럼 (스펙 003 §4.1·§4.4): 설정·도움말 툴바, 믹서, 키 패널 */}
+      <aside className="side-column">
+        <div className="side-toolbar">
+          <button className="icon-btn" title="설정" onClick={() => setShowSettings(true)}>
+            <MdSettings />
+          </button>
+          <button
+            className="icon-btn"
+            title="단축키 도움말 (/)"
+            onClick={() => setShowHelp((visible) => !visible)}
+          >
+            <MdHelpOutline />
+          </button>
+        </div>
+        <section className="panel mixer-panel-wrap">
+          <MixerPanel />
+        </section>
+        <section className="panel">
+          <KeyPanel />
+        </section>
+      </aside>
+
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} />}
     </div>

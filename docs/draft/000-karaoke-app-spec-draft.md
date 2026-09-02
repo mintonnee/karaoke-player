@@ -17,7 +17,7 @@
 - 반주 재생, 가이드 보컬 볼륨 조절(기본 -20 dB, 뮤트 가능), 루프, 시크
 - 가사 표시 및 줄 단위 하이라이트 (LRCLIB 동기 가사 → 없으면 텍스트 + forced alignment)
 - 키 변경 (±6 반음), 템포는 v1 범위 밖
-- BPM·조성 자동 분석·표시, 키 변경 시 "원키 → 현재 키" 표기 (2026-09-02 추가, 상세는 `docs/specs/002-bpm-key-analysis.md`)
+- BPM·조성 자동 분석·표시, 키 변경 시 "원키 → 현재 키" 표기 (2026-09-02 추가, 상세는 `docs/specs/002-bpm-key-analysis.md`. 표시 위치는 `docs/specs/003-player-layout.md`)
 - 라이브러리: 처리한 곡 목록, 재처리 없이 재생, 삭제
 - Windows 우선, macOS 빌드 가능해야 함
 
@@ -92,6 +92,8 @@ export interface AudioEngine {
   /** 엔진이 push하는 유일한 시간 소스. 렌더러는 이 값 + 경과시간으로 보간한다. */
   onPosition(cb: (seconds: number) => void): () => void
   onEnded(cb: () => void): () => void
+  /** 재생 레벨(dBFS RMS, −60–0). 위치와 같은 틱에 push. 2026-09-02 추가, 상세는 003 §4.5 */
+  onLevels(cb: (levels: { inst: number; vocal: number; master: number }) => void): () => void
 
   readonly duration: number
   readonly state: 'idle' | 'loading' | 'ready' | 'playing' | 'paused'
@@ -102,7 +104,7 @@ export interface AudioEngine {
 제약:
 
 - 제어 명령은 control-rate(초당 수십 회)만 가정. 샘플 단위 조작이 필요한 기능은 인터페이스에 넣지 말고 엔진 내부 기능으로 정의한다.
-- `onPosition`은 60 Hz 이하로 push. 렌더러가 폴링하지 않는다.
+- `onPosition`은 60 Hz 이하로 push. 렌더러가 폴링하지 않는다. `onLevels`도 같은 틱에 push한다(렌더러가 `AnalyserNode`를 직접 만지지 않는다).
 - `load`는 디스크 경로만 받는다. Web 구현체는 내부에서 `fetch(media://)` + `decodeAudioData`. (`file://` fetch는 webSecurity에 막히므로 메인이 `media://` 커스텀 프로토콜로 tracks 디렉토리 밑 파일만 서빙한다)
 
 ### 4.2 사이드카 프로토콜 (결정)
@@ -189,7 +191,7 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 ### S2 — 재생 엔진 (Web Audio)
 
 - S2.1 `AudioEngine` 인터페이스 파일 + `WebAudioEngine` 구현: load/play/pause/seek/setGain/onPosition
-- S2.2 Transport UI: 재생/일시정지/정지, 시크바, inst/vocal 페이더(기본 vocal −20 dB), vocal 뮤트 토글
+- S2.2 Transport UI: 재생/일시정지/정지, 시크바, inst/vocal 페이더(기본 vocal −20 dB), vocal 뮤트 토글 (2026-09-02: 페이더는 사이드 컬럼의 믹서 패널로 이동, 상세는 `docs/specs/003-player-layout.md`)
 - S2.3 루프 구간 (드래그로 지정)
 - DoD: 렌더러 어디에서도 `AudioContext`를 import하지 않는다 (lint rule로 강제). 가이드 보컬 토글이 클릭 없이 즉시 반영된다
 
@@ -216,7 +218,7 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 ### S6 — 키 변경
 
 - S6.1 soundtouchjs를 AudioWorklet으로 통합, `setPitch` 구현, inst/vocal 양쪽에 동일 적용
-- S6.2 UI: ±6 반음 스텝, 원키 리셋
+- S6.2 UI: ±6 반음 스텝, 원키 리셋 (2026-09-02: 사이드 컬럼의 키 패널로 이동, 상세는 `docs/specs/003-player-layout.md`)
 - DoD: 재생 중 키를 바꿔도 끊김/드리프트 없이 위치가 유지된다
 
 ### S7 — 패키징
@@ -253,6 +255,7 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 - 가사 정렬을 ctc-forced-aligner 대신 torchaudio 내장 MMS_FA로 구현 (2026-09-01): 같은 MMS 정렬 모델이지만 ctc-forced-aligner는 PyPI에 없고(git 설치) pybind11 소스 빌드가 필요해 MSVC 없는 환경에서 설치 불가. torchaudio는 이미 의존성에 있어 추가 빌드가 없다. 정렬 결과 conf는 align.json으로 트랙 디렉토리에 저장
 - BPM 검출에 Beat This!(`beat-this` PyPI, MIT)를 채택하고 키 검출은 크로마 템플릿으로 자체 구현 (2026-09-02, 사용자 결정): 자기상관 방식의 절반·두 배 템포 오류 회피. librosa/madmom/essentia는 numba·빌드 리스크로 배제. 상세는 `docs/specs/002-bpm-key-analysis.md`
 - "URL 다운로드 하지 않음" 결정을 뒤집음 (2026-09-02, 사용자 결정): 개인 사용 목적의 YouTube URL 임포트를 zip 배포 채널 한정으로 도입. 리스크는 배포 채널 분리로 관리 — Microsoft Store(MSIX)판에는 yt-dlp를 포함하지 않는다. 상세는 `docs/specs/001-packaging-distribution.md`
+- 플레이어 레이아웃을 2행 3열 grid로 재구성 (2026-09-02, 사용자 와이어프레임): 음량 페이더와 키 컨트롤을 오른쪽 사이드 컬럼(믹서·키 패널)으로 옮기고 트랜스포트 바에는 재생·시간·BPM만 남긴다. 믹서에는 `AnalyserNode` 탭으로 읽은 재생 레벨 미터를 붙이고, 이를 위해 §4.1에 `onLevels`를 추가했다. 상세는 `docs/specs/003-player-layout.md`
 
 ## 8. 미정 (구현 전 확인)
 

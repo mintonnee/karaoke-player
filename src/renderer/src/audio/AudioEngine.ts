@@ -10,6 +10,13 @@ export interface LoopRange {
 
 export type AudioEngineState = 'idle' | 'loading' | 'ready' | 'playing' | 'paused'
 
+/** 재생 레벨 (dBFS RMS, -60..0). 미터 표시 전용. */
+export interface AudioLevels {
+  inst: number // dBFS RMS, -60-0. 트랙 게인 뒤(post-fader)
+  vocal: number
+  master: number // 피치 노드 출력(실제 출력)
+}
+
 export interface AudioEngine {
   /** 파일 경로를 받는다. 버퍼를 넘기지 않는다 (네이티브 엔진 호환). */
   load(tracks: { inst: string; vocal: string }): Promise<void>
@@ -25,6 +32,8 @@ export interface AudioEngine {
   /** 엔진이 push하는 유일한 시간 소스. 렌더러는 이 값 + 경과시간으로 보간한다. */
   onPosition(cb: (seconds: number) => void): () => void
   onEnded(cb: () => void): () => void
+  /** 위치 push와 같은 틱(≤60 Hz)에 push. 정지·일시정지·언로드 시 -60을 한 번 push한다. */
+  onLevels(cb: (levels: AudioLevels) => void): () => void
 
   readonly duration: number
   readonly state: AudioEngineState

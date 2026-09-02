@@ -57,7 +57,7 @@
 2. 실제 곡을 임포트하면 분리 완료 후 별도 조작 없이 라이브러리 행 메타 줄에 `<n> BPM · <키>`가 나타나고, `library.sqlite`의 해당 행에 `bpm`, `music_key`, `analysis_source='auto'`가 기록된다. 분석 중에도 트랙은 `ready` 상태로 즉시 재생할 수 있다.
 3. 스키마 v2 DB(분석 컬럼 없음)로 앱을 시작하면 `user_version`이 3으로 올라가고 기존 행이 보존되며, `status='ready'`이고 `analysis_source='none'`인 트랙이 시작 후 순차 분석돼 값이 채워진다. 상태 전이(`separating` 등)는 발생하지 않는다.
 4. 분석이 실패하면(fake worker가 `error`를 반환하거나 `inst.wav`가 손상된 경우) 트랙 상태는 `ready`로 유지되고, 표시는 비어 있으며, 메인 로그에 `[analysis]` 실패 줄이 남는다. 앱은 크래시하지 않는다. 체크포인트 다운로드만 실패한 경우(네트워크 차단으로 재현)에는 `bpm: null`, `key`는 정상값으로 `done`이 오고, 키만 표시된다.
-5. 원키 `C#m`인 곡에서 키를 +2 하면 트랜스포트에 `C#m → D#m`, −3이면 `C#m → A#m`, +6이면 `C#m → Gm`이 표시되고, 원키 리셋 후에는 `C#m`만 표시된다. 순수 함수 `transposeKey`의 단위 테스트가 12음 × ±6 경계와 `null` 입력을 커버한다.
+5. 원키 `C#m`인 곡에서 키를 +2 하면 트랜스포트에 `C#m → D#m`, −3이면 `C#m → A#m`, +6이면 `C#m → Gm`이 표시되고, 원키 리셋 후에는 `C#m`만 표시된다. **2026-09-02 개정(003)**: 표시 위치와 형태는 `003-player-layout.md` §4.3의 키 패널(상단 상자 원키, 하단 상자 변경 키)로 대체된다. 값의 규칙(`transposeKey`, 리셋 시 원키)은 그대로다. 순수 함수 `transposeKey`의 단위 테스트가 12음 × ±6 경계와 `null` 입력을 커버한다.
 6. `bpm_conf`가 `BPM_LOW_CONF` 미만이면 BPM이 `128 BPM?`처럼 표시되고, 키에는 `?`가 붙지 않는다. 메타 편집 폼에서 키를 `Bm`, BPM을 `96`으로 입력·저장하면 즉시 반영되고, 앱을 재시작해도 값이 유지되며 백필이 덮어쓰지 않는다(`analysis_source='user'`). 형식이 틀린 키(`H`, `c#`)와 범위 밖 BPM(30 미만, 300 초과)은 저장이 거부된다.
 7. `pnpm typecheck && pnpm lint && pnpm test`가 exit 0이다. 기존 테스트(LibraryStore, JobQueue, SidecarManager 등)는 수정 없이 통과한다.
 8. 5분 길이 곡의 `inst.wav` 분석(체크포인트 캐시된 상태)이 CUDA에서 5초, CPU(`KARAOKE_DEVICE=cpu`)에서 30초 이내에 끝난다. 사이드카 stderr에 단계별 소요 시간이 기록되어 확인할 수 있다. 상한은 실측 후 §4.5 구현 기록에서 조정할 수 있다.
@@ -123,7 +123,7 @@
 
 - 공용 헬퍼 `src/shared/musicKey.ts`: `parseKey(s): {root: 0–11, minor: boolean} | null`, `formatKey`, `transposeKey(key: string | null, semitones: number): string | null`. 표기는 §1 결정 기록(샤프 통일)을 따른다.
 - 라이브러리 행(`App.tsx` `track-meta`): 기존 `아티스트 · 3:45` 뒤에 ` · 128 BPM · C#m`을 붙인다. 값이 `null`이면 해당 항목만 생략한다. `bpmConf`가 `BPM_LOW_CONF` 미만이면 `128 BPM?`. 키에는 `?`를 붙이지 않는다(§1 결정 기록 v2).
-- 트랜스포트(`Transport.tsx` `.pitch-control`): `pitch-value` 옆에 키 표기를 추가한다. `pitch === 0`이면 `C#m`, 아니면 `C#m → D#m`. 원키가 `null`이면 표기를 생략한다.
+- 트랜스포트(`Transport.tsx` `.pitch-control`): `pitch-value` 옆에 키 표기를 추가한다. `pitch === 0`이면 `C#m`, 아니면 `C#m → D#m`. 원키가 `null`이면 표기를 생략한다. **2026-09-02 개정(003)**: 이 항목은 `003-player-layout.md` §4.3의 키 패널로 대체된다. BPM 표기 헬퍼도 003에서 공용 모듈로 옮긴다.
 - 메타 편집 폼: BPM(숫자, 30–300)과 키(텍스트, 정규식 검증, 빈 값은 `null`) 입력을 추가한다. 저장은 기존 `updateTrackMeta` IPC를 확장해 쓴다.
 - README `기능` 절의 라이브러리·키 변경 항목에 한 줄씩 보강한다.
 

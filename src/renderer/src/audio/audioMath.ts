@@ -29,3 +29,22 @@ export function normalizeLoop(
   if (hi - lo < minLength) return null
   return { start: lo, end: hi }
 }
+
+/**
+ * 시간 영역 샘플의 RMS를 dBFS로 변환한다. 미터 표시용.
+ * 무음·빈 배열·비유한값은 floorDb, floorDb 미만은 floorDb, 0 dBFS 초과는 0으로 클램프.
+ */
+export function rmsDb(samples: Float32Array, floorDb = -60): number {
+  if (samples.length === 0) return floorDb
+  let sum = 0
+  for (let i = 0; i < samples.length; i++) {
+    const sample = samples[i]
+    if (!Number.isFinite(sample)) return floorDb
+    sum += sample * sample
+  }
+  const rms = Math.sqrt(sum / samples.length)
+  if (!(rms > 0)) return floorDb
+  const db = 20 * Math.log10(rms)
+  if (!Number.isFinite(db)) return floorDb
+  return Math.max(floorDb, Math.min(0, db))
+}

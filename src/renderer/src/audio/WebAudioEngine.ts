@@ -1,6 +1,6 @@
 import { MEDIA_PROTOCOL_SCHEME } from '../../../shared/types'
-import type { AudioEngine, AudioEngineState, LoopRange } from './AudioEngine'
-import { dbToGain, wrapLoopPosition } from './audioMath'
+import type { AudioEngine, AudioEngineState, AudioLevels, LoopRange } from './AudioEngine'
+import { dbToGain, rmsDb, wrapLoopPosition } from './audioMath'
 
 const POSITION_PUSH_INTERVAL_MS = 33 // ~30 Hz (스펙 상한 60 Hz)
 const GAIN_RAMP_SEC = 0.01 // 클릭 노이즈 방지용 짧은 램프
@@ -8,6 +8,8 @@ const START_DELAY_SEC = 0.03 // 두 소스의 샘플 동기 시작 여유
 const PITCH_WORKLET_URL = 'worklets/soundtouch-worklet.js' // renderer public/ 정적 자산
 const PITCH_MIN = -6
 const PITCH_MAX = 6
+const METER_FFT_SIZE = 256 // 레벨 탭 analyser 창 크기
+const METER_FLOOR_DB = -60
 
 function toMediaUrl(path: string): string {
   return `${MEDIA_PROTOCOL_SCHEME}://audio?path=${encodeURIComponent(path)}`
@@ -16,6 +18,8 @@ function toMediaUrl(path: string): string {
 interface TrackChannel {
   buffer: AudioBuffer
   gain: GainNode
+  /** 게인 뒤 옆가지 탭. 재생 경로에는 연결하지 않는다 (post-fader 미터) */
+  analyser: AnalyserNode
   source: AudioBufferSourceNode | null
 }
 
@@ -45,6 +49,11 @@ export class WebAudioEngine implements AudioEngine {
 
   private readonly positionCallbacks = new Set<(seconds: number) => void>()
   private readonly endedCallbacks = new Set<() => void>()
+  private readonly levelCallbacks = new Set<(levels: AudioLevels) => void>()
+  /** 피치 노드 뒤 옆가지 탭 (실제 출력 레벨) */
+  private masterAnalyser: AnalyserNode | null = null
+  /** 틱마다 재할당하지 않기 위한 공용 버퍼 */
+  private readonly levelBuffer = new Float32Array(METER_FFT_SIZE)
   private timer: ReturnType<typeof setInterval> | null = null
   /** stop/seek로 소스를 교체할 때 이전 소스의 onended를 무효화한다 */
   private generation = 0
@@ -60,6 +69,8 @@ export class WebAudioEngine implements AudioEngine {
   async load(tracks: { inst: string; vocal: string }): Promise<void> {
     this.stopSources()
     this.stopTimer()
+    this.releaseChannelAnalysers()
+    this.pushSilentLevels()
     this.engineState = 'loading'
 
     const ctx = this.ensureContext()
@@ -70,8 +81,8 @@ export class WebAudioEngine implements AudioEngine {
         this.ensurePitchGraph(ctx)
       ])
       this.channels = {
-        inst: { buffer: instBuffer, gain: this.createGain(ctx, this.gainsDb.inst), source: null },
-        vocal: { buffer: vocalBuffer, gain: this.createGain(ctx, this.gainsDb.vocal), source: null }
+        inst: this.createChannel(ctx, instBuffer, this.gainsDb.inst),
+        vocal: this.createChannel(ctx, vocalBuffer, this.gainsDb.vocal)
       }
       this.trackDuration = instBuffer.duration
       this.offset = 0
@@ -98,6 +109,7 @@ export class WebAudioEngine implements AudioEngine {
     this.stopTimer()
     this.engineState = 'paused'
     this.pushPosition(this.offset)
+    this.pushSilentLevels()
   }
 
   stop(): void {
@@ -107,6 +119,7 @@ export class WebAudioEngine implements AudioEngine {
     this.offset = 0
     this.engineState = 'ready'
     this.pushPosition(0)
+    this.pushSilentLevels()
   }
 
   seek(seconds: number): void {
@@ -155,14 +168,24 @@ export class WebAudioEngine implements AudioEngine {
     return () => this.endedCallbacks.delete(cb)
   }
 
+  onLevels(cb: (levels: AudioLevels) => void): () => void {
+    this.levelCallbacks.add(cb)
+    return () => this.levelCallbacks.delete(cb)
+  }
+
   dispose(): void {
     this.stopSources()
     this.stopTimer()
+    this.pushSilentLevels()
     this.positionCallbacks.clear()
     this.endedCallbacks.clear()
+    this.levelCallbacks.clear()
+    this.releaseChannelAnalysers()
     this.channels = null
     this.trackDuration = 0
     this.engineState = 'idle'
+    this.masterAnalyser?.disconnect()
+    this.masterAnalyser = null
     this.pitchNode?.disconnect()
     this.pitchNode = null
     this.mixBus?.disconnect()
@@ -192,6 +215,9 @@ export class WebAudioEngine implements AudioEngine {
         this.mixBus = ctx.createGain()
         this.mixBus.connect(this.pitchNode)
         this.pitchNode.connect(ctx.destination)
+        // 실제 출력 레벨 탭 (옆가지, 어디에도 연결하지 않는다)
+        this.masterAnalyser = this.createAnalyser(ctx)
+        this.pitchNode.connect(this.masterAnalyser)
         if (this.pitchSemitones !== 0) {
           this.pitchNode.port.postMessage({ pitchSemitones: this.pitchSemitones })
         }
@@ -200,11 +226,36 @@ export class WebAudioEngine implements AudioEngine {
     return this.pitchGraphReady
   }
 
+  private createChannel(ctx: AudioContext, buffer: AudioBuffer, db: number): TrackChannel {
+    const gain = this.createGain(ctx, db)
+    return { buffer, gain, analyser: this.tapAnalyser(ctx, gain), source: null }
+  }
+
   private createGain(ctx: AudioContext, db: number): GainNode {
     const gain = ctx.createGain()
     gain.gain.value = dbToGain(db)
     gain.connect(this.mixBus ?? ctx.destination)
     return gain
+  }
+
+  /** 게인 뒤 옆가지 탭. 재생 경로(gain → mixBus)는 그대로 둔다. */
+  private tapAnalyser(ctx: AudioContext, gain: GainNode): AnalyserNode {
+    const analyser = this.createAnalyser(ctx)
+    gain.connect(analyser)
+    return analyser
+  }
+
+  private createAnalyser(ctx: AudioContext): AnalyserNode {
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = METER_FFT_SIZE
+    return analyser
+  }
+
+  private releaseChannelAnalysers(): void {
+    if (!this.channels) return
+    for (const key of ['inst', 'vocal'] as const) {
+      this.channels[key].analyser.disconnect()
+    }
   }
 
   private async decodeFile(ctx: AudioContext, path: string): Promise<AudioBuffer> {
@@ -275,6 +326,7 @@ export class WebAudioEngine implements AudioEngine {
     this.offset = this.trackDuration
     this.engineState = 'paused'
     this.pushPosition(this.trackDuration)
+    this.pushSilentLevels()
     this.endedCallbacks.forEach((cb) => cb())
   }
 
@@ -287,10 +339,10 @@ export class WebAudioEngine implements AudioEngine {
 
   private startTimer(): void {
     this.stopTimer()
-    this.timer = setInterval(
-      () => this.pushPosition(this.currentPosition()),
-      POSITION_PUSH_INTERVAL_MS
-    )
+    this.timer = setInterval(() => {
+      this.pushPosition(this.currentPosition())
+      this.pushLevels()
+    }, POSITION_PUSH_INTERVAL_MS)
   }
 
   private stopTimer(): void {
@@ -304,5 +356,33 @@ export class WebAudioEngine implements AudioEngine {
     const compensated =
       this.engineState === 'playing' ? Math.max(0, seconds - this.pitchLatencySec) : seconds
     this.positionCallbacks.forEach((cb) => cb(compensated))
+  }
+
+  /** 구독자가 없으면 analyser를 읽지 않는다. */
+  private pushLevels(): void {
+    if (this.levelCallbacks.size === 0) return
+    const levels: AudioLevels = {
+      inst: this.readLevel(this.channels?.inst.analyser ?? null),
+      vocal: this.readLevel(this.channels?.vocal.analyser ?? null),
+      master: this.readLevel(this.masterAnalyser)
+    }
+    this.levelCallbacks.forEach((cb) => cb(levels))
+  }
+
+  private readLevel(analyser: AnalyserNode | null): number {
+    if (!analyser) return METER_FLOOR_DB
+    analyser.getFloatTimeDomainData(this.levelBuffer)
+    return rmsDb(this.levelBuffer, METER_FLOOR_DB)
+  }
+
+  /** 정지·일시정지·언로드 시 미터를 내리는 마지막 push */
+  private pushSilentLevels(): void {
+    if (this.levelCallbacks.size === 0) return
+    const levels: AudioLevels = {
+      inst: METER_FLOOR_DB,
+      vocal: METER_FLOOR_DB,
+      master: METER_FLOOR_DB
+    }
+    this.levelCallbacks.forEach((cb) => cb(levels))
   }
 }

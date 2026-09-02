@@ -1,0 +1,100 @@
+/* 사이드 컬럼 믹서 패널 (스펙 003 §4.2) */
+.mixer-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  gap: 8px;
+}
+
+.mixer-panel-title {
+  font-size: 12px;
+  color: var(--ev-c-text-2);
+}
+
+.mixer-strips {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.mixer-strip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mixer-label {
+  font-size: 12px;
+  color: var(--ev-c-text-2);
+}
+
+.mixer-body {
+  flex: 1;
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+  min-height: 0;
+}
+
+/* 세로 페이더: 위가 0 dB, appearance는 브라우저 기본값을 쓴다 */
+.mixer-fader {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 20px;
+  height: 100%;
+  min-height: 120px;
+  margin: 0;
+}
+
+.meter {
+  width: 6px;
+  height: 100%;
+  min-height: 120px;
+  border-radius: 3px;
+  background: var(--ev-c-black-mute);
+  border: 1px solid var(--ev-c-gray-3);
+  position: relative;
+  overflow: hidden;
+}
+
+.meter-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0%;
+  background: #4a7dbd;
+  transition: height 33ms linear;
+}
+
+.meter-fill.hot {
+  background: #d9a441;
+}
+
+.mixer-db {
+  font-size: 12px;
+  color: var(--ev-c-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.mixer-db.muted {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+/* main.css의 `.player-bar button.muted-on`은 `.player-bar` 스코프라 여기서는 안 먹는다 */
+.mixer-strip .icon-btn.muted-on {
+  color: #e66;
+  border-color: #e66;
+}
+
+.mixer-panel button:disabled,
+.mixer-panel input:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

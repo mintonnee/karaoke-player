@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Track } from '../../../shared/types'
-import type { AudioEngine, AudioEngineState, LoopRange } from '../audio/AudioEngine'
+import type { AudioEngine, AudioEngineState, AudioLevels, LoopRange } from '../audio/AudioEngine'
 import { WebAudioEngine } from '../audio/WebAudioEngine'
 
 // 엔진 구현체 교체 지점 (v2: NativeEngine)
@@ -17,7 +17,7 @@ interface PlayerState {
   masterDb: number
   instMuted: boolean
   vocalMuted: boolean
-  /** 전체 뮤트: 채널별 뮤트 상태를 보존한 채 두 채널을 모두 무음으로 */
+  /** 메인 뮤트: 채널별 뮤트 상태를 보존한 채 두 채널을 모두 무음으로 */
   masterMuted: boolean
   loop: LoopRange | null
   /** 키 변경 (반음, -6..+6) */
@@ -39,6 +39,8 @@ interface PlayerState {
   toggleMasterMute: () => void
   setLoop: (range: LoopRange | null) => void
   setPitch: (semitones: number) => void
+  /** 레벨 미터 구독. 30 Hz 갱신이라 스토어 상태를 거치지 않는다 (전체 리렌더 방지) */
+  subscribeLevels: (cb: (levels: AudioLevels) => void) => () => void
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => {
@@ -144,6 +146,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       const clamped = Math.max(-6, Math.min(6, Math.round(semitones)))
       set({ pitch: clamped })
       engine.setPitch(clamped)
-    }
+    },
+    subscribeLevels: (cb) => engine.onLevels(cb)
   }
 })

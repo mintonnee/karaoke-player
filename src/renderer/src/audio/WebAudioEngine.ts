@@ -69,7 +69,7 @@ export class WebAudioEngine implements AudioEngine {
   async load(tracks: { inst: string; vocal: string }): Promise<void> {
     this.stopSources()
     this.stopTimer()
-    this.releaseChannelAnalysers()
+    this.releaseChannels()
     this.pushSilentLevels()
     this.engineState = 'loading'
 
@@ -180,8 +180,7 @@ export class WebAudioEngine implements AudioEngine {
     this.positionCallbacks.clear()
     this.endedCallbacks.clear()
     this.levelCallbacks.clear()
-    this.releaseChannelAnalysers()
-    this.channels = null
+    this.releaseChannels()
     this.trackDuration = 0
     this.engineState = 'idle'
     this.masterAnalyser?.disconnect()
@@ -251,11 +250,14 @@ export class WebAudioEngine implements AudioEngine {
     return analyser
   }
 
-  private releaseChannelAnalysers(): void {
+  /** 이전 곡의 게인·analyser를 그래프에서 끊는다. 끊지 않으면 곡을 바꿀 때마다 mixBus에 노드가 누적된다. */
+  private releaseChannels(): void {
     if (!this.channels) return
     for (const key of ['inst', 'vocal'] as const) {
+      this.channels[key].gain.disconnect()
       this.channels[key].analyser.disconnect()
     }
+    this.channels = null
   }
 
   private async decodeFile(ctx: AudioContext, path: string): Promise<AudioBuffer> {

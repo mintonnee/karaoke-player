@@ -3,7 +3,8 @@ import type {
   ImportProgressEvent,
   ImportRejection,
   Track,
-  TrackMetaInput
+  TrackMetaInput,
+  UrlImportProgressEvent
 } from '../../../shared/types'
 
 interface LibraryState {
@@ -13,10 +14,18 @@ interface LibraryState {
   rejections: ImportRejection[]
   importing: boolean
   search: string
+  /** yt-dlp 동봉 여부 (스펙 001 §4.3). false면 URL 임포트 UI를 그리지 않는다 */
+  urlImportAvailable: boolean
+  urlImporting: boolean
+  /** 진행 중인 URL 다운로드 진행률. 요청 밖에서는 null */
+  urlImportProgress: UrlImportProgressEvent | null
   refresh: () => Promise<void>
   setSearch: (query: string) => Promise<void>
   importFiles: (filePaths: string[]) => Promise<void>
   importViaDialog: () => Promise<void>
+  loadCapabilities: () => Promise<void>
+  /** 성공(트랙 추가)이면 true. 실패 사유는 rejections로 표면화된다 */
+  importUrl: (url: string) => Promise<boolean>
   deleteTrack: (trackId: string) => Promise<void>
   updateTrackMeta: (trackId: string, meta: TrackMetaInput) => Promise<void>
   dismissRejections: () => void
@@ -43,6 +52,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
   window.api.onImportProgress((event) => {
     set((state) => ({ progress: { ...state.progress, [event.trackId]: event } }))
   })
+  window.api.onUrlImportProgress((event) => {
+    set({ urlImportProgress: event })
+  })
 
   const applyImportResult = async (
     run: () => Promise<{ rejected: ImportRejection[] }>
@@ -63,6 +75,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     rejections: [],
     importing: false,
     search: '',
+    urlImportAvailable: false,
+    urlImporting: false,
+    urlImportProgress: null,
     refresh: async () => {
       set({ tracks: await window.api.listTracks(get().search) })
     },
@@ -72,6 +87,23 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     },
     importFiles: (filePaths) => applyImportResult(() => window.api.importFiles(filePaths)),
     importViaDialog: () => applyImportResult(() => window.api.importDialog()),
+    loadCapabilities: async () => {
+      const { urlImport } = await window.api.getCapabilities()
+      set({ urlImportAvailable: urlImport })
+    },
+    importUrl: async (url) => {
+      set({ urlImporting: true, urlImportProgress: null })
+      try {
+        const { imported, rejected } = await window.api.importUrl(url)
+        if (rejected.length > 0) {
+          set((state) => ({ rejections: [...state.rejections, ...rejected] }))
+        }
+        return imported.length > 0
+      } finally {
+        set({ urlImporting: false, urlImportProgress: null })
+        await get().refresh()
+      }
+    },
     deleteTrack: async (trackId) => {
       await window.api.deleteTrack(trackId)
       set((state) => ({ tracks: state.tracks.filter((t) => t.id !== trackId) }))

@@ -44,6 +44,8 @@ export interface SidecarManagerOptions {
   command: string
   /** 워커 명령 앞에 붙는 인자. 예: ['run', '--project', <sidecarDir>, 'karaoke_worker'] */
   baseArgs: string[]
+  /** process.env 위에 덮어쓸 환경 변수 (패키징 시 UV_CACHE_DIR 등). 없으면 상속 */
+  env?: NodeJS.ProcessEnv
   /** stderr 로그 sink. 기본은 console.error */
   onLog?: (line: string) => void
 }
@@ -68,7 +70,8 @@ export class SidecarManager {
 
       const child = spawn(this.options.command, [...this.options.baseArgs, ...workerArgs], {
         stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true
+        windowsHide: true,
+        env: this.options.env ? { ...process.env, ...this.options.env } : undefined
       })
 
       let settled = false

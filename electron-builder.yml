@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: app
+appId: com.mgkwak.karaoke-player
+productName: Karaoke Player
 directories:
   buildResources: build
 files:
@@ -9,35 +9,36 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
-asarUnpack:
-  - 'resources/**'
+  - '!electron-builder.*'
+  - '!{vitest.config.ts,pnpm-workspace.yaml,karaoke-player.iml}'
+  - '!{docs,scripts}/**'
+  # 레포 sidecar/ 는 .venv 포함 수 GB — 배포본은 resources/sidecar 스테이징본(extraResources)만 쓴다
+  - '!sidecar/**'
+  # extraResources 로 별도 배치되므로 asar/unpacked 중복 방지를 위해 제외한다
+  - '!resources/bin/**'
+  - '!resources/sidecar/**'
+# asarUnpack 은 두지 않는다: files 필터 이후 asar에 남는 resources/* 는 resources/icon.png
+# 뿐이고(bin/sidecar는 위에서 제외), 이 파일은 src/main/index.ts 의 linux 전용 분기
+# (`process.platform === 'linux' ? { icon } : {}`)에서만 읽힌다 — 이 스펙은 Windows(zip/msix)
+# 전용이라 그 경로가 실행되지 않는다. asarUnpack 을 두면 app.asar.unpacked/resources/icon.png
+# 사본이 하나 더 생겨 배포물에 쓸모없는 파일이 남는다 (electron-vite build 후
+# out/main/index.js 의 `path.join(__dirname, "../../resources/icon.png")` 로 확인,
+# 이 경로는 asar 내부를 그대로 가리키므로 언패킹 없이도 Node의 asar-투명 fs 로 읽힌다).
+extraFiles:
+  - from: src/renderer/src/generated/third-party-notices.txt
+    to: THIRD-PARTY-NOTICES.txt
 win:
-  executableName: app
-nsis:
-  artifactName: ${name}-${version}-setup.${ext}
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
-  createDesktopShortcut: always
+  executableName: karaoke-player
 mac:
   entitlementsInherit: build/entitlements.mac.plist
-  extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
   target:
     - AppImage
-    - snap
-    - deb
-  maintainer: electronjs.org
-  category: Utility
+  maintainer: mgkwak
+  category: AudioVideo
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates

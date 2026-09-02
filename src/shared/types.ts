@@ -84,10 +84,42 @@ export interface ImportProgressEvent {
   msg?: string
 }
 
+/**
+ * 실행 환경에 따라 켜고 끄는 기능 (스펙 001 §4.3, 기준 6).
+ * zip판에만 yt-dlp.exe·deno.exe가 동봉되므로 URL 임포트는 배포 채널별로 갈린다.
+ */
+export interface AppCapabilities {
+  urlImport: boolean
+}
+
+/** URL 임포트 다운로드 진행률 (스펙 001 §4.3). id는 요청마다 새로 발급 */
+export interface UrlImportProgressEvent {
+  id: string
+  url: string
+  pct: number
+  msg?: string
+}
+
 /** 분리 산출물 절대 경로 (§4.3 tracks/<id>/) */
 export interface TrackFiles {
   inst: string
   vocal: string
+}
+
+/**
+ * 사이드카 부트스트랩 상태 (스펙 001 §4.1). 패키징된 앱의 첫 실행에서
+ * 번들 sidecar/ 복사 → uv sync 를 거친다. dev·준비 완료 상태는 즉시 ready.
+ */
+export type BootstrapStatus = 'checking' | 'copying' | 'syncing' | 'ready' | 'error'
+
+export interface BootstrapState {
+  status: BootstrapStatus
+  /** 사용자에게 보여줄 단계 설명 */
+  message: string
+  /** status === 'error' 일 때 원인 */
+  error: string | null
+  /** uv stderr 최근 몇 줄 */
+  log: string[]
 }
 
 /** 앱 설정 (<userData>/settings.json). 설정창에서 변경한다 */
@@ -129,5 +161,11 @@ export const IPC_CHANNELS = {
   importProgress: 'library:import-progress',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
-  tracksDir: 'library:tracks-dir'
+  tracksDir: 'library:tracks-dir',
+  bootstrapGet: 'bootstrap:get',
+  bootstrapRetry: 'bootstrap:retry',
+  bootstrapState: 'bootstrap:state',
+  capabilities: 'app:capabilities',
+  importUrl: 'library:import-url',
+  urlImportProgress: 'library:url-import-progress'
 } as const

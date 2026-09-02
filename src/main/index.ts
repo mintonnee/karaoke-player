@@ -1,19 +1,24 @@
-import { app, shell, BrowserWindow, net, protocol } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, net, protocol } from 'electron'
 import { existsSync } from 'fs'
 import { join, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { MEDIA_PROTOCOL_SCHEME } from '../shared/types'
+import { IPC_CHANNELS, MEDIA_PROTOCOL_SCHEME } from '../shared/types'
+import type { BootstrapState } from '../shared/types'
 import { registerIpcHandlers } from './ipc'
 import { CoverService } from './library/CoverService'
 import { ImportService } from './library/ImportService'
 import { JobQueue } from './library/JobQueue'
 import { LibraryStore } from './library/LibraryStore'
 import { SearchKeyService } from './library/SearchKeyService'
+import { YtDlpService, hasUrlImportBinaries } from './library/YtDlpService'
+import { getBundledBinary, getBundledSidecarDir } from './paths'
 import { SettingsStore } from './settings/SettingsStore'
 import { LyricsService } from './lyrics/LyricsService'
-import { createUvSidecarManager } from './sidecar/SidecarManager'
+import { SidecarBootstrap, buildUvEnv, createReadyBootstrap } from './sidecar/SidecarBootstrap'
+import type { BootstrapController } from './sidecar/SidecarBootstrap'
+import { SidecarManager, createUvSidecarManager } from './sidecar/SidecarManager'
 
 // AudioEngine이 fetch로 스템 파일을 읽는 통로 (§4.1). app ready 전에 등록해야 한다.
 // dev 렌더러는 http://localhost origin이라 교차 출처 fetch가 되므로 CORS 응답까지 필요하다.
@@ -52,9 +57,46 @@ function registerMediaProtocol(tracksDir: string): void {
   })
 }
 
+/**
+ * 사이드카 실행 경로 분기 (스펙 001 §4.1).
+ * - 패키징: 번들 uv.exe로 <userData>/sidecar 를 실행. 환경 구성은 SidecarBootstrap이 보장하므로
+ *   매 워커 실행은 `--no-sync`로 네트워크·lock 검사 없이 venv만 쓴다.
+ * - dev: 레포의 sidecar/ 를 PATH의 uv로 실행하고 부트스트랩은 건너뛴다 (기준 8).
+ */
+function createSidecar(userData: string): {
+  sidecar: SidecarManager
+  bootstrap: BootstrapController
+} {
+  if (!app.isPackaged) {
+    return {
+      sidecar: createUvSidecarManager(join(app.getAppPath(), 'sidecar')),
+      bootstrap: createReadyBootstrap()
+    }
+  }
+  const uvCommand = getBundledBinary('uv')
+  const targetSidecarDir = join(userData, 'sidecar')
+  const env = buildUvEnv(userData)
+  const onLog = (line: string): void => console.error(`[bootstrap] ${line}`)
+  return {
+    sidecar: new SidecarManager({
+      command: uvCommand,
+      baseArgs: ['run', '--project', targetSidecarDir, '--no-sync', 'karaoke_worker'],
+      env
+    }),
+    bootstrap: new SidecarBootstrap({
+      bundledSidecarDir: getBundledSidecarDir(),
+      targetSidecarDir,
+      uvCommand,
+      env,
+      onLog
+    })
+  }
+}
+
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
+    title: 'Karaoke Player',
     width: 1200,
     height: 760,
     minWidth: 960,
@@ -100,10 +142,9 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // 패키징 시 사이드카 경로는 S7에서 재정의한다. dev에서는 레포 루트의 sidecar/를 사용.
-  const sidecar = createUvSidecarManager(join(app.getAppPath(), 'sidecar'))
-
   const userData = app.getPath('userData')
+  const { sidecar, bootstrap } = createSidecar(userData)
+
   const store = new LibraryStore(join(userData, 'library.sqlite'))
   const stale = store.failStaleSeparating()
   if (stale > 0) console.error(`[library] marked ${stale} stale separating track(s) as failed`)
@@ -143,6 +184,28 @@ app.whenReady().then(() => {
     refreshSearchKeys: (track) => searchKeyService.refresh(track),
     extractCover: (track) => coverService.refresh(track)
   })
+  // URL 임포트는 zip판에만 동봉되는 yt-dlp.exe·deno.exe 존재로 켜고 끈다 (스펙 001 §4.3, 기준 6)
+  const ytDlpPath = getBundledBinary('yt-dlp')
+  const denoPath = getBundledBinary('deno')
+  const urlImport = hasUrlImportBinaries(ytDlpPath, denoPath)
+  const ytDlpService = urlImport
+    ? new YtDlpService({
+        command: ytDlpPath,
+        denoPath,
+        scratchRoot: join(userData, 'tmp', 'url-import'),
+        tracksDir,
+        importFiles: (filePaths) => importService.importFiles(filePaths),
+        notify,
+        // 커버를 덮어쓴 뒤 updatedAt을 갱신해야 렌더러의 media:// 캐시 키가 바뀐다
+        touchTrack: (track) =>
+          store.updateMeta(track.id, {
+            title: track.title,
+            artist: track.artist,
+            album: track.album
+          })
+      })
+    : null
+
   registerIpcHandlers({
     store,
     importService,
@@ -150,12 +213,26 @@ app.whenReady().then(() => {
     searchKeyService,
     settingsStore,
     tracksDir,
-    notify
+    notify,
+    capabilities: { urlImport },
+    ytDlpService
   })
-  // 기존 트랙의 일본어 메타 발음 키와 앨범 커버를 백그라운드로 채운다
-  searchKeyService.backfill()
-  coverService.backfill()
-  app.on('will-quit', () => store.close())
+  // 부트스트랩 IPC. 서비스들은 lazy spawn이라 먼저 만들어도 되지만,
+  // 시작 시 사이드카를 띄우는 backfill은 ready 이후에만 돈다.
+  ipcMain.handle(IPC_CHANNELS.bootstrapGet, (): BootstrapState => bootstrap.getState())
+  ipcMain.handle(IPC_CHANNELS.bootstrapRetry, (): Promise<BootstrapState> => bootstrap.retry())
+  bootstrap.onChange((state) => notify(IPC_CHANNELS.bootstrapState, state))
+  void bootstrap.whenReady().then(() => {
+    // 기존 트랙의 일본어 메타 발음 키와 앨범 커버를 백그라운드로 채운다
+    searchKeyService.backfill()
+    coverService.backfill()
+  })
+  void bootstrap.start()
+  app.on('will-quit', () => {
+    bootstrap.dispose()
+    ytDlpService?.dispose()
+    store.close()
+  })
 
   createWindow()
 

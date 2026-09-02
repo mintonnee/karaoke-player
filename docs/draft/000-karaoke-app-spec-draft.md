@@ -221,6 +221,7 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 - S7.2 Python 런타임 + 모델 첫 실행 시 다운로드 (StemDeck 방식 참고)
 - DoD: 클린 Windows 머신에서 설치 → 첫 곡 처리까지 완료
 - 상세 스펙: `docs/specs/001-packaging-distribution.md` (zip/MSIX 이중 타깃, uv 부트스트랩, zip 한정 URL 임포트)
+- 상태: 2026-09-02 구현 완료 (zip/MSIX 빌드 자동 검증 통과. 클린 머신 DoD와 부트스트랩·URL 임포트 실행 확인은 수동 검증 대기)
 
 ### v2 (설계만, 구현 안 함)
 

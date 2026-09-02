@@ -8,18 +8,21 @@ import {
   MdDeleteOutline,
   MdEdit,
   MdErrorOutline,
+  MdLink,
   MdSchedule,
   MdSettings
 } from 'react-icons/md'
+import BootstrapScreen from './components/BootstrapScreen'
 import CoverArt from './components/CoverArt'
 import LyricsView from './components/LyricsView'
 import SettingsModal from './components/SettingsModal'
 import ShortcutHelp from './components/ShortcutHelp'
 import Transport from './components/Transport'
+import UrlImportForm from './components/UrlImportForm'
 import { useLibraryStore } from './stores/libraryStore'
 import { useLyricsStore } from './stores/lyricsStore'
 import { usePlayerStore } from './stores/playerStore'
-import type { Track, TrackMetaInput } from '../../shared/types'
+import type { BootstrapState, Track, TrackMetaInput } from '../../shared/types'
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -165,10 +168,12 @@ function App(): React.JSX.Element {
     rejections,
     importing,
     search,
+    urlImportAvailable,
     refresh,
     setSearch,
     importFiles,
     importViaDialog,
+    loadCapabilities,
     deleteTrack,
     updateTrackMeta,
     dismissRejections
@@ -181,10 +186,25 @@ function App(): React.JSX.Element {
   const [dragOver, setDragOver] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  const [showUrlImport, setShowUrlImport] = useState(false)
+  // null = 아직 조회 전. ready가 아니면 라이브러리 대신 부트스트랩 화면 (스펙 001 §4.1)
+  const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null)
+
+  useEffect(() => {
+    // 구독을 먼저 걸어 조회와 이벤트 사이의 상태 변화를 놓치지 않는다
+    const unsubscribe = window.api.onBootstrapState(setBootstrap)
+    void window.api.getBootstrapState().then(setBootstrap)
+    return unsubscribe
+  }, [])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // yt-dlp 동봉 여부는 실행 중 바뀌지 않으므로 1회만 조회한다 (스펙 001 §4.3)
+  useEffect(() => {
+    void loadCapabilities()
+  }, [loadCapabilities])
 
   // 재생 단축키: Space 재생/일시정지, ←/→ 시크, ↑/↓(+Ctrl/Alt) 음량, −/= 키, M/V/L, / 도움말
   useEffect(() => {
@@ -284,6 +304,11 @@ function App(): React.JSX.Element {
     await deleteTrack(track.id)
   }
 
+  if (bootstrap === null) return <div className="app" />
+  if (bootstrap.status !== 'ready') {
+    return <BootstrapScreen state={bootstrap} onRetry={() => void window.api.retryBootstrap()} />
+  }
+
   return (
     <div className="app">
       <div className="main-area">
@@ -302,11 +327,25 @@ function App(): React.JSX.Element {
               <button onClick={() => void importViaDialog()} disabled={importing}>
                 {importing ? '임포트 중…' : '+ 가져오기'}
               </button>
+              {/* yt-dlp 리소스가 없는 실행에서는 진입점 자체가 없다 (스펙 001 기준 6) */}
+              {urlImportAvailable && (
+                <button
+                  className="icon-btn"
+                  title="URL로 가져오기"
+                  onClick={() => setShowUrlImport((open) => !open)}
+                >
+                  <MdLink />
+                </button>
+              )}
               <button className="icon-btn" title="설정" onClick={() => setShowSettings(true)}>
                 <MdSettings />
               </button>
             </div>
           </div>
+
+          {urlImportAvailable && showUrlImport && (
+            <UrlImportForm onClose={() => setShowUrlImport(false)} />
+          )}
 
           <input
             className="search"

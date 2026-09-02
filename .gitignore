@@ -337,3 +337,7 @@ __pycache__/
 
 # lefthook local
 lefthook-local.yml
+
+# 패키징 리소스 (scripts/prepare-resources.mjs 산출물 — 커밋하지 않는다)
+resources/bin/
+resources/sidecar/

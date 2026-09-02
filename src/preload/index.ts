@@ -4,14 +4,17 @@ import { DEFAULT_GUIDE_VOCAL_DB, IPC_CHANNELS } from '../shared/types'
 import type {
   AlignLang,
   AlignedLine,
+  AppCapabilities,
   AppSettings,
+  BootstrapState,
   ImportFilesResponse,
   ImportProgressEvent,
   LyricsPayload,
   LyricsProgressEvent,
   Track,
   TrackFiles,
-  TrackMetaInput
+  TrackMetaInput,
+  UrlImportProgressEvent
 } from '../shared/types'
 
 function subscribe<T>(channel: string, callback: (payload: T) => void): () => void {
@@ -66,7 +69,18 @@ const api = {
   onTrackUpdated: (callback: (track: Track) => void): (() => void) =>
     subscribe(IPC_CHANNELS.trackUpdated, callback),
   onImportProgress: (callback: (event: ImportProgressEvent) => void): (() => void) =>
-    subscribe(IPC_CHANNELS.importProgress, callback)
+    subscribe(IPC_CHANNELS.importProgress, callback),
+  /** 사이드카 부트스트랩 (스펙 001 §4.1). ready가 될 때까지 렌더러는 전용 화면을 보여준다 */
+  getBootstrapState: (): Promise<BootstrapState> => ipcRenderer.invoke(IPC_CHANNELS.bootstrapGet),
+  retryBootstrap: (): Promise<BootstrapState> => ipcRenderer.invoke(IPC_CHANNELS.bootstrapRetry),
+  onBootstrapState: (callback: (state: BootstrapState) => void): (() => void) =>
+    subscribe(IPC_CHANNELS.bootstrapState, callback),
+  /** 배포 채널별 기능 플래그 (스펙 001 §4.3). urlImport가 false면 URL UI를 그리지 않는다 */
+  getCapabilities: (): Promise<AppCapabilities> => ipcRenderer.invoke(IPC_CHANNELS.capabilities),
+  importUrl: (url: string): Promise<ImportFilesResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.importUrl, url),
+  onUrlImportProgress: (callback: (event: UrlImportProgressEvent) => void): (() => void) =>
+    subscribe(IPC_CHANNELS.urlImportProgress, callback)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

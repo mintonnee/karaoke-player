@@ -94,14 +94,36 @@ parts.push(
     ].join('\n')
 )
 
-// ── 4. zip 배포판 동봉 예정 도구 (전문은 패키징 슬라이스 P4에서 추가) ──
+// ── 4. zip 배포판 동봉 도구 (uv/deno는 MSIX에도 포함, yt-dlp는 zip 전용) ──
+const licDir = join(root, 'scripts', 'licenses')
+const uvMit = readFileSync(join(licDir, 'uv-LICENSE-MIT.txt'), 'utf-8').trim()
+const uvApache = readFileSync(join(licDir, 'uv-LICENSE-APACHE.txt'), 'utf-8').trim()
+const denoLicense = readFileSync(join(licDir, 'deno-LICENSE.md'), 'utf-8').trim()
+const ytdlpLicense = readFileSync(join(licDir, 'yt-dlp-LICENSE.txt'), 'utf-8').trim()
+
 parts.push(
-  `zip 배포판 동봉 도구\n\n` +
-    [
-      'uv — MIT OR Apache-2.0 (https://github.com/astral-sh/uv)',
-      'deno — MIT (https://github.com/denoland/deno)',
-      'yt-dlp — Unlicense (https://github.com/yt-dlp/yt-dlp)'
-    ].join('\n')
+  `uv v0.12.9 — MIT OR Apache-2.0\n` +
+    `https://github.com/astral-sh/uv\n\n` +
+    `zip·MSIX 배포판에 동봉되어 sidecar 부트스트랩(uv sync)에 사용된다. 듀얼 라이선스이므로\n` +
+    `두 전문을 모두 싣는다.\n\n` +
+    uvMit +
+    '\n\n' +
+    uvApache
+)
+
+parts.push(
+  `deno v2.9.6 — MIT\n` +
+    `https://github.com/denoland/deno\n\n` +
+    `zip·MSIX 배포판에 동봉되어 yt-dlp의 JS 챌린지 런타임(--js-runtimes deno:<경로>)으로 사용된다.\n\n` +
+    denoLicense
+)
+
+parts.push(
+  `yt-dlp v2026.08.19 — Unlicense\n` +
+    `https://github.com/yt-dlp/yt-dlp\n\n` +
+    `zip 배포판에만 동봉된다. MSIX(Store)판에는 yt-dlp가 포함되지 않는다 — Microsoft Store\n` +
+    `정책상 YouTube 다운로드 도구는 거부 사유이므로 배포 채널을 분리했다 (스펙 001 §4.2).\n\n` +
+    ytdlpLicense
 )
 
 const outDir = join(root, 'src', 'renderer', 'src', 'generated')

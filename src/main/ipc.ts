@@ -6,6 +6,7 @@ import { DEMUCS_MODELS, IPC_CHANNELS } from '../shared/types'
 import type {
   AlignLang,
   AlignedLine,
+  AppCapabilities,
   AppSettings,
   ImportFilesResponse,
   Track,
@@ -15,6 +16,7 @@ import type {
 import type { ImportService } from './library/ImportService'
 import type { LibraryStore } from './library/LibraryStore'
 import type { SearchKeyService } from './library/SearchKeyService'
+import type { YtDlpService } from './library/YtDlpService'
 import type { LyricsService } from './lyrics/LyricsService'
 import type { SettingsStore } from './settings/SettingsStore'
 
@@ -28,6 +30,10 @@ export interface IpcDeps {
   settingsStore: SettingsStore
   tracksDir: string
   notify: (channel: string, payload: unknown) => void
+  /** 배포 채널별 기능 플래그 (스펙 001 §4.3) */
+  capabilities: AppCapabilities
+  /** URL 임포트가 꺼진 실행(MSIX판·리소스 미배치)에서는 null */
+  ytDlpService: YtDlpService | null
 }
 
 export function registerIpcHandlers({
@@ -37,7 +43,9 @@ export function registerIpcHandlers({
   searchKeyService,
   settingsStore,
   tracksDir,
-  notify
+  notify,
+  capabilities,
+  ytDlpService
 }: IpcDeps): void {
   // 렌더러가 cover.jpg 등 트랙 파일의 media:// URL을 만들 때 쓴다
   ipcMain.handle(IPC_CHANNELS.tracksDir, (): string => tracksDir)
@@ -135,5 +143,18 @@ export function registerIpcHandlers({
       return { imported: [], rejected: [] }
     }
     return importService.importFiles(filePaths)
+  })
+
+  // 스펙 001 §4.3: 렌더러는 이 플래그가 false면 URL 임포트 UI를 아예 그리지 않는다 (기준 6)
+  ipcMain.handle(IPC_CHANNELS.capabilities, (): AppCapabilities => capabilities)
+
+  ipcMain.handle(IPC_CHANNELS.importUrl, (_event, url: string): Promise<ImportFilesResponse> => {
+    if (!ytDlpService) {
+      return Promise.resolve({
+        imported: [],
+        rejected: [{ filePath: url, reason: '이 배포판에서는 URL 가져오기를 쓸 수 없습니다' }]
+      })
+    }
+    return ytDlpService.importUrl(url)
   })
 }

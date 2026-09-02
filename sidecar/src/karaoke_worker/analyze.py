@@ -1,6 +1,6 @@
 """analyze: 반주 스템(inst.wav)에서 BPM과 조성을 추정한다.
 
-BPM은 Beat This!(신경망 비트 트래커), 키는 크로마 + Krumhansl-Kessler 템플릿.
+BPM은 Beat This!(신경망 비트 트래커), 키는 크로마 + Bellman-Budge 프로파일 템플릿.
 두 단계는 서로 독립이라 한쪽이 실패해도 다른 값은 그대로 반환한다.
 torch/beat_this import가 무거워서 함수 내부에서 지연 import한다.
 """
@@ -15,30 +15,33 @@ from .protocol import WorkerError, emit_progress, log
 from .separate import DEFAULT_DEVICE, _resolve_device
 
 # 알고리즘 버전. 추정 방식을 바꾸면 올린다 (스펙 002 §1 결정 기록).
-ANALYSIS_VERSION = 1
+# 1 = Krumhansl-Kessler·55–2000 Hz·접기 상한 200, 2 = Bellman-Budge·110–2000 Hz·접기 상한 170.
+ANALYSIS_VERSION = 2
 
 # 조성 표기는 샤프 통일 12음 + 단조 'm' 접미.
 PITCH_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 
-# Krumhansl-Kessler 조성 프로파일 (인덱스 0 = 으뜸음).
-KK_MAJOR = np.array(
-    [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
+# Bellman-Budge 조성 프로파일 (인덱스 0 = 으뜸음). 실곡 13곡 대조에서 Krumhansl-Kessler(5곡)보다
+# 12곡을 맞혀 채택했다 (스펙 002 §4.5 정확도 대조). KK는 배음이 섞인 크로마에서 딸림조로 쏠린다.
+PROFILE_MAJOR = np.array(
+    [16.80, 0.86, 12.95, 1.41, 13.49, 11.93, 1.25, 20.28, 1.80, 8.04, 0.62, 10.57],
     dtype=np.float64,
 )
-KK_MINOR = np.array(
-    [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17],
+PROFILE_MINOR = np.array(
+    [18.16, 0.69, 12.99, 13.34, 1.07, 11.15, 1.38, 21.07, 7.49, 1.53, 0.92, 10.21],
     dtype=np.float64,
 )
 
-# 키 추정 STFT 파라미터. 저역 잡음(킥)과 고역 심벌을 대역 제한으로 걷어낸다.
+# 키 추정 STFT 파라미터. 킥·베이스 기음이 몰린 110 Hz 아래와 고역 심벌을 대역 제한으로 걷어낸다.
 KEY_N_FFT = 8192
 KEY_HOP = 4096
-KEY_FMIN = 55.0
+KEY_FMIN = 110.0
 KEY_FMAX = 2000.0
 
-# BPM 접기 범위. 벗어나면 절반/두 배로 접는다.
+# BPM 접기 범위. 벗어나면 절반/두 배로 접는다. 상한 170은 "느린 쪽을 기본"으로 두는
+# songbpm 관례를 따른 값이다 (스펙 002 §1 결정 기록 v2).
 BPM_MIN = 60.0
-BPM_MAX = 200.0
+BPM_MAX = 170.0
 MIN_BEATS = 4
 
 
@@ -118,8 +121,8 @@ def estimate_key(y: np.ndarray, sr: int) -> tuple[str | None, float]:
 
     scored: list[tuple[float, str]] = []
     for root in range(12):
-        scored.append((_pearson(vec, np.roll(KK_MAJOR, root)), PITCH_NAMES[root]))
-        scored.append((_pearson(vec, np.roll(KK_MINOR, root)), PITCH_NAMES[root] + "m"))
+        scored.append((_pearson(vec, np.roll(PROFILE_MAJOR, root)), PITCH_NAMES[root]))
+        scored.append((_pearson(vec, np.roll(PROFILE_MINOR, root)), PITCH_NAMES[root] + "m"))
     scored.sort(key=lambda item: item[0], reverse=True)
 
     best, name = scored[0]

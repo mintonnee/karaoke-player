@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatKey, formatKeyDisplay, lowConfSuffix, parseKey, transposeKey } from '../musicKey'
-import { BPM_LOW_CONF, KEY_LOW_CONF } from '../types'
+import { BPM_LOW_CONF } from '../types'
 
 const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
@@ -65,43 +65,36 @@ describe('transposeKey', () => {
   })
 })
 
-describe('lowConfSuffix', () => {
+describe('lowConfSuffix (BPM 표시용)', () => {
   it('임계값 미만이면 ? 접미', () => {
-    expect(lowConfSuffix(0.04, KEY_LOW_CONF)).toBe('?')
-    expect(lowConfSuffix(0.06, KEY_LOW_CONF)).toBe('')
     expect(lowConfSuffix(0.4, BPM_LOW_CONF)).toBe('?')
     expect(lowConfSuffix(0.6, BPM_LOW_CONF)).toBe('')
   })
 
   it('임계값과 같은 값은 접미 없음 (미만만 불확실)', () => {
-    expect(lowConfSuffix(KEY_LOW_CONF, KEY_LOW_CONF)).toBe('')
     expect(lowConfSuffix(BPM_LOW_CONF, BPM_LOW_CONF)).toBe('')
   })
 
-  it('키와 BPM은 임계값이 달라 같은 신뢰도라도 결과가 갈린다', () => {
-    expect(lowConfSuffix(0.25, KEY_LOW_CONF)).toBe('')
-    expect(lowConfSuffix(0.25, BPM_LOW_CONF)).toBe('?')
-  })
-
   it('사용자 입력 값(conf null)은 접미 없이 표시한다', () => {
-    expect(lowConfSuffix(null, KEY_LOW_CONF)).toBe('')
+    expect(lowConfSuffix(null, BPM_LOW_CONF)).toBe('')
     expect(lowConfSuffix(undefined, BPM_LOW_CONF)).toBe('')
   })
 })
 
 describe('formatKeyDisplay', () => {
-  it('키 신뢰도는 KEY_LOW_CONF로 판정한다', () => {
-    expect(formatKeyDisplay('C#m', 0.02)).toBe('C#m?')
-    expect(formatKeyDisplay('C#m', 0.25)).toBe('C#m')
+  it('키에는 신뢰도와 무관하게 ?를 붙이지 않는다 (스펙 002 §1 v2)', () => {
+    expect(formatKeyDisplay('C#m')).toBe('C#m')
+    expect(formatKeyDisplay('F')).toBe('F')
   })
 
-  it('사용자 입력 값(conf null)은 ? 없이 표시한다', () => {
-    expect(formatKeyDisplay('C#m', null)).toBe('C#m')
+  it('정규 표기로 정규화한다', () => {
+    expect(formatKeyDisplay('B#')).toBe('C')
+    expect(formatKeyDisplay('E#m')).toBe('Fm')
   })
 
   it('값이 없거나 형식이 틀리면 null이다', () => {
-    expect(formatKeyDisplay(null, 0.9)).toBeNull()
-    expect(formatKeyDisplay('', 0.9)).toBeNull()
-    expect(formatKeyDisplay('H', 0.9)).toBeNull()
+    expect(formatKeyDisplay(null)).toBeNull()
+    expect(formatKeyDisplay('')).toBeNull()
+    expect(formatKeyDisplay('H')).toBeNull()
   })
 })

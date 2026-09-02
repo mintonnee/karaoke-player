@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { IPC_CHANNELS } from '../../../shared/types'
+import { ANALYSIS_VERSION, IPC_CHANNELS } from '../../../shared/types'
 import type { Track } from '../../../shared/types'
 import { SidecarManager } from '../../sidecar/SidecarManager'
 import { AnalysisService } from '../AnalysisService'
@@ -50,7 +50,7 @@ describe('AnalysisService', () => {
   function createService(mode: 'ok' | 'partial' | 'error'): AnalysisService {
     const sidecar = new SidecarManager({
       command: process.execPath,
-      baseArgs: [FAKE_WORKER, mode],
+      baseArgs: [FAKE_WORKER, mode, String(ANALYSIS_VERSION)],
       onLog: () => {}
     })
     return new AnalysisService({

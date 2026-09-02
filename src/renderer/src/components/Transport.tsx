@@ -89,7 +89,7 @@ function Transport(): React.JSX.Element | null {
   }
 
   // 원키는 playerStore의 track에서 읽는다. 분석 완료 시 trackUpdated 구독이 갱신해 준다
-  const originalKey = formatKeyDisplay(track?.musicKey, track?.keyConf)
+  const originalKey = formatKeyDisplay(track?.musicKey)
   // pitch가 0이면 원키만 표시한다 (스펙 002 §4.3)
   const shiftedKey = pitch === 0 ? null : transposeKey(track?.musicKey, pitch)
 

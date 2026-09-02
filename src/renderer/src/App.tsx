@@ -98,7 +98,7 @@ function TrackRow({
   const [error, setError] = useState<string | null>(null)
   const playable = track.status === 'ready'
   const bpmText = formatBpmDisplay(track.bpm, track.bpmConf)
-  const keyText = formatKeyDisplay(track.musicKey, track.keyConf)
+  const keyText = formatKeyDisplay(track.musicKey)
 
   const startEdit = (): void => {
     setForm({

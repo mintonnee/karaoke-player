@@ -37,14 +37,15 @@ export interface Track {
   updatedAt: string
 }
 
-/** 스펙 002 §1 결정 기록: 알고리즘 버전. 올리면 백필이 auto 트랙을 다시 분석한다 */
-export const ANALYSIS_VERSION = 1
 /**
- * 신뢰도 미만이면 표시에 '?' 접미 (스펙 002 §4.3). 2026-09-02 실곡 10곡으로 보정:
- * 키는 크로마 상관 2위가 거의 항상 상대조라 격차가 태생적으로 작다(실측 0.02–0.25).
- * BPM은 비트 간격 분산 기반이라 0–0.97로 넓게 분포한다.
+ * 스펙 002 §1 결정 기록: 알고리즘 버전. 올리면 백필이 auto 트랙을 다시 분석한다.
+ * 1 = Krumhansl–Kessler·55–2000 Hz·접기 상한 200, 2 = Bellman–Budge·110–2000 Hz·접기 상한 170
  */
-export const KEY_LOW_CONF = 0.05
+export const ANALYSIS_VERSION = 2
+/**
+ * BPM 신뢰도가 이 값 미만이면 표시에 '?' 접미 (스펙 002 §4.3). 비트 간격 분산 기반이라
+ * 0–0.97로 넓게 분포한다. 키 신뢰도는 정답 여부와 상관이 약해 '?'를 붙이지 않는다(§1 v2).
+ */
 export const BPM_LOW_CONF = 0.5
 /** 키 표기 형식: C C# D ... B (+ 'm') */
 export const MUSIC_KEY_RE = /^[A-G]#?m?$/

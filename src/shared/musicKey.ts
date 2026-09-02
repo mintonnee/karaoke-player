@@ -2,7 +2,7 @@
  * 조성 표기 파싱·변조 헬퍼 (스펙 002 §4.3).
  * 표기는 샤프 통일 12음 + 단조 'm' 접미(예: 'C#m'). 이명동음(Db 등)은 쓰지 않는다.
  */
-import { KEY_LOW_CONF, MUSIC_KEY_RE } from './types'
+import { MUSIC_KEY_RE } from './types'
 
 export interface ParsedKey {
   /** 피치 클래스 0..11 (C = 0) */
@@ -41,20 +41,15 @@ export function transposeKey(key: string | null | undefined, semitones: number):
 }
 
 /**
- * 신뢰도가 임계값 미만이면 '?' 접미 (스펙 002 §4.3).
- * 키(KEY_LOW_CONF)와 BPM(BPM_LOW_CONF)은 신뢰도 분포가 달라 임계값을 호출자가 넘긴다.
- * conf === null은 사용자가 직접 입력한 값이라 접미를 붙이지 않는다.
+ * 신뢰도가 임계값 미만이면 '?' 접미 (스펙 002 §4.3). BPM 표시에 BPM_LOW_CONF와 함께 쓴다.
+ * 키에는 붙이지 않는다(§1 결정 기록 v2). conf === null은 사용자 입력값이라 접미가 없다.
  */
 export function lowConfSuffix(conf: number | null | undefined, threshold: number): string {
   return conf !== null && conf !== undefined && conf < threshold ? '?' : ''
 }
 
-/** 라이브러리·트랜스포트 공통 키 표시 문자열. 값이 없거나 형식이 틀리면 null */
-export function formatKeyDisplay(
-  key: string | null | undefined,
-  conf: number | null | undefined
-): string | null {
+/** 라이브러리·트랜스포트 공통 키 표시 문자열(정규 표기로 정규화). 값이 없거나 형식이 틀리면 null */
+export function formatKeyDisplay(key: string | null | undefined): string | null {
   const parsed = parseKey(key)
-  if (!parsed) return null
-  return formatKey(parsed) + lowConfSuffix(conf, KEY_LOW_CONF)
+  return parsed ? formatKey(parsed) : null
 }

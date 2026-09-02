@@ -248,3 +248,78 @@ def test_cli_emits_single_json_line(wav_major: str) -> None:
     assert len(done) == 1
     assert done[0]["result"]["version"] == ANALYSIS_VERSION
     assert "analyze: total=" in proc.stderr
+
+
+# --- 기준 9: 실곡 정확도 회귀 (로컬 라이브러리가 있을 때만) ---------------------
+#
+# 스펙 002 §4.5 정확도 대조 표. 제목 부분 문자열 → (정답 BPM 또는 None, 허용 키 집합).
+# 상대조는 정답으로 인정한다(변조 반음 수가 같다). 라이브러리에 없는 곡은 건너뛴다.
+
+GROUND_TRUTH: list[tuple[str, float | None, set[str]]] = [
+    ("廻廻奇譚", 92.0, {"F", "Dm"}),
+    ("ポルターガイスト", 100.0, {"G", "Em"}),
+    ("千鳥", 120.0, {"D#", "Cm"}),
+    ("폭망", 100.0, {"A", "F#m"}),  # v1·v2 모두 D로 오판 — 집계에서 1곡 오차 허용
+    ("Flamingo", 114.0, {"Gm", "A#"}),
+    ("Get a Feel", 97.0, {"F#", "D#m"}),
+    ("멸종", None, {"F#", "D#m"}),
+    ("シャルル", 145.0, {"A#", "Gm"}),
+    ("Bremen", 95.0, {"D", "Bm"}),
+    ("Dynamite", 114.0, {"E", "C#m", "F#m"}),
+    ("Beautiful Beautiful", 125.0, {"F", "Dm"}),
+    ("Lemon", 87.0, {"B", "G#m"}),
+    ("Sleepwalk", 114.0, {"C", "Am"}),
+]
+MAX_KEY_MISSES = 1
+MIN_TRACKS_FOR_REGRESSION = 8
+
+
+def _local_tracks() -> list[tuple[str, str, float | None, set[str]]]:
+    """(제목, inst.wav 경로, 정답 BPM, 허용 키) 목록. 라이브러리가 없으면 빈 목록."""
+    import os
+    import sqlite3
+    from pathlib import Path
+
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return []
+    root = Path(appdata) / "karaoke-player"
+    db_path = root / "library.sqlite"
+    if not db_path.is_file():
+        return []
+    db = sqlite3.connect(str(db_path))
+    rows = db.execute("select id, title from tracks where status = 'ready'").fetchall()
+    db.close()
+    found: list[tuple[str, str, float | None, set[str]]] = []
+    seen: set[str] = set()
+    for needle, bpm, keys in GROUND_TRUTH:
+        for tid, title in rows:
+            if needle in title and needle not in seen:
+                wav = root / "tracks" / tid / "inst.wav"
+                if wav.is_file():
+                    found.append((needle, str(wav), bpm, keys))
+                    seen.add(needle)
+                break
+    return found
+
+
+def test_ground_truth_regression() -> None:
+    tracks = _local_tracks()
+    if len(tracks) < MIN_TRACKS_FOR_REGRESSION:
+        pytest.skip(f"로컬 라이브러리에 정답 곡이 {len(tracks)}곡뿐 (최소 {MIN_TRACKS_FOR_REGRESSION})")
+
+    from karaoke_worker.separate import DEFAULT_DEVICE
+
+    bpm_misses: list[str] = []
+    key_misses: list[str] = []
+    for title, wav, gt_bpm, keys in tracks:
+        result = analyze(wav, DEFAULT_DEVICE)
+        if gt_bpm is not None:
+            bpm = result["bpm"]
+            if bpm is None or abs(bpm - gt_bpm) / gt_bpm > 0.02:
+                bpm_misses.append(f"{title}: {bpm} (정답 {gt_bpm})")
+        if result["key"] not in keys:
+            key_misses.append(f"{title}: {result['key']} (허용 {sorted(keys)})")
+
+    assert not bpm_misses, "BPM 오차 2% 초과: " + "; ".join(bpm_misses)
+    assert len(key_misses) <= MAX_KEY_MISSES, "키 오판: " + "; ".join(key_misses)

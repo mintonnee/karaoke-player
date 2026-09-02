@@ -17,6 +17,7 @@
 - 반주 재생, 가이드 보컬 볼륨 조절(기본 -20 dB, 뮤트 가능), 루프, 시크
 - 가사 표시 및 줄 단위 하이라이트 (LRCLIB 동기 가사 → 없으면 텍스트 + forced alignment)
 - 키 변경 (±6 반음), 템포는 v1 범위 밖
+- BPM·조성 자동 분석·표시, 키 변경 시 "원키 → 현재 키" 표기 (2026-09-02 추가, 상세는 `docs/specs/002-bpm-key-analysis.md`)
 - 라이브러리: 처리한 곡 목록, 재처리 없이 재생, 삭제
 - Windows 우선, macOS 빌드 가능해야 함
 
@@ -125,6 +126,7 @@ export interface AudioEngine {
 - `transcribe --vocal <path> --lang auto --out <txt>` → `{txt: path}`
 - `pronounce --lyrics <txt> --out <json>` → `{out: path, lines:[{text, hint}]}` (일본어 줄의 한글 통용 표기 발음. 가사 힌트와 검색 키 생성에 사용)
 - `cover --input <audio> --out <img>` → `{cover: path | null}` (mutagen으로 내장 앨범 아트 추출. 없으면 null)
+- `analyze --input <inst.wav>` → `{bpm, bpm_conf, key, key_conf, version}` (반주 스템에서 BPM·조성 추정. 상세는 `docs/specs/002-bpm-key-analysis.md` §4.1)
 
 stderr는 로그로만 사용. 취소는 SIGTERM, 워커는 부분 산출물을 삭제한 뒤 종료.
 
@@ -143,6 +145,8 @@ stderr는 로그로만 사용. 취소는 SIGTERM, 워커는 부분 산출물을 
 ```
 
 SQLite `tracks`: `id, title, artist, album, duration, source_path, status(imported|separating|ready|failed), lyrics_source(lrclib_synced|lrclib_plain_aligned|user_aligned|none), created_at, updated_at`
+
+스키마 v2에서 `search_keys`, v3에서 `bpm, music_key, bpm_conf, key_conf, analysis_version, analysis_source`가 추가됐다 (v3 상세는 `docs/specs/002-bpm-key-analysis.md` §4.2).
 
 ### 4.4 가사 파이프라인
 
@@ -247,6 +251,7 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 - 줄 단위 하이라이트: 일본어 단어 경계 문제와 정렬 정확도를 고려한 현실적 선택. 실제 노래방 기기와 동일한 UX
 - 오디오 엔진 인터페이스를 S2에서 먼저 고정: v2 네이티브 전환 비용을 렌더러 0 변경으로 묶기 위함
 - 가사 정렬을 ctc-forced-aligner 대신 torchaudio 내장 MMS_FA로 구현 (2026-09-01): 같은 MMS 정렬 모델이지만 ctc-forced-aligner는 PyPI에 없고(git 설치) pybind11 소스 빌드가 필요해 MSVC 없는 환경에서 설치 불가. torchaudio는 이미 의존성에 있어 추가 빌드가 없다. 정렬 결과 conf는 align.json으로 트랙 디렉토리에 저장
+- BPM 검출에 Beat This!(`beat-this` PyPI, MIT)를 채택하고 키 검출은 크로마 템플릿으로 자체 구현 (2026-09-02, 사용자 결정): 자기상관 방식의 절반·두 배 템포 오류 회피. librosa/madmom/essentia는 numba·빌드 리스크로 배제. 상세는 `docs/specs/002-bpm-key-analysis.md`
 - "URL 다운로드 하지 않음" 결정을 뒤집음 (2026-09-02, 사용자 결정): 개인 사용 목적의 YouTube URL 임포트를 zip 배포 채널 한정으로 도입. 리스크는 배포 채널 분리로 관리 — Microsoft Store(MSIX)판에는 yt-dlp를 포함하지 않는다. 상세는 `docs/specs/001-packaging-distribution.md`
 
 ## 8. 미정 (구현 전 확인)

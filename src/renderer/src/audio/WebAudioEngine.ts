@@ -5,6 +5,13 @@ import { dbToGain, rmsDb, wrapLoopPosition } from './audioMath'
 const POSITION_PUSH_INTERVAL_MS = 33 // ~30 Hz (스펙 상한 60 Hz)
 const GAIN_RAMP_SEC = 0.01 // 클릭 노이즈 방지용 짧은 램프
 const START_DELAY_SEC = 0.03 // 두 소스의 샘플 동기 시작 여유
+/* 시크 전환 예약 여유. 라이브 소스가 liveAt에 정확히 시작해야 프리롤과 이어지므로, 메인 스레드 지연으로
+ * start(when)이 과거가 되는 일이 없게 재생 시작보다 넉넉히 잡는다 (늦게 시작하면 그만큼 구간이 반복된다). */
+const SEEK_DELAY_SEC = 0.06
+const SOURCE_FADE_SEC = 0.01 // 소스 교체(시크·일시정지·루프 변경) 시 클릭 방지 엔벌로프
+const SEEK_PRE_MARGIN_FRAMES = 128 // 프리롤 앞 여유: 워클릿 전환 블록이 liveAt보다 최대 한 블록 앞선다
+const SEEK_POST_MARGIN_SEC = 0.1 // 프리롤 뒤 여유: 메시지가 liveAt보다 늦게 닿아도 이어 붙인다
+const DEFAULT_PRIME_FRAMES = 7168 // 워클릿이 시작 시 실제 PRIME_FRAMES를 보고한다
 const PITCH_WORKLET_URL = 'worklets/soundtouch-worklet.js' // renderer public/ 정적 자산
 const PITCH_MIN = -6
 const PITCH_MAX = 6
@@ -21,6 +28,8 @@ interface TrackChannel {
   /** 게인 뒤 옆가지 탭. 재생 경로에는 연결하지 않는다 (post-fader 미터) */
   analyser: AnalyserNode
   source: AudioBufferSourceNode | null
+  /** 소스별 페이드 인/아웃 엔벌로프. source → envelope → gain */
+  envelope: GainNode | null
 }
 
 /** §4.1 AudioEngine의 v1 Web Audio 구현체. AudioContext는 이 파일 밖에서 사용 금지. */
@@ -40,6 +49,8 @@ export class WebAudioEngine implements AudioEngine {
   private pitchSemitones = 0
   /** 워클릿이 실측 보고하는 파이프라인 지연. 재생 중 위치 보고에서 차감한다. */
   private pitchLatencySec = 0
+  /** 워클릿 프라이밍 프레임 수. 시크 프리롤 길이로 쓴다 */
+  private primeFrames = DEFAULT_PRIME_FRAMES
 
   /** 정지 시점 위치(초). 재생 중에는 startedAt 기준으로 계산한다. */
   private offset = 0
@@ -126,8 +137,7 @@ export class WebAudioEngine implements AudioEngine {
     if (!this.channels) return
     const position = Math.max(0, Math.min(seconds, this.trackDuration))
     if (this.engineState === 'playing') {
-      this.stopSources()
-      this.startSources(position)
+      this.seekPlaying(position)
     } else {
       this.offset = position
       if (this.engineState === 'ready') this.engineState = 'paused'
@@ -136,12 +146,12 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   setLoop(range: LoopRange | null): void {
+    const previous = this.loop
     this.loop = range
-    // 네이티브 소스 루프 속성과 경과시간 계산을 일치시키기 위해 재생 중이면 현재 위치에서 재시작
-    if (this.engineState === 'playing') {
-      const position = this.currentPosition()
-      this.stopSources()
-      this.startSources(position)
+    // 네이티브 소스 루프 속성과 경과시간 계산을 일치시키기 위해 재생 중이면 지금 들리는 위치에서 재시작
+    if (this.engineState === 'playing' && this.ctx) {
+      const liveAt = this.ctx.currentTime + SEEK_DELAY_SEC
+      this.seekPlaying(this.audibleContentAt(liveAt, previous), liveAt)
     }
   }
 
@@ -208,8 +218,9 @@ export class WebAudioEngine implements AudioEngine {
           outputChannelCount: [2]
         })
         this.pitchNode.port.onmessage = (event: MessageEvent) => {
-          const latency = (event.data as { latencySec?: number } | null)?.latencySec
-          if (typeof latency === 'number') this.pitchLatencySec = latency
+          const data = event.data as { latencySec?: number; primeFrames?: number } | null
+          if (typeof data?.latencySec === 'number') this.pitchLatencySec = data.latencySec
+          if (typeof data?.primeFrames === 'number') this.primeFrames = data.primeFrames
         }
         this.mixBus = ctx.createGain()
         this.mixBus.connect(this.pitchNode)
@@ -227,7 +238,7 @@ export class WebAudioEngine implements AudioEngine {
 
   private createChannel(ctx: AudioContext, buffer: AudioBuffer, db: number): TrackChannel {
     const gain = this.createGain(ctx, db)
-    return { buffer, gain, analyser: this.tapAnalyser(ctx, gain), source: null }
+    return { buffer, gain, analyser: this.tapAnalyser(ctx, gain), source: null, envelope: null }
   }
 
   private createGain(ctx: AudioContext, db: number): GainNode {
@@ -268,13 +279,74 @@ export class WebAudioEngine implements AudioEngine {
     return ctx.decodeAudioData(await response.arrayBuffer())
   }
 
-  private startSources(offset: number): void {
+  /** 시각 t에 들리고 있을 콘텐츠 위치 = 소스 위치 − 파이프라인 지연 */
+  private audibleContentAt(t: number, loop: LoopRange | null): number {
+    const elapsed = Math.max(0, t - this.startedAt)
+    return Math.max(0, wrapLoopPosition(this.offset + elapsed, loop) - this.pitchLatencySec)
+  }
+
+  /**
+   * 재생 중 위치 이동 (클릭·구멍·반복 없는 시크).
+   * 워클릿에 남은 이전 위치 오디오는 버린다(그대로 두면 시크 직전 구간이 한 번 더 들린다). 대신 새 위치의
+   * 첫 primeFrames를 미리 섞어 만든 프리롤을 보내 워클릿이 liveAt에 파이프라인을 새로 만들자마자 채우게 하고,
+   * 라이브 소스는 프리롤이 끝나는 콘텐츠 위치에서 정확히 liveAt에 시작해 이어 붙는다. 워클릿 쪽 정렬은
+   * soundtouch-worklet.js `_switchToSeek` 참고.
+   */
+  private seekPlaying(content: number, liveAt?: number): void {
+    const ctx = this.ctx
+    const channels = this.channels
+    const port = this.pitchNode?.port
+    if (!ctx || !channels) return
+    const at = liveAt ?? ctx.currentTime + SEEK_DELAY_SEC
+    const sr = ctx.sampleRate
+    const margin = SEEK_PRE_MARGIN_FRAMES
+    const prime = this.primeFrames
+    const total = margin + prime + Math.round(SEEK_POST_MARGIN_SEC * sr)
+    const startFrame = Math.round(content * sr) - margin
+    const liveOffset = (startFrame + margin + prime) / sr
+    const prerollEnd = (startFrame + total) / sr
+    // 프리롤 구간이 곡 끝이나 루프 끝을 넘으면 선형 프리롤과 소스 재생이 어긋난다 → 비우고 페이드로 재시작
+    const crossesLoopEnd =
+      this.loop !== null && content < this.loop.end && prerollEnd > this.loop.end
+    if (!port || liveOffset >= this.trackDuration || crossesLoopEnd) {
+      this.stopSources()
+      this.startSources(content, at)
+      return
+    }
+
+    // 현재 게인(뮤트 포함)을 적용한 두 스템의 합 = 워클릿이 실제로 받는 입력
+    const left = new Float32Array(total)
+    const right = new Float32Array(total)
+    for (const key of ['inst', 'vocal'] as const) {
+      const gain = dbToGain(this.gainsDb[key])
+      if (gain === 0) continue
+      const buffer = channels[key].buffer
+      const cl = buffer.getChannelData(0)
+      const cr = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : cl
+      const from = Math.max(0, -startFrame)
+      const to = Math.min(total, buffer.length - startFrame)
+      for (let i = from; i < to; i++) {
+        left[i] += cl[startFrame + i] * gain
+        right[i] += cr[startFrame + i] * gain
+      }
+    }
+
+    this.stopSources({ flush: false }) // 이전 소스는 지금 페이드 아웃, 워클릿 전환은 liveAt에
+    port.postMessage(
+      { seek: { left, right, liveAt: at, marginFrames: margin, primeFrames: prime } },
+      [left.buffer, right.buffer]
+    )
+    this.pitchLatencySec = prime / sr // 전환 직후 지연. 워클릿이 실측값을 곧바로 다시 보고한다
+    this.startSources(liveOffset, at, false)
+  }
+
+  private startSources(offset: number, at?: number, fadeIn = true): void {
     const ctx = this.ctx
     const channels = this.channels
     if (!ctx || !channels) return
 
     const generation = ++this.generation
-    const when = ctx.currentTime + START_DELAY_SEC
+    const when = at ?? ctx.currentTime + START_DELAY_SEC
 
     for (const key of ['inst', 'vocal'] as const) {
       const channel = channels[key]
@@ -285,9 +357,17 @@ export class WebAudioEngine implements AudioEngine {
         source.loopStart = this.loop.start
         source.loopEnd = this.loop.end
       }
-      source.connect(channel.gain)
+      // 파형 중간에서 시작하는 스텝 불연속을 없애기 위해 짧은 페이드 인을 끼운다
+      const envelope = ctx.createGain()
+      if (fadeIn) {
+        envelope.gain.setValueAtTime(0, when)
+        envelope.gain.linearRampToValueAtTime(1, when + SOURCE_FADE_SEC)
+      }
+      source.connect(envelope)
+      envelope.connect(channel.gain)
       source.start(when, offset)
       channel.source = source
+      channel.envelope = envelope
     }
 
     // 자연 종료 감지는 inst 소스 기준 (루프 중에는 발생하지 않음)
@@ -302,23 +382,42 @@ export class WebAudioEngine implements AudioEngine {
     this.startTimer()
   }
 
-  private stopSources(): void {
+  /**
+   * 소스를 페이드 아웃 뒤 멈춘다. `at`은 페이드 시작 시각(기본 지금).
+   * `flush`면 워클릿 잔류 오디오를 비우고 정렬을 새로 잡는다(정지·일시정지·언로드). 시크는 비우지 않는다.
+   */
+  private stopSources(options: { at?: number; flush?: boolean } = {}): void {
     this.generation++
-    // 불연속 지점: 워클릿 잔류 오디오를 비우고 정렬을 새로 잡는다
-    this.pitchNode?.port.postMessage({ reset: true })
-    this.pitchLatencySec = 0
+    if (options.flush ?? true) {
+      this.pitchNode?.port.postMessage({ reset: true })
+      this.pitchLatencySec = 0
+    }
     if (!this.channels) return
     for (const key of ['inst', 'vocal'] as const) {
-      const source = this.channels[key].source
+      const channel = this.channels[key]
+      const source = channel.source
+      const envelope = channel.envelope
       if (!source) continue
-      source.onended = null
-      try {
-        source.stop()
-      } catch {
-        // 이미 정지된 소스는 무시
+      channel.source = null
+      channel.envelope = null
+      const detach = (): void => {
+        source.disconnect()
+        envelope?.disconnect()
       }
-      source.disconnect()
-      this.channels[key].source = null
+      // 페이드 아웃 뒤에 멈추고, 실제로 끝난 뒤 그래프에서 뗀다 (즉시 disconnect하면 하드 컷)
+      source.onended = detach
+      const at = options.at ?? this.ctx?.currentTime ?? 0
+      try {
+        if (envelope) {
+          // 미래 시각의 현재값을 붙들고 거기서 0으로 램프 (페이드 인 도중 시크해도 연속)
+          envelope.gain.cancelAndHoldAtTime(at)
+          envelope.gain.linearRampToValueAtTime(0, at + SOURCE_FADE_SEC)
+        }
+        source.stop(at + SOURCE_FADE_SEC)
+      } catch {
+        // 이미 정지된 소스는 바로 뗀다
+        detach()
+      }
     }
   }
 

@@ -29,6 +29,33 @@ function Transport(): React.JSX.Element | null {
 
   const loopBarRef = useRef<HTMLDivElement>(null)
   const [dragRange, setDragRange] = useState<{ start: number; end: number } | null>(null)
+  // 시크바 스크럽: 포인터를 누르고 있는 동안은 썸만 움직이고, 놓을 때 한 번만 시크한다.
+  // (클릭도 mousedown의 input과 mouseup의 change가 1px만 달라도 시크가 두 번 나가 시작 구간이 반복된다)
+  const scrubRef = useRef<number | null>(null)
+  const [scrub, setScrub] = useState<number | null>(null)
+
+  const commitScrub = (): void => {
+    const target = scrubRef.current
+    scrubRef.current = null
+    setScrub(null)
+    if (target !== null) seek(target)
+  }
+
+  const onSeekPointerDown = (): void => {
+    if (!active) return
+    scrubRef.current = position
+    setScrub(position)
+    window.addEventListener('pointerup', commitScrub, { once: true })
+  }
+
+  const onSeekChange = (value: number): void => {
+    if (scrubRef.current !== null) {
+      scrubRef.current = value
+      setScrub(value)
+    } else {
+      seek(value) // 키보드 조작 등 포인터 없는 변경은 즉시
+    }
+  }
 
   // 상태와 무관하게 바 구조는 항상 동일하게 유지한다 (레이아웃 점프 방지).
   // 곡 없음/로딩/에러는 컨트롤 비활성화 + 아티스트 줄의 상태 텍스트로만 표현한다.
@@ -80,9 +107,10 @@ function Transport(): React.JSX.Element | null {
         min={0}
         max={active ? duration : 1}
         step={0.1}
-        value={active ? position : 0}
+        value={active ? (scrub ?? position) : 0}
         disabled={!active}
-        onChange={(e) => seek(Number(e.target.value))}
+        onPointerDown={onSeekPointerDown}
+        onChange={(e) => onSeekChange(Number(e.target.value))}
       />
 
       <div className="loop-row">

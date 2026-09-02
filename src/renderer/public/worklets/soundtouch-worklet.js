@@ -905,12 +905,22 @@ const STRETCH_OVERLAP_MS = 8
  * 처리 배치(FILL_BATCH_FRAMES) + 여유 마진. 산출물을 버리는 방식의 드리프트 보정은
  * 재충전 공백을 오판해 오디오를 깎아먹으므로 쓰지 않는다 — 남는 지연 변화는
  * latencySec 실측 보고를 통해 메인 스레드의 위치 보정이 흡수한다. */
-const PRIME_FRAMES = FILL_BATCH_FRAMES + 1024
+/* 2026-09-03: 1024 여유로는 rate 1(원키) 경로에서 첫 배치 소진 뒤 입력이 모자라 언더런이 났다
+ * (안정 상태 체류 5713 프레임 실측). 3072 여유(7168 프레임 ≈ 163 ms)면 ±6 반음 전부 무음 0. */
+const PRIME_FRAMES = FILL_BATCH_FRAMES + 3072
+/* reset(시크·정지) 시 잔류 출력을 즉시 버리면 출력단에서 하드 컷이 난다.
+ * 이만큼의 쿼텀 동안 1→0 램프로 내보낸 뒤 파이프라인을 새로 만든다 (3 쿼텀 ≈ 9 ms @ 44.1 kHz). */
+const DRAIN_QUANTA = 3
+/* 시크 프리롤 앞부분 페이드 인 (파형 중간 시작 클릭 방지) */
+const SEEK_FADE_FRAMES = Math.round(0.01 * sampleRate)
 
 class SoundTouchWorkletProcessor extends AudioWorkletProcessor {
   constructor() {
     super()
     this.pitchSemitones = 0
+    this.drainQuanta = 0
+    /** 예약된 시크 전환 {left, right, liveAt, marginFrames, primeFrames} — process()가 liveAt 블록에서 적용 */
+    this.pendingSeek = null
     this.interleaved = new Float32Array(BLOCK_FRAMES * 2)
     this.silence = new Float32Array(BLOCK_FRAMES)
     this._rebuildPipeline()
@@ -920,10 +930,18 @@ class SoundTouchWorkletProcessor extends AudioWorkletProcessor {
         this.pitchSemitones = Math.max(-6, Math.min(6, data.pitchSemitones))
         this.st.pitchSemitones = this.pitchSemitones
       }
+      if (data.seek) {
+        this.pendingSeek = data.seek
+        this.drainQuanta = 0
+      }
       if (data.reset) {
-        this._rebuildPipeline()
+        this.pendingSeek = null
+        // 출력 중이면 램프로 비우고, 아직 프라이밍 중이면 바로 재구성
+        if (this.warm) this.drainQuanta = DRAIN_QUANTA
+        else this._rebuildPipeline()
       }
     }
+    this.port.postMessage({ primeFrames: PRIME_FRAMES })
   }
 
   /** 시크/정지 등 불연속 지점에서 잔류 오디오를 버리고 정렬을 처음부터 다시 잡는다 */
@@ -941,9 +959,40 @@ class SoundTouchWorkletProcessor extends AudioWorkletProcessor {
     if (this.pitchSemitones !== 0) this.st.pitchSemitones = this.pitchSemitones
     this.filter = new SimpleFilter(this.source, this.st)
     this.warm = false
+    this.drainQuanta = 0
     this.inputFrames = 0
     this.producedFrames = 0
     this.quantum = 0
+  }
+
+  /**
+   * 예약된 시크 전환. k = 이 블록 첫 프레임의 liveAt 기준 프레임 오프셋(−BLOCK+1 이상).
+   * 파이프라인을 새로 만들고 프리롤 중 [X0+k, X0+prime+max(k,0)) 구간을 넣은 뒤, 이 블록의 라이브 입력에서
+   * liveAt 이후 부분을 이어 붙인다. 라이브 소스가 콘텐츠 X0+prime에서 정확히 liveAt에 시작하므로 연속이다.
+   */
+  _switchToSeek(seek, k, left, right) {
+    this._rebuildPipeline()
+    const start = seek.marginFrames + k
+    const end = seek.marginFrames + seek.primeFrames + Math.max(k, 0)
+    const s = Math.max(0, Math.min(start, seek.left.length))
+    const e = Math.max(s, Math.min(end, seek.left.length))
+    if (e > s) {
+      const pl = seek.left.subarray(s, e)
+      const pr = seek.right.subarray(s, e)
+      const fade = Math.min(SEEK_FADE_FRAMES, pl.length)
+      for (let i = 0; i < fade; i++) {
+        const g = i / fade
+        pl[i] *= g
+        pr[i] *= g
+      }
+      this.source.push(pl, pr)
+    }
+    const liveFrom = Math.min(left.length, Math.max(0, -k))
+    if (liveFrom < left.length) this.source.push(left.subarray(liveFrom), right.subarray(liveFrom))
+    this.inputFrames = this.source.lengthFrames
+    this.warm = this.inputFrames >= PRIME_FRAMES
+    // 지연이 바뀌었으니 이 블록에서 바로 보고한다
+    this.quantum = LATENCY_REPORT_INTERVAL_QUANTA - 1
   }
 
   process(inputs, outputs) {
@@ -953,16 +1002,44 @@ class SoundTouchWorkletProcessor extends AudioWorkletProcessor {
 
     const left = input && input.length > 0 ? input[0] : this.silence
     const right = input && input.length > 1 ? input[1] : left
-    this.source.push(left, right)
-    this.inputFrames += left.length
+    const n = left.length
+    let rampFrom = 1
+    let rampTo = 1
+    let rebuildAfter = false
+
+    if (this.pendingSeek) {
+      const k = Math.round((currentTime - this.pendingSeek.liveAt) * sampleRate)
+      if (k + n > 0) {
+        this._switchToSeek(this.pendingSeek, k, left, right)
+        this.pendingSeek = null
+      } else {
+        this.source.push(left, right)
+        this.inputFrames += n
+        // 전환 직전 DRAIN_QUANTA 블록 동안 이전 출력을 램프로 내린다
+        const span = DRAIN_QUANTA * n
+        if (-k <= span) {
+          rampFrom = Math.min(1, -k / span)
+          rampTo = Math.max(0, (-k - n) / span)
+        }
+      }
+    } else {
+      this.source.push(left, right)
+      this.inputFrames += n
+      if (this.drainQuanta > 0) {
+        rampFrom = this.drainQuanta / DRAIN_QUANTA
+        rampTo = (this.drainQuanta - 1) / DRAIN_QUANTA
+        rebuildAfter = --this.drainQuanta === 0
+      }
+    }
+
+    const outL = output[0]
+    const outR = output.length > 1 ? output[1] : output[0]
 
     // 프라이밍: 충분히 모이기 전에는 무음 출력 (시작 지연으로 계산되어 위치 보정됨)
     if (!this.warm) {
       if (this.inputFrames < PRIME_FRAMES) {
-        const l = output[0]
-        const r = output.length > 1 ? output[1] : output[0]
-        l.fill(0)
-        r.fill(0)
+        outL.fill(0)
+        outR.fill(0)
         return true
       }
       this.warm = true
@@ -970,9 +1047,6 @@ class SoundTouchWorkletProcessor extends AudioWorkletProcessor {
 
     const frames = this.filter.extract(this.interleaved, BLOCK_FRAMES)
     this.producedFrames += frames
-
-    const outL = output[0]
-    const outR = output.length > 1 ? output[1] : output[0]
     for (let i = 0; i < outL.length; i++) {
       if (i < frames) {
         outL[i] = this.interleaved[i * 2]
@@ -981,6 +1055,17 @@ class SoundTouchWorkletProcessor extends AudioWorkletProcessor {
         outL[i] = 0
         outR[i] = 0
       }
+    }
+    if (rampFrom !== 1 || rampTo !== 1) {
+      for (let i = 0; i < outL.length; i++) {
+        const g = rampFrom + ((rampTo - rampFrom) * i) / outL.length
+        outL[i] *= g
+        outR[i] *= g
+      }
+    }
+    if (rebuildAfter) {
+      this._rebuildPipeline()
+      return true
     }
     this.source.markConsumed(this.filter.sourcePosition)
 

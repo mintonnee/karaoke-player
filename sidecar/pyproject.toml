@@ -13,6 +13,7 @@ dependencies = [
     "faster-whisper>=1.1",
     # 일본어 한자→가나 변환 (정렬·발음 힌트). prebuilt 휠이라 Windows에서도 기본 설치 가능
     "lemon-pyopenjtalk-prebuilt>=0.0.9",
+    "beat-this>=1.1",
 ]
 
 [project.scripts]
@@ -38,3 +39,11 @@ explicit = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/karaoke_worker"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

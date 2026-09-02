@@ -50,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
     cover_parser.add_argument("--out", required=True)
     cover_parser.add_argument("--json", action="store_true", default=True)
 
+    analyze_parser = sub.add_parser("analyze", help="estimate bpm and musical key")
+    analyze_parser.add_argument("--input", required=True)
+    analyze_parser.add_argument("--device", default=None)
+    analyze_parser.add_argument("--json", action="store_true", default=True)
+
     return parser
 
 
@@ -96,6 +101,11 @@ def main() -> None:
             from .cover import cover
 
             emit_done(cover(args.input, args.out))
+        elif args.command == "analyze":
+            from .analyze import analyze
+            from .separate import DEFAULT_DEVICE as ANALYZE_DEFAULT_DEVICE
+
+            emit_done(analyze(args.input, args.device or ANALYZE_DEFAULT_DEVICE))
     except WorkerError as e:
         emit_error(e.code, e.msg)
         sys.exit(1)

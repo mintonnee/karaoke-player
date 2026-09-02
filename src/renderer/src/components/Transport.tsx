@@ -14,6 +14,7 @@ import {
 } from 'react-icons/md'
 import { normalizeLoop } from '../audio/audioMath'
 import { usePlayerStore } from '../stores/playerStore'
+import { formatKeyDisplay, transposeKey } from '../../../shared/musicKey'
 import CoverArt from './CoverArt'
 
 function formatTime(seconds: number): string {
@@ -86,6 +87,11 @@ function Transport(): React.JSX.Element | null {
     setLoop(normalizeLoop(dragRange.start, dragRange.end, duration))
     setDragRange(null)
   }
+
+  // 원키는 playerStore의 track에서 읽는다. 분석 완료 시 trackUpdated 구독이 갱신해 준다
+  const originalKey = formatKeyDisplay(track?.musicKey, track?.keyConf)
+  // pitch가 0이면 원키만 표시한다 (스펙 002 §4.3)
+  const shiftedKey = pitch === 0 ? null : transposeKey(track?.musicKey, pitch)
 
   const shownLoop = dragRange
     ? {
@@ -260,6 +266,11 @@ function Transport(): React.JSX.Element | null {
             >
               원키
             </button>
+            {originalKey !== null && (
+              <span className="pitch-key" title="원키 → 현재 키">
+                {shiftedKey === null ? originalKey : `${originalKey} → ${shiftedKey}`}
+              </span>
+            )}
           </div>
         </div>
       </div>

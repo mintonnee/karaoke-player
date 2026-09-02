@@ -534,6 +534,15 @@
   font-weight: 600;
 }
 
+/* 원키 → 현재 키 (스펙 002 §4.3). 원키가 없으면 요소 자체를 그리지 않는다 */
+.pitch-key {
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ev-c-text-2);
+}
+
 /* LyricsView 루트: 가사 패널을 세로로 채운다 (본문 flex:1 + 하단 도구 막대) */
 .lyrics-pane {
   display: flex;
@@ -908,6 +917,20 @@
   border: 1px solid var(--ev-c-gray-2);
   background-color: var(--ev-c-black-mute);
   color: var(--ev-c-text-1);
+}
+
+/* BPM·키 입력은 제목/아티스트보다 짧게 (스펙 002 §4.3) */
+.track-edit-form input.meta-narrow {
+  flex: 0 0 auto;
+  width: 84px;
+  min-width: 0;
+}
+
+.track-edit-error {
+  flex: 1 0 100%;
+  margin: 0;
+  font-size: 12px;
+  color: #e66;
 }
 
 .track-edit-actions {

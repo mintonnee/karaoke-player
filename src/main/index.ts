@@ -7,6 +7,7 @@ import icon from '../../resources/icon.png?asset'
 import { IPC_CHANNELS, MEDIA_PROTOCOL_SCHEME } from '../shared/types'
 import type { BootstrapState } from '../shared/types'
 import { registerIpcHandlers } from './ipc'
+import { AnalysisService } from './library/AnalysisService'
 import { CoverService } from './library/CoverService'
 import { ImportService } from './library/ImportService'
 import { JobQueue } from './library/JobQueue'
@@ -172,6 +173,14 @@ app.whenReady().then(() => {
   })
   const settingsStore = new SettingsStore(join(userData, 'settings.json'))
   const coverService = new CoverService({ store, sidecar, tracksDir })
+  // BPM·키 분석은 분리와 같은 큐에서 직렬로 돈다 (스펙 002 §4.2)
+  const analysisService = new AnalysisService({
+    store,
+    sidecar,
+    queue: jobQueue,
+    tracksDir,
+    notify
+  })
   const importService = new ImportService({
     store,
     sidecar,
@@ -182,7 +191,8 @@ app.whenReady().then(() => {
     notify,
     fetchLyrics: (track) => lyricsService.fetchAndStore(track),
     refreshSearchKeys: (track) => searchKeyService.refresh(track),
-    extractCover: (track) => coverService.refresh(track)
+    extractCover: (track) => coverService.refresh(track),
+    analyze: (track) => analysisService.refresh(track.id)
   })
   // URL 임포트는 zip판에만 동봉되는 yt-dlp.exe·deno.exe 존재로 켜고 끈다 (스펙 001 §4.3, 기준 6)
   const ytDlpPath = getBundledBinary('yt-dlp')
@@ -223,9 +233,10 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC_CHANNELS.bootstrapRetry, (): Promise<BootstrapState> => bootstrap.retry())
   bootstrap.onChange((state) => notify(IPC_CHANNELS.bootstrapState, state))
   void bootstrap.whenReady().then(() => {
-    // 기존 트랙의 일본어 메타 발음 키와 앨범 커버를 백그라운드로 채운다
+    // 기존 트랙의 일본어 메타 발음 키·앨범 커버·BPM·키 분석을 백그라운드로 채운다
     searchKeyService.backfill()
     coverService.backfill()
+    analysisService.backfill()
   })
   void bootstrap.start()
   app.on('will-quit', () => {

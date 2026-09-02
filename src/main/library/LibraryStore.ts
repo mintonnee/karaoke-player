@@ -1,9 +1,16 @@
 import Database from 'better-sqlite3'
 import { hangulIncludes, hangulLooseIncludes } from '../../shared/hangul'
-import type { LyricsSource, Track, TrackMetaInput, TrackStatus } from '../../shared/types'
+import { ANALYSIS_VERSION, BPM_MAX, BPM_MIN, MUSIC_KEY_RE } from '../../shared/types'
+import type {
+  AnalysisSource,
+  LyricsSource,
+  Track,
+  TrackMetaInput,
+  TrackStatus
+} from '../../shared/types'
 
 /** §4.3 tracks 스키마. 변경 시 user_version을 올리고 마이그레이션을 추가한다. */
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 interface TrackRow {
   id: string
@@ -16,6 +23,13 @@ interface TrackRow {
   lyrics_source: LyricsSource
   /** v2: 일본어 메타의 한글 발음 등 검색 전용 보조 키 (SearchKeyService가 채움) */
   search_keys: string
+  /** v3: BPM·키 분석 결과 (스펙 002 §4.2) */
+  bpm: number | null
+  music_key: string | null
+  bpm_conf: number | null
+  key_conf: number | null
+  analysis_version: number
+  analysis_source: AnalysisSource
   created_at: string
   updated_at: string
 }
@@ -30,6 +44,11 @@ function toTrack(row: TrackRow): Track {
     sourcePath: row.source_path,
     status: row.status,
     lyricsSource: row.lyrics_source,
+    bpm: row.bpm,
+    musicKey: row.music_key,
+    bpmConf: row.bpm_conf,
+    keyConf: row.key_conf,
+    analysisSource: row.analysis_source,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }
@@ -42,6 +61,35 @@ export interface CreateTrackInput {
   album: string | null
   duration: number
   sourcePath: string
+}
+
+/** 사이드카 analyze 결과 저장 입력 (AnalysisService → setAnalysis) */
+export interface AnalysisInput {
+  bpm: number | null
+  musicKey: string | null
+  bpmConf: number | null
+  keyConf: number | null
+  /** 사이드카가 보고한 알고리즘 버전 (AnalyzeResult.version) */
+  version: number
+}
+
+/** 사용자 입력 BPM 검증. null은 "값 없음"으로 허용 */
+function validateBpm(bpm: number | null): number | null {
+  if (bpm === null) return null
+  if (!Number.isFinite(bpm) || bpm < BPM_MIN || bpm > BPM_MAX) {
+    throw new Error(`bpm must be between ${BPM_MIN} and ${BPM_MAX}`)
+  }
+  return bpm
+}
+
+/** 사용자 입력 키 검증. 빈 문자열은 null로 정규화 */
+function validateMusicKey(key: string | null): string | null {
+  const trimmed = key?.trim() ?? ''
+  if (trimmed === '') return null
+  if (!MUSIC_KEY_RE.test(trimmed)) {
+    throw new Error(`invalid music key: ${trimmed} (expected e.g. C, F#, Am, C#m)`)
+  }
+  return trimmed
 }
 
 export class LibraryStore {
@@ -73,6 +121,17 @@ export class LibraryStore {
     }
     if (version < 2) {
       this.db.exec(`ALTER TABLE tracks ADD COLUMN search_keys TEXT NOT NULL DEFAULT ''`)
+    }
+    if (version < 3) {
+      // 스펙 002 §4.2: BPM·키 분석 컬럼. 기존 행은 미분석(none/0)으로 시작해 백필 대상이 된다
+      this.db.exec(`
+        ALTER TABLE tracks ADD COLUMN bpm              REAL;
+        ALTER TABLE tracks ADD COLUMN music_key        TEXT;
+        ALTER TABLE tracks ADD COLUMN bpm_conf         REAL;
+        ALTER TABLE tracks ADD COLUMN key_conf         REAL;
+        ALTER TABLE tracks ADD COLUMN analysis_version INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE tracks ADD COLUMN analysis_source  TEXT NOT NULL DEFAULT 'none';
+      `)
     }
     this.db.pragma(`user_version = ${SCHEMA_VERSION}`)
   }
@@ -125,18 +184,76 @@ export class LibraryStore {
     return rows.map(toTrack)
   }
 
+  /**
+   * 자동 분석 결과 저장 (source 'auto'). 사용자 값('user')은 덮어쓰지 않고 현재 행을 그대로 돌려준다
+   * (백필과 메타 편집의 경쟁 방지). 표시 전용 데이터라 updated_at은 건드리지 않는다
+   */
+  setAnalysis(id: string, analysis: AnalysisInput): Track {
+    this.db
+      .prepare(
+        `UPDATE tracks
+         SET bpm = @bpm, music_key = @musicKey, bpm_conf = @bpmConf, key_conf = @keyConf,
+             analysis_version = @version, analysis_source = 'auto'
+         WHERE id = @id AND analysis_source != 'user'`
+      )
+      .run({ ...analysis, id })
+    return this.mustGetTrack(id)
+  }
+
+  /** 분석이 없거나 구버전인 ready 트랙 (앱 시작 시 백필 대상). 사용자 값은 제외 */
+  listTracksNeedingAnalysis(): Track[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM tracks
+         WHERE status = 'ready' AND analysis_source != 'user' AND analysis_version < ?
+         ORDER BY created_at DESC, id`
+      )
+      .all(ANALYSIS_VERSION) as TrackRow[]
+    return rows.map(toTrack)
+  }
+
+  /**
+   * 메타 편집. bpm/musicKey가 입력에 있으면(undefined가 아니면) 검증 후 사용자 값으로 저장하고
+   * 이후 백필이 덮어쓰지 않게 analysis_source='user'로 바꾼다. 둘 다 없으면 분석 컬럼은 손대지 않는다
+   * (YtDlpService.touchTrack처럼 title/artist/album만 갱신하는 경로)
+   */
   updateMeta(id: string, meta: TrackMetaInput): Track {
     const title = meta.title.trim()
     if (!title) throw new Error('title must not be empty')
-    this.db
-      .prepare('UPDATE tracks SET title = ?, artist = ?, album = ?, updated_at = ? WHERE id = ?')
-      .run(
-        title,
-        meta.artist?.trim() || null,
-        meta.album?.trim() || null,
-        new Date().toISOString(),
-        id
-      )
+    const hasAnalysis = meta.bpm !== undefined || meta.musicKey !== undefined
+    const current = hasAnalysis ? this.mustGetTrack(id) : null
+    const analysis = current
+      ? {
+          bpm: meta.bpm === undefined ? current.bpm : validateBpm(meta.bpm),
+          musicKey: meta.musicKey === undefined ? current.musicKey : validateMusicKey(meta.musicKey)
+        }
+      : null
+    const now = new Date().toISOString()
+    const params = {
+      id,
+      title,
+      artist: meta.artist?.trim() || null,
+      album: meta.album?.trim() || null,
+      now
+    }
+    if (analysis) {
+      this.db
+        .prepare(
+          `UPDATE tracks
+           SET title = @title, artist = @artist, album = @album, updated_at = @now,
+               bpm = @bpm, music_key = @musicKey, bpm_conf = NULL, key_conf = NULL,
+               analysis_version = @version, analysis_source = 'user'
+           WHERE id = @id`
+        )
+        .run({ ...params, ...analysis, version: ANALYSIS_VERSION })
+    } else {
+      this.db
+        .prepare(
+          `UPDATE tracks SET title = @title, artist = @artist, album = @album, updated_at = @now
+           WHERE id = @id`
+        )
+        .run(params)
+    }
     return this.mustGetTrack(id)
   }
 

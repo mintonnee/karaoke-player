@@ -22,12 +22,38 @@ import UrlImportForm from './components/UrlImportForm'
 import { useLibraryStore } from './stores/libraryStore'
 import { useLyricsStore } from './stores/lyricsStore'
 import { usePlayerStore } from './stores/playerStore'
+import { formatKeyDisplay, lowConfSuffix } from '../../shared/musicKey'
+import { BPM_LOW_CONF, BPM_MAX, BPM_MIN, MUSIC_KEY_RE } from '../../shared/types'
 import type { BootstrapState, Track, TrackMetaInput } from '../../shared/types'
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${m}:${String(s).padStart(2, '0')}`
+}
+
+/** 메타 줄의 BPM 표기. 신뢰도가 낮으면 '?' 접미 (스펙 002 §4.3) */
+function formatBpmDisplay(bpm: number | null, conf: number | null): string | null {
+  if (bpm === null) return null
+  return `${Math.round(bpm)} BPM${lowConfSuffix(conf, BPM_LOW_CONF)}`
+}
+
+/**
+ * 메인(LibraryStore.updateMeta)과 같은 규칙으로 미리 검사해 왕복 없이 오류를 보여준다.
+ * 통과해도 메인이 최종 검증한다.
+ */
+function validateMetaForm(form: TrackMetaInput): string | null {
+  const bpm = form.bpm
+  if (bpm !== null && bpm !== undefined) {
+    if (!Number.isFinite(bpm) || bpm < BPM_MIN || bpm > BPM_MAX) {
+      return `BPM은 ${BPM_MIN}–${BPM_MAX} 사이여야 합니다`
+    }
+  }
+  const key = form.musicKey?.trim() ?? ''
+  if (key !== '' && !MUSIC_KEY_RE.test(key)) {
+    return `키 형식이 올바르지 않습니다: ${key} (예: C, F#, Am, C#m)`
+  }
+  return null
 }
 
 const STATUS_LABEL: Record<Track['status'], string> = {
@@ -65,19 +91,42 @@ function TrackRow({
   const [form, setForm] = useState<TrackMetaInput>({
     title: track.title,
     artist: track.artist,
-    album: track.album
+    album: track.album,
+    bpm: track.bpm,
+    musicKey: track.musicKey
   })
+  const [error, setError] = useState<string | null>(null)
   const playable = track.status === 'ready'
+  const bpmText = formatBpmDisplay(track.bpm, track.bpmConf)
+  const keyText = formatKeyDisplay(track.musicKey, track.keyConf)
 
   const startEdit = (): void => {
-    setForm({ title: track.title, artist: track.artist, album: track.album })
+    setForm({
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      bpm: track.bpm,
+      musicKey: track.musicKey
+    })
+    setError(null)
     setEditing(true)
   }
 
   const save = async (): Promise<void> => {
     if (!form.title.trim()) return
-    await onSaveMeta(form)
-    setEditing(false)
+    const invalid = validateMetaForm(form)
+    if (invalid) {
+      setError(invalid)
+      return
+    }
+    try {
+      // 폼에서 편집했으므로 bpm·musicKey를 항상 함께 보낸다 (analysis_source='user')
+      await onSaveMeta({ ...form, musicKey: form.musicKey?.trim() || null })
+      setError(null)
+      setEditing(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
   }
 
   if (editing) {
@@ -99,6 +148,28 @@ function TrackRow({
             placeholder="앨범"
             onChange={(e) => setForm({ ...form, album: e.target.value || null })}
           />
+          <input
+            className="meta-narrow"
+            type="number"
+            min={BPM_MIN}
+            max={BPM_MAX}
+            step={1}
+            value={form.bpm ?? ''}
+            placeholder="BPM"
+            title={`BPM (${BPM_MIN}–${BPM_MAX}, 비우면 값 없음)`}
+            onChange={(e) =>
+              setForm({ ...form, bpm: e.target.value === '' ? null : e.target.valueAsNumber })
+            }
+          />
+          <input
+            className="meta-narrow"
+            type="text"
+            value={form.musicKey ?? ''}
+            placeholder="C#m"
+            title="키 (예: C, F#, Am, C#m. 비우면 값 없음)"
+            onChange={(e) => setForm({ ...form, musicKey: e.target.value || null })}
+          />
+          {error && <p className="track-edit-error">{error}</p>}
           <div className="track-edit-actions">
             <button
               className="icon-btn"
@@ -128,6 +199,8 @@ function TrackRow({
           <span className="track-title">{track.title}</span>
           <span className="track-meta">
             {track.artist ?? '(아티스트 없음)'} · {formatDuration(track.duration)}
+            {bpmText !== null && ` · ${bpmText}`}
+            {keyText !== null && ` · ${keyText}`}
           </span>
         </div>
       </div>

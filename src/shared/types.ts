@@ -13,6 +13,9 @@ export type TrackStatus = 'imported' | 'separating' | 'ready' | 'failed'
 
 export type LyricsSource = 'lrclib_synced' | 'lrclib_plain_aligned' | 'user_aligned' | 'none'
 
+/** BPM·키 값의 출처 (스펙 002 §4.2). user는 백필·재분석이 덮어쓰지 않는다 */
+export type AnalysisSource = 'none' | 'auto' | 'user'
+
 export interface Track {
   id: string
   title: string
@@ -22,8 +25,39 @@ export interface Track {
   sourcePath: string
   status: TrackStatus
   lyricsSource: LyricsSource
+  /** v3: 분석 결과 (스펙 002). 미분석·추정 불가는 null */
+  bpm: number | null
+  /** 샤프 통일 12음 + 단조 'm' 접미 (예: 'C#m'). MUSIC_KEY_RE 형식 */
+  musicKey: string | null
+  /** 0..1. 사용자 입력 값은 null */
+  bpmConf: number | null
+  keyConf: number | null
+  analysisSource: AnalysisSource
   createdAt: string
   updatedAt: string
+}
+
+/** 스펙 002 §1 결정 기록: 알고리즘 버전. 올리면 백필이 auto 트랙을 다시 분석한다 */
+export const ANALYSIS_VERSION = 1
+/**
+ * 신뢰도 미만이면 표시에 '?' 접미 (스펙 002 §4.3). 2026-09-02 실곡 10곡으로 보정:
+ * 키는 크로마 상관 2위가 거의 항상 상대조라 격차가 태생적으로 작다(실측 0.02–0.25).
+ * BPM은 비트 간격 분산 기반이라 0–0.97로 넓게 분포한다.
+ */
+export const KEY_LOW_CONF = 0.05
+export const BPM_LOW_CONF = 0.5
+/** 키 표기 형식: C C# D ... B (+ 'm') */
+export const MUSIC_KEY_RE = /^[A-G]#?m?$/
+export const BPM_MIN = 30
+export const BPM_MAX = 300
+
+/** 스펙 002 §4.1 사이드카 analyze done.result와 1:1 대응 */
+export interface AnalyzeResult {
+  bpm: number | null
+  bpm_conf: number | null
+  key: string | null
+  key_conf: number | null
+  version: number
 }
 
 /** 정렬 결과 한 줄 (§4.2 align.lines). conf는 0..1, 수동 보정된 줄은 1 */
@@ -66,6 +100,10 @@ export interface TrackMetaInput {
   title: string
   artist: string | null
   album: string | null
+  /** 스펙 002 §4.2: 생략(undefined)이면 기존 값 유지, 있으면 사용자 값(analysis_source='user')으로 저장. BPM_MIN..BPM_MAX */
+  bpm?: number | null
+  /** MUSIC_KEY_RE 형식. 빈 값은 null로 넘긴다 */
+  musicKey?: string | null
 }
 
 export interface ImportRejection {

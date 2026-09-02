@@ -1,8 +1,36 @@
+import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { ANALYSIS_VERSION } from '../../../shared/types'
 import { LibraryStore } from '../LibraryStore'
+
+/** 스펙 002 이전(v2) 스키마의 DB를 만든다. 마이그레이션 테스트용 */
+function createV2Database(dbPath: string): void {
+  const db = new Database(dbPath)
+  db.exec(`
+    CREATE TABLE tracks (
+      id            TEXT PRIMARY KEY,
+      title         TEXT NOT NULL,
+      artist        TEXT,
+      album         TEXT,
+      duration      REAL NOT NULL,
+      source_path   TEXT NOT NULL,
+      status        TEXT NOT NULL,
+      lyrics_source TEXT NOT NULL DEFAULT 'none',
+      created_at    TEXT NOT NULL,
+      updated_at    TEXT NOT NULL,
+      search_keys   TEXT NOT NULL DEFAULT ''
+    )
+  `)
+  db.prepare(
+    `INSERT INTO tracks (id, title, artist, album, duration, source_path, status, lyrics_source, created_at, updated_at, search_keys)
+     VALUES ('old', '옛 트랙', 'Eve', null, 200, 'C:\\music\\old.flac', 'ready', 'lrclib_synced', '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', '요루시카')`
+  ).run()
+  db.pragma('user_version = 2')
+  db.close()
+}
 
 describe('LibraryStore', () => {
   let dir: string
@@ -115,5 +143,189 @@ describe('LibraryStore', () => {
     expect(store.deleteTrack('t1')).toBe(true)
     expect(store.getTrack('t1')).toBeUndefined()
     expect(store.deleteTrack('t1')).toBe(false)
+  })
+
+  describe('스키마 v3 마이그레이션 (스펙 002 기준 3)', () => {
+    it('v2 DB를 열면 v3로 올라가고 기존 행이 보존되며 분석 컬럼은 기본값이다', () => {
+      store.close()
+      const dbPath = join(dir, 'v2.sqlite')
+      createV2Database(dbPath)
+
+      store = new LibraryStore(dbPath)
+      const raw = new Database(dbPath, { readonly: true })
+      expect(raw.pragma('user_version', { simple: true })).toBe(3)
+      raw.close()
+
+      const old = store.getTrack('old')!
+      expect(old.title).toBe('옛 트랙')
+      expect(old.status).toBe('ready')
+      expect(old.lyricsSource).toBe('lrclib_synced')
+      expect(old.updatedAt).toBe('2026-01-02T00:00:00.000Z')
+      expect(old.bpm).toBeNull()
+      expect(old.musicKey).toBeNull()
+      expect(old.bpmConf).toBeNull()
+      expect(old.keyConf).toBeNull()
+      expect(old.analysisSource).toBe('none')
+      // 검색 키도 보존되어 백필 없이 검색된다
+      expect(store.listTracks('요루시카').map((t) => t.id)).toEqual(['old'])
+      // 기존 ready 트랙은 백필 대상
+      expect(store.listTracksNeedingAnalysis().map((t) => t.id)).toEqual(['old'])
+    })
+
+    it('새 트랙은 분석 컬럼이 비어 있다', () => {
+      const track = createTrack('t1')
+      expect(track.bpm).toBeNull()
+      expect(track.musicKey).toBeNull()
+      expect(track.bpmConf).toBeNull()
+      expect(track.keyConf).toBeNull()
+      expect(track.analysisSource).toBe('none')
+    })
+  })
+
+  describe('setAnalysis / listTracksNeedingAnalysis', () => {
+    const analysis = { bpm: 128, musicKey: 'C#m', bpmConf: 0.72, keyConf: 0.41, version: 1 }
+
+    it('auto로 저장하고 updated_at은 바꾸지 않는다', () => {
+      const created = createTrack('t1')
+      const updated = store.setAnalysis('t1', analysis)
+
+      expect(updated.bpm).toBe(128)
+      expect(updated.musicKey).toBe('C#m')
+      expect(updated.bpmConf).toBe(0.72)
+      expect(updated.keyConf).toBe(0.41)
+      expect(updated.analysisSource).toBe('auto')
+      expect(updated.updatedAt).toBe(created.updatedAt)
+      expect(store.getTrack('t1')).toEqual(updated)
+    })
+
+    it('null 결과(추정 불가)도 auto로 저장한다', () => {
+      createTrack('t1')
+      const updated = store.setAnalysis('t1', {
+        bpm: null,
+        musicKey: null,
+        bpmConf: null,
+        keyConf: null,
+        version: 1
+      })
+      expect(updated.bpm).toBeNull()
+      expect(updated.musicKey).toBeNull()
+      expect(updated.analysisSource).toBe('auto')
+    })
+
+    it('user 값이 있는 행은 덮어쓰지 않고 현재 행을 돌려준다', () => {
+      createTrack('t1')
+      store.updateMeta('t1', { title: 'x', artist: null, album: null, bpm: 96, musicKey: 'Bm' })
+      const result = store.setAnalysis('t1', analysis)
+
+      expect(result.bpm).toBe(96)
+      expect(result.musicKey).toBe('Bm')
+      expect(result.analysisSource).toBe('user')
+      expect(store.getTrack('t1')).toEqual(result)
+    })
+
+    it('없는 트랙은 오류를 던진다', () => {
+      expect(() => store.setAnalysis('missing', analysis)).toThrow('track not found')
+    })
+
+    it('ready이고 user가 아니며 버전이 낮은 트랙만 백필 대상이다', () => {
+      createTrack('imported')
+      createTrack('ready-none')
+      createTrack('ready-auto')
+      createTrack('ready-old')
+      createTrack('ready-user')
+      createTrack('failed')
+      store.updateStatus('ready-none', 'ready')
+      store.updateStatus('ready-auto', 'ready')
+      store.updateStatus('ready-old', 'ready')
+      store.updateStatus('ready-user', 'ready')
+      store.updateStatus('failed', 'failed')
+      store.setAnalysis('ready-auto', { ...analysis, version: ANALYSIS_VERSION })
+      store.setAnalysis('ready-old', { ...analysis, version: ANALYSIS_VERSION - 1 })
+      store.updateMeta('ready-user', { title: 'u', artist: null, album: null, bpm: 100 })
+
+      expect(
+        store
+          .listTracksNeedingAnalysis()
+          .map((t) => t.id)
+          .sort()
+      ).toEqual(['ready-none', 'ready-old'])
+    })
+  })
+
+  describe('updateMeta 분석 값 (스펙 002 기준 6)', () => {
+    const base = { title: '제목', artist: null, album: null }
+
+    it('bpm·musicKey를 주면 user로 저장하고 conf는 비운다', () => {
+      createTrack('t1')
+      store.setAnalysis('t1', { bpm: 128, musicKey: 'C#m', bpmConf: 0.7, keyConf: 0.4, version: 1 })
+      const updated = store.updateMeta('t1', { ...base, bpm: 96, musicKey: 'Bm' })
+
+      expect(updated.bpm).toBe(96)
+      expect(updated.musicKey).toBe('Bm')
+      expect(updated.bpmConf).toBeNull()
+      expect(updated.keyConf).toBeNull()
+      expect(updated.analysisSource).toBe('user')
+    })
+
+    it('둘 다 undefined면 분석 컬럼은 그대로 둔다 (touchTrack 경로)', () => {
+      createTrack('t1')
+      store.setAnalysis('t1', { bpm: 128, musicKey: 'C#m', bpmConf: 0.7, keyConf: 0.4, version: 1 })
+      const updated = store.updateMeta('t1', base)
+
+      expect(updated.title).toBe('제목')
+      expect(updated.bpm).toBe(128)
+      expect(updated.musicKey).toBe('C#m')
+      expect(updated.bpmConf).toBe(0.7)
+      expect(updated.keyConf).toBe(0.4)
+      expect(updated.analysisSource).toBe('auto')
+    })
+
+    it('한쪽만 주면 다른 쪽 값은 유지한 채 user로 바뀐다', () => {
+      createTrack('t1')
+      store.setAnalysis('t1', { bpm: 128, musicKey: 'C#m', bpmConf: 0.7, keyConf: 0.4, version: 1 })
+      const updated = store.updateMeta('t1', { ...base, musicKey: 'Bm' })
+
+      expect(updated.bpm).toBe(128)
+      expect(updated.musicKey).toBe('Bm')
+      expect(updated.analysisSource).toBe('user')
+    })
+
+    it('null과 빈 문자열은 값 없음으로 저장한다', () => {
+      createTrack('t1')
+      store.setAnalysis('t1', { bpm: 128, musicKey: 'C#m', bpmConf: 0.7, keyConf: 0.4, version: 1 })
+      const updated = store.updateMeta('t1', { ...base, bpm: null, musicKey: '' })
+
+      expect(updated.bpm).toBeNull()
+      expect(updated.musicKey).toBeNull()
+      expect(updated.analysisSource).toBe('user')
+    })
+
+    it('형식이 틀린 키와 범위 밖 BPM은 거부하고 행을 바꾸지 않는다', () => {
+      createTrack('t1')
+      const before = store.setAnalysis('t1', {
+        bpm: 128,
+        musicKey: 'C#m',
+        bpmConf: 0.7,
+        keyConf: 0.4,
+        version: 1
+      })
+
+      for (const musicKey of ['H', 'c#', 'Db', 'Cm7', 'C #']) {
+        expect(() => store.updateMeta('t1', { ...base, musicKey })).toThrow('invalid music key')
+      }
+      for (const bpm of [29, 301, 0, -10, Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(() => store.updateMeta('t1', { ...base, bpm })).toThrow('bpm must be between')
+      }
+      expect(store.getTrack('t1')).toEqual(before)
+    })
+
+    it('경계값 30·300과 모든 형식의 키를 허용한다', () => {
+      createTrack('t1')
+      expect(store.updateMeta('t1', { ...base, bpm: 30 }).bpm).toBe(30)
+      expect(store.updateMeta('t1', { ...base, bpm: 300 }).bpm).toBe(300)
+      for (const musicKey of ['C', 'F#', 'Am', 'G#m', ' Bm ']) {
+        expect(store.updateMeta('t1', { ...base, musicKey }).musicKey).toBe(musicKey.trim())
+      }
+    })
   })
 })

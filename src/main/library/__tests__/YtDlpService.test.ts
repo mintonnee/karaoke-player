@@ -24,6 +24,11 @@ function track(id: string): Track {
     sourcePath: 'C:/scratch/Fake Song [abc123].m4a',
     status: 'imported',
     lyricsSource: 'none',
+    bpm: null,
+    musicKey: null,
+    bpmConf: null,
+    keyConf: null,
+    analysisSource: 'none',
     createdAt: '2026-09-02T00:00:00.000Z',
     updatedAt: '2026-09-02T00:00:00.000Z'
   }

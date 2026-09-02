@@ -35,6 +35,8 @@ export interface ImportServiceOptions {
   refreshSearchKeys?: (track: Track) => void
   /** 임포트 직후 앨범 커버 추출 (CoverService.refresh) */
   extractCover?: (track: Track) => void
+  /** 분리 성공·ready 통지 뒤 BPM·키 분석 (AnalysisService.refresh, 스펙 002 §4.2). 같은 큐에 후속 잡으로 들어간다 */
+  analyze?: (track: Track) => void
   onLog?: (line: string) => void
 }
 
@@ -120,7 +122,10 @@ export class ImportService {
           join(trackDir, 'meta.json'),
           JSON.stringify({ model, processedAt: new Date().toISOString() }, null, 2)
         )
-        this.notifyTrack(this.options.store.updateStatus(trackId, 'ready'))
+        const readyTrack = this.options.store.updateStatus(trackId, 'ready')
+        this.notifyTrack(readyTrack)
+        // ready 통지 이후에 큐잉하므로 재생 가능 시점이 늦어지지 않는다
+        this.options.analyze?.(readyTrack)
       } catch (error) {
         this.log(`separate failed for ${trackId}: ${describeError(error)}`)
         this.notifyTrack(this.options.store.updateStatus(trackId, 'failed'))

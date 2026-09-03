@@ -27,6 +27,8 @@ interface LibraryState {
   /** 성공(트랙 추가)이면 true. 실패 사유는 rejections로 표면화된다 */
   importUrl: (url: string) => Promise<boolean>
   deleteTrack: (trackId: string) => Promise<void>
+  /** 드래그 정렬 저장. ids는 검색 필터 없는 전체 순서. 화면은 즉시 반영하고 저장은 뒤따른다 */
+  reorderTracks: (ids: string[]) => Promise<void>
   updateTrackMeta: (trackId: string, meta: TrackMetaInput) => Promise<void>
   dismissRejections: () => void
 }
@@ -107,6 +109,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     deleteTrack: async (trackId) => {
       await window.api.deleteTrack(trackId)
       set((state) => ({ tracks: state.tracks.filter((t) => t.id !== trackId) }))
+    },
+    reorderTracks: async (ids) => {
+      const byId = new Map(get().tracks.map((t) => [t.id, t]))
+      const ordered = ids.flatMap((id) => {
+        const track = byId.get(id)
+        return track ? [track] : []
+      })
+      set({ tracks: ordered })
+      await window.api.reorderTracks(ids)
     },
     updateTrackMeta: async (trackId, meta) => {
       const updated = await window.api.updateTrackMeta(trackId, meta)

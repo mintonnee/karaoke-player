@@ -1124,6 +1124,66 @@
   border-radius: 6px;
 }
 
+/* 드래그 정렬: 번호 왼쪽 핸들에서만 끌 수 있다. 행 호버 때만 드러나고 검색 중엔 자리만 남긴다 */
+.track-drag-handle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  width: 16px;
+  /* 번호와의 간격: 공통 gap(10px)에서 6px으로 당긴다 */
+  margin-right: -4px;
+  font-size: 18px;
+  color: var(--ev-c-text-3);
+  opacity: 0;
+  cursor: grab;
+  transition: opacity 0.12s ease;
+}
+
+.track-item:hover .track-drag-handle:not(.hidden-slot) {
+  opacity: 1;
+}
+
+.track-drag-handle:hover {
+  color: var(--ev-c-text-2);
+}
+
+.track-drag-handle:active {
+  cursor: grabbing;
+}
+
+.track-drag-handle.hidden-slot {
+  visibility: hidden;
+}
+
+.track-item.dragging {
+  opacity: 0.4;
+}
+
+.track-item.drop-before,
+.track-item.drop-after {
+  position: relative;
+}
+
+.track-item.drop-before::after,
+.track-item.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background-color: #6b9fd8;
+  pointer-events: none;
+}
+
+.track-item.drop-before::after {
+  top: -1px;
+}
+
+.track-item.drop-after::after {
+  bottom: -1px;
+}
+
 /* 현재 곡: 제목을 강조색으로 (스포티파이의 초록 제목 관습, 여기서는 앱 강조색 파랑) */
 .track-item.current .track-title,
 .track-item.current .track-index {

@@ -189,6 +189,7 @@ export const IPC_CHANNELS = {
   trackFiles: 'library:track-files',
   deleteTrack: 'library:delete',
   updateTrackMeta: 'library:update-meta',
+  reorderTracks: 'library:reorder',
   lyricsGet: 'lyrics:get',
   lyricsRefetch: 'lyrics:refetch',
   lyricsAlign: 'lyrics:align',

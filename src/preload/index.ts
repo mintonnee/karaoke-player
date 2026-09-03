@@ -31,6 +31,8 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.trackFiles, trackId),
   deleteTrack: (trackId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.deleteTrack, trackId),
+  reorderTracks: (ids: string[]): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.reorderTracks, ids),
   updateTrackMeta: (trackId: string, meta: TrackMetaInput): Promise<Track> =>
     ipcRenderer.invoke(IPC_CHANNELS.updateTrackMeta, trackId, meta),
   getLyrics: (trackId: string): Promise<LyricsPayload> =>

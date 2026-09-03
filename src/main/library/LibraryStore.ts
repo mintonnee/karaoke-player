@@ -10,7 +10,7 @@ import type {
 } from '../../shared/types'
 
 /** §4.3 tracks 스키마. 변경 시 user_version을 올리고 마이그레이션을 추가한다. */
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 interface TrackRow {
   id: string
@@ -30,6 +30,8 @@ interface TrackRow {
   key_conf: number | null
   analysis_version: number
   analysis_source: AnalysisSource
+  /** v4: 사용자 드래그 정렬 순서 (오름차순). 새 트랙은 맨 위(최솟값-1)로 들어간다 */
+  sort_order: number
   created_at: string
   updated_at: string
 }
@@ -133,18 +135,47 @@ export class LibraryStore {
         ALTER TABLE tracks ADD COLUMN analysis_source  TEXT NOT NULL DEFAULT 'none';
       `)
     }
+    if (version < 4) {
+      // 드래그 정렬 순서. 기존 행은 지금까지의 표시 순서(최신 순)를 그대로 번호 매긴다
+      this.db.exec(`ALTER TABLE tracks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
+      const ids = this.db
+        .prepare('SELECT id FROM tracks ORDER BY created_at DESC, id')
+        .all() as Array<{ id: string }>
+      const update = this.db.prepare('UPDATE tracks SET sort_order = ? WHERE id = ?')
+      this.db.transaction(() => {
+        ids.forEach((row, i) => update.run(i, row.id))
+      })()
+    }
     this.db.pragma(`user_version = ${SCHEMA_VERSION}`)
   }
 
   createTrack(input: CreateTrackInput): Track {
     const now = new Date().toISOString()
+    // 새 트랙은 목록 맨 위로: 현재 최솟값 - 1
     this.db
       .prepare(
-        `INSERT INTO tracks (id, title, artist, album, duration, source_path, status, lyrics_source, created_at, updated_at)
-         VALUES (@id, @title, @artist, @album, @duration, @sourcePath, 'imported', 'none', @now, @now)`
+        `INSERT INTO tracks (id, title, artist, album, duration, source_path, status, lyrics_source, sort_order, created_at, updated_at)
+         VALUES (@id, @title, @artist, @album, @duration, @sourcePath, 'imported', 'none',
+                 (SELECT COALESCE(MIN(sort_order), 0) - 1 FROM tracks), @now, @now)`
       )
       .run({ ...input, now })
     return this.mustGetTrack(input.id)
+  }
+
+  /**
+   * 드래그 정렬 결과 저장. ids는 화면에 보이는 전체 순서(검색 필터 없음)여야 한다.
+   * 목록에 없는 id는 무시하고, ids에 빠진 트랙은 기존 순서를 유지한 채 뒤로 밀린다.
+   */
+  reorderTracks(ids: string[]): void {
+    const update = this.db.prepare('UPDATE tracks SET sort_order = ? WHERE id = ?')
+    const rest = this.db
+      .prepare('SELECT id FROM tracks ORDER BY sort_order, created_at DESC, id')
+      .all() as Array<{ id: string }>
+    const given = new Set(ids)
+    const ordered = [...ids, ...rest.map((row) => row.id).filter((id) => !given.has(id))]
+    this.db.transaction(() => {
+      ordered.forEach((id, i) => update.run(i, id))
+    })()
   }
 
   getTrack(id: string): Track | undefined {
@@ -156,7 +187,7 @@ export class LibraryStore {
    *  로컬 라이브러리 규모에서는 전체 로드 후 필터가 충분히 빠르다. */
   listTracks(query?: string): Track[] {
     const rows = this.db
-      .prepare('SELECT * FROM tracks ORDER BY created_at DESC, id')
+      .prepare('SELECT * FROM tracks ORDER BY sort_order, created_at DESC, id')
       .all() as TrackRow[]
     const trimmed = query?.trim()
     const filtered = trimmed

@@ -145,15 +145,81 @@ describe('LibraryStore', () => {
     expect(store.deleteTrack('t1')).toBe(false)
   })
 
+  describe('드래그 정렬 (sort_order)', () => {
+    it('새 트랙은 목록 맨 위로 들어간다 (최신 순 기본 유지)', () => {
+      createTrack('a')
+      createTrack('b')
+      createTrack('c')
+      expect(store.listTracks().map((t) => t.id)).toEqual(['c', 'b', 'a'])
+    })
+
+    it('reorderTracks로 준 순서가 listTracks에 반영되고 재오픈 후에도 남는다', () => {
+      createTrack('a')
+      createTrack('b')
+      createTrack('c')
+      store.reorderTracks(['a', 'c', 'b'])
+      expect(store.listTracks().map((t) => t.id)).toEqual(['a', 'c', 'b'])
+
+      store.close()
+      store = new LibraryStore(join(dir, 'library.sqlite'))
+      expect(store.listTracks().map((t) => t.id)).toEqual(['a', 'c', 'b'])
+    })
+
+    it('정렬 뒤 새로 만든 트랙도 맨 위로 온다', () => {
+      createTrack('a')
+      createTrack('b')
+      store.reorderTracks(['a', 'b'])
+      createTrack('c')
+      expect(store.listTracks().map((t) => t.id)).toEqual(['c', 'a', 'b'])
+    })
+
+    it('ids에 빠진 트랙은 기존 순서대로 뒤에 붙고, 모르는 id는 무시한다', () => {
+      createTrack('a')
+      createTrack('b')
+      createTrack('c')
+      store.reorderTracks(['a', 'ghost'])
+      expect(store.listTracks().map((t) => t.id)).toEqual(['a', 'c', 'b'])
+    })
+
+    it('검색 필터 결과도 저장된 순서를 따른다', () => {
+      createTrack('a', { title: '노래 하나' })
+      createTrack('b', { title: '다른 곡' })
+      createTrack('c', { title: '노래 둘' })
+      store.reorderTracks(['c', 'b', 'a'])
+      expect(store.listTracks('노래').map((t) => t.id)).toEqual(['c', 'a'])
+    })
+  })
+
+  describe('스키마 v4 마이그레이션 (드래그 정렬)', () => {
+    it('v2 DB를 열면 v4까지 올라가고 기존 행은 최신 순으로 번호가 매겨진다', () => {
+      store.close()
+      const dbPath = join(dir, 'v2-to-v4.sqlite')
+      createV2Database(dbPath)
+
+      store = new LibraryStore(dbPath)
+      const raw = new Database(dbPath, { readonly: true })
+      expect(raw.pragma('user_version', { simple: true })).toBe(4)
+      const row = raw.prepare('SELECT sort_order FROM tracks WHERE id = ?').get('old') as {
+        sort_order: number
+      }
+      expect(row.sort_order).toBe(0)
+      raw.close()
+
+      // 마이그레이션 이후 새 트랙은 기존 행보다 위
+      createTrack('new')
+      expect(store.listTracks().map((t) => t.id)).toEqual(['new', 'old'])
+    })
+  })
+
   describe('스키마 v3 마이그레이션 (스펙 002 기준 3)', () => {
-    it('v2 DB를 열면 v3로 올라가고 기존 행이 보존되며 분석 컬럼은 기본값이다', () => {
+    it('v2 DB를 열면 최신 버전으로 올라가고 기존 행이 보존되며 분석 컬럼은 기본값이다', () => {
       store.close()
       const dbPath = join(dir, 'v2.sqlite')
       createV2Database(dbPath)
 
       store = new LibraryStore(dbPath)
       const raw = new Database(dbPath, { readonly: true })
-      expect(raw.pragma('user_version', { simple: true })).toBe(3)
+      expect(raw.pragma('user_version', { simple: true })).toBe(4)
       raw.close()
 
       const old = store.getTrack('old')!

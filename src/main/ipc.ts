@@ -97,6 +97,10 @@ export function registerIpcHandlers({
     store.listTracks(query)
   )
 
+  ipcMain.handle(IPC_CHANNELS.reorderTracks, (_event, ids: string[]): void => {
+    store.reorderTracks(ids)
+  })
+
   ipcMain.handle(IPC_CHANNELS.deleteTrack, async (_event, trackId: string): Promise<void> => {
     const track = store.getTrack(trackId)
     if (!track) return

@@ -6,6 +6,7 @@ import {
   MdCheckCircle,
   MdClose,
   MdDeleteOutline,
+  MdDragIndicator,
   MdEdit,
   MdErrorOutline,
   MdHelpOutline,
@@ -68,6 +69,16 @@ const STATUS_ICON: Record<Track['status'], React.JSX.Element> = {
   failed: <MdErrorOutline />
 }
 
+/** 행 드래그 정렬 핸들러 (네이티브 DnD). 파일 드롭과 구분하기 위해 전용 MIME 타입을 쓴다 */
+interface RowReorderHandlers {
+  onDragStart: (event: DragEvent) => void
+  onDragOver: (event: DragEvent) => void
+  onDrop: (event: DragEvent) => void
+  onDragEnd: () => void
+}
+
+const ROW_DRAG_MIME = 'application/x-karaoke-track'
+
 interface TrackRowProps {
   track: Track
   /** 목록 순번 (1부터) */
@@ -76,6 +87,12 @@ interface TrackRowProps {
   isCurrent: boolean
   /** 현재 곡이면서 재생 중 — 순번 자리에 이퀄라이저 애니메이션 */
   isPlaying: boolean
+  /** 드래그 정렬 핸들러. 검색 필터 중에는 null (부분 목록의 순서는 저장할 수 없다) */
+  reorder: RowReorderHandlers | null
+  /** 드래그 중인 행 자신 */
+  dragging: boolean
+  /** 드롭 위치 안내선: 이 행의 위/아래 */
+  dropHint: 'before' | 'after' | null
   onLoad: () => void
   onDelete: () => void
   onSaveMeta: (meta: TrackMetaInput) => Promise<void>
@@ -87,6 +104,9 @@ function TrackRow({
   progressPct,
   isCurrent,
   isPlaying,
+  reorder,
+  dragging,
+  dropHint,
   onLoad,
   onDelete,
   onSaveMeta
@@ -194,10 +214,26 @@ function TrackRow({
 
   return (
     <li
-      className={`track-item${playable ? ' playable' : ''}${isCurrent ? ' current' : ''}`}
+      className={`track-item${playable ? ' playable' : ''}${isCurrent ? ' current' : ''}${
+        dragging ? ' dragging' : ''
+      }${dropHint ? ` drop-${dropHint}` : ''}`}
       onClick={playable ? onLoad : undefined}
+      onDragOver={reorder?.onDragOver}
+      onDrop={reorder?.onDrop}
     >
       <div className="track-main">
+        {/* 드래그 핸들: 여기서만 끌 수 있다 (행 클릭=재생과 충돌 방지). 검색 중에는 없다 */}
+        <span
+          className={`track-drag-handle${reorder ? '' : ' hidden-slot'}`}
+          title={reorder ? '끌어서 순서 변경' : undefined}
+          draggable={reorder !== null}
+          onDragStart={reorder?.onDragStart}
+          onDragEnd={reorder?.onDragEnd}
+          onClick={(e) => e.stopPropagation()}
+          aria-hidden={reorder === null}
+        >
+          <MdDragIndicator />
+        </span>
         {/* 순번 칸: 재생 중이면 이퀄라이저 바, 현재 곡(일시정지)은 강조색 번호 */}
         <span className="track-index" aria-label={isPlaying ? '재생 중' : undefined}>
           {isPlaying ? (
@@ -264,6 +300,7 @@ function App(): React.JSX.Element {
     importViaDialog,
     loadCapabilities,
     deleteTrack,
+    reorderTracks,
     updateTrackMeta,
     dismissRejections
   } = useLibraryStore()
@@ -382,11 +419,58 @@ function App(): React.JSX.Element {
   const onDrop = (event: DragEvent): void => {
     event.preventDefault()
     setDragOver(false)
+    // 행 드래그가 목록 밖에 떨어진 경우: 파일 임포트로 오인하지 않는다
+    if (event.dataTransfer.types.includes(ROW_DRAG_MIME)) return
     const paths = Array.from(event.dataTransfer.files).map((file) =>
       window.api.getPathForFile(file)
     )
     if (paths.length > 0) void importFiles(paths)
   }
+
+  // 행 드래그 정렬 상태: 끌고 있는 행 id와 현재 드롭 후보(대상 행 id, 위/아래)
+  const [rowDrag, setRowDrag] = useState<{
+    id: string
+    overId: string | null
+    after: boolean
+  } | null>(null)
+  const canReorder = search.trim() === ''
+
+  const rowReorder = (trackId: string): RowReorderHandlers => ({
+    onDragStart: (event) => {
+      event.dataTransfer.setData(ROW_DRAG_MIME, trackId)
+      event.dataTransfer.effectAllowed = 'move'
+      setRowDrag({ id: trackId, overId: null, after: false })
+    },
+    onDragOver: (event) => {
+      if (!event.dataTransfer.types.includes(ROW_DRAG_MIME)) return
+      event.preventDefault()
+      event.stopPropagation() // 패널의 파일 드롭 하이라이트를 막는다
+      event.dataTransfer.dropEffect = 'move'
+      const rect = event.currentTarget.getBoundingClientRect()
+      const after = event.clientY > rect.top + rect.height / 2
+      setRowDrag((prev) =>
+        prev && (prev.overId !== trackId || prev.after !== after)
+          ? { ...prev, overId: trackId, after }
+          : prev
+      )
+    },
+    onDrop: (event) => {
+      if (!event.dataTransfer.types.includes(ROW_DRAG_MIME)) return
+      event.preventDefault()
+      event.stopPropagation()
+      const draggedId = event.dataTransfer.getData(ROW_DRAG_MIME)
+      setRowDrag(null)
+      if (!draggedId || draggedId === trackId) return
+      const rect = event.currentTarget.getBoundingClientRect()
+      const after = event.clientY > rect.top + rect.height / 2
+      const ids = tracks.map((t) => t.id).filter((id) => id !== draggedId)
+      const targetIndex = ids.indexOf(trackId)
+      if (targetIndex === -1) return
+      ids.splice(targetIndex + (after ? 1 : 0), 0, draggedId)
+      void reorderTracks(ids)
+    },
+    onDragEnd: () => setRowDrag(null)
+  })
 
   const onDelete = async (track: Track): Promise<void> => {
     if (!window.confirm(`"${track.title}" 곡과 분리된 파일을 삭제할까요?`)) return
@@ -405,6 +489,8 @@ function App(): React.JSX.Element {
         <section
           className={`panel library-panel${dragOver ? ' drag-over' : ''}`}
           onDragOver={(e) => {
+            // 행 정렬 드래그는 파일 드롭 하이라이트 대상이 아니다
+            if (e.dataTransfer.types.includes(ROW_DRAG_MIME)) return
             e.preventDefault()
             setDragOver(true)
           }}
@@ -462,6 +548,15 @@ function App(): React.JSX.Element {
                 progressPct={progress[track.id]?.pct}
                 isCurrent={track.id === currentTrackId}
                 isPlaying={track.id === currentTrackId && isPlaying}
+                reorder={canReorder ? rowReorder(track.id) : null}
+                dragging={rowDrag?.id === track.id}
+                dropHint={
+                  rowDrag && rowDrag.overId === track.id && rowDrag.id !== track.id
+                    ? rowDrag.after
+                      ? 'after'
+                      : 'before'
+                    : null
+                }
                 onLoad={() => void loadTrack(track)}
                 onDelete={() => void onDelete(track)}
                 onSaveMeta={(meta) => updateTrackMeta(track.id, meta)}

@@ -44,6 +44,7 @@ function LyricsView(): React.JSX.Element | null {
     selectLine,
     tap,
     pronounce,
+    reset,
     toggleHints
   } = useLyricsStore()
 
@@ -51,6 +52,9 @@ function LyricsView(): React.JSX.Element | null {
   const lineRefs = useRef<(HTMLParagraphElement | null)[]>([])
   /** 가사 줄 드래그 선택 (루프 설정). 한 줄에서 떼면 시크로 처리 */
   const [dragSel, setDragSel] = useState<{ start: number; end: number } | null>(null)
+  /** 가사 초기화 2단계 확인 (실수 클릭 방지). 확인을 띄운 트랙 id를 들고 있어 트랙이 바뀌면 자연히 해제된다 */
+  const [resetArmedFor, setResetArmedFor] = useState<string | null>(null)
+  const confirmReset = track !== null && resetArmedFor === track.id
 
   // 가나가 한 줄이라도 있으면 일본어 가사로 보고 발음 힌트 버튼을 노출한다
   const isJa = useMemo(() => lines.some((line) => /[ぁ-ゟ゠-ヿ]/.test(line.text)), [lines])
@@ -202,9 +206,25 @@ function LyricsView(): React.JSX.Element | null {
         })}
         <div className="lyrics-tail" />
       </div>
-      {(confs || isJa) && (
+      {confirmReset ? (
+        // 초기화 확인 단계: 다른 도구는 숨기고 확인/취소만 남긴다
+        <div className="lyrics-tools">
+          <span className="lyrics-tools-note">저장된 가사·정렬·보정을 모두 지웁니다</span>
+          <button
+            className="danger"
+            onClick={() => {
+              setResetArmedFor(null)
+              void reset(track.id)
+            }}
+          >
+            초기화 확인
+          </button>
+          <button onClick={() => setResetArmedFor(null)}>취소</button>
+        </div>
+      ) : (
         <div className="lyrics-tools">
           {workError && <span className="lyrics-error">실패: {workError}</span>}
+          <button onClick={() => setResetArmedFor(track.id)}>가사 초기화</button>
           {isJa &&
             (hints ? (
               <button onClick={toggleHints}>

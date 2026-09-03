@@ -756,6 +756,19 @@
   border-color: var(--ev-c-gray-1);
 }
 
+/* 가사 초기화 확인 단계 */
+.lyrics-tools button.danger,
+.lyrics-tools button.danger:hover {
+  color: #e66;
+  border-color: #e66;
+}
+
+.lyrics-tools-note {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--ev-c-text-2);
+}
+
 .line-warn {
   color: #e6a23c;
   font-size: 0.8em;

@@ -89,6 +89,10 @@ export function registerIpcHandlers({
     lyricsService.pronounce(trackId)
   )
 
+  ipcMain.handle(IPC_CHANNELS.lyricsReset, (_event, trackId: string) =>
+    lyricsService.resetLyrics(trackId)
+  )
+
   ipcMain.handle(IPC_CHANNELS.listTracks, (_event, query?: string): Track[] =>
     store.listTracks(query)
   )

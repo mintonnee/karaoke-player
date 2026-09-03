@@ -39,6 +39,8 @@ interface LyricsState {
   transcribe: (trackId: string) => Promise<string>
   /** 일본어 가사에 한글 발음 힌트 생성 (사이드카 pronounce) */
   pronounce: (trackId: string) => Promise<void>
+  /** 가사 초기화: 저장된 가사·정렬·보정·발음 힌트를 지우고 설정 화면으로 돌아간다 */
+  reset: (trackId: string) => Promise<void>
   toggleHints: () => void
   toggleCorrection: () => void
   selectLine: (index: number) => void
@@ -151,6 +153,17 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
         set({
           working: null,
           progress: null,
+          workError: error instanceof Error ? error.message : String(error)
+        })
+      }
+    },
+    reset: async (trackId) => {
+      set({ loading: true, correcting: false, workError: null })
+      try {
+        apply(await window.api.resetLyrics(trackId))
+      } catch (error) {
+        set({
+          loading: false,
           workError: error instanceof Error ? error.message : String(error)
         })
       }

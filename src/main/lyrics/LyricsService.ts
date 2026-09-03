@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'fs/promises'
+import { readFile, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { formatLrc, parseLrc } from '../../shared/lrc'
 import { IPC_CHANNELS } from '../../shared/types'
@@ -19,6 +19,9 @@ import type { LrclibRecord } from './lrclib'
 
 const LRCLIB_BASE = 'https://lrclib.net/api'
 const FETCH_TIMEOUT_MS = 10_000
+
+/** 초기화 시 지우는 가사 파일 (§4.3). vocal.wav·transcript.txt는 대상이 아니다 */
+const LYRICS_FILES = ['lyrics.lrc', 'lyrics.txt', 'align.json', 'pronunciation.json']
 
 export interface LyricsServiceOptions {
   store: LibraryStore
@@ -190,6 +193,23 @@ export class LyricsService {
     if (track.lyricsSource !== 'user_aligned') {
       this.updateSource(trackId, 'user_aligned')
     }
+    return this.getLyrics(trackId)
+  }
+
+  /**
+   * 가사 초기화: LRCLIB 결과·정렬 결과·수동 보정·발음 힌트를 모두 지우고
+   * lyrics_source를 none으로 되돌린다. 전사 결과(transcript.txt)는 보컬에서 나온
+   * 값이라 가사 출처와 무관하므로 남긴다.
+   */
+  async resetLyrics(trackId: string): Promise<LyricsPayload> {
+    const track = this.options.store.getTrack(trackId)
+    if (!track) throw new Error(`track not found: ${trackId}`)
+    const dir = this.trackDir(trackId)
+    await Promise.all(LYRICS_FILES.map((name) => rm(join(dir, name), { force: true })))
+    if (track.lyricsSource !== 'none') {
+      this.updateSource(trackId, 'none')
+    }
+    this.log(`reset lyrics for "${track.title}"`)
     return this.getLyrics(trackId)
   }
 

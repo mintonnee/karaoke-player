@@ -195,6 +195,7 @@ export const IPC_CHANNELS = {
   lyricsTranscribe: 'lyrics:transcribe',
   lyricsSaveLines: 'lyrics:save-lines',
   lyricsPronounce: 'lyrics:pronounce',
+  lyricsReset: 'lyrics:reset',
   lyricsProgress: 'lyrics:progress',
   trackUpdated: 'library:track-updated',
   importProgress: 'library:import-progress',

@@ -134,15 +134,23 @@ function toChoseong(text: string): string {
 }
 
 /**
+ * 초성 검색용 질의. 겹받침(ㄳ·ㄻ …)은 초성 자리에 올 수 없으므로 두벌식 IME가
+ * 연속 자음("ㄹㅁ")을 합친 결과로 보고 다시 낱자음 열로 푼다.
+ */
+function toChoseongQuery(query: string): string {
+  return toJamo(query)
+}
+
+/**
  * 한글 친화 부분 일치.
  * - 자모 분해 비교: "폭마"(폭망 입력 중), "호"(화 입력 중)도 일치
- * - 질의가 자음뿐이면 초성 검색: "ㅍㅁ" → "폭망"
+ * - 질의가 자음뿐이면 초성 검색: "ㅍㅁ" → "폭망", IME가 합친 "ㄻ"도 "ㄹㅁ"으로 취급
  * - 한글 외 문자는 대소문자 무시 부분 일치
  */
 export function hangulIncludes(target: string, query: string): boolean {
   if (query === '') return true
   if (toJamo(target).includes(toJamo(query))) return true
-  return CONSONANT_ONLY_RE.test(query) && toChoseong(target).includes(query)
+  return CONSONANT_ONLY_RE.test(query) && toChoseong(target).includes(toChoseongQuery(query))
 }
 
 /** 거센소리·된소리를 예사소리로 접는다 (발음 표기 변형 흡수: 츠↔즈, 켄↔겐 …) */
@@ -172,5 +180,8 @@ function looseFold(jamo: string): string {
 export function hangulLooseIncludes(target: string, query: string): boolean {
   if (query === '') return true
   if (looseFold(toJamo(target)).includes(looseFold(toJamo(query)))) return true
-  return CONSONANT_ONLY_RE.test(query) && looseFold(toChoseong(target)).includes(looseFold(query))
+  return (
+    CONSONANT_ONLY_RE.test(query) &&
+    looseFold(toChoseong(target)).includes(looseFold(toChoseongQuery(query)))
+  )
 }

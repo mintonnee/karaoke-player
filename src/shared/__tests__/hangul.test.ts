@@ -40,6 +40,15 @@ describe('hangulIncludes', () => {
     expect(hangulIncludes('폭망', 'ㅁㅍ')).toBe(false)
   })
 
+  it('IME가 겹받침으로 합친 초성 입력도 낱자음으로 풀어 검색한다', () => {
+    // 두벌식으로 ㄹ,ㅁ을 연달아 치면 "ㄻ"이 된다
+    expect(hangulIncludes('라면', 'ㄻ')).toBe(true)
+    expect(hangulIncludes('리그오브레전드', 'ㄺㅇㅂ')).toBe(true)
+    expect(hangulIncludes('안녕하세요', 'ㅇㄴㅎ')).toBe(true)
+    expect(hangulIncludes('안녕하세요', 'ㅇㄶ')).toBe(true)
+    expect(hangulIncludes('라면', 'ㅄ')).toBe(false)
+  })
+
   it('라틴 문자는 대소문자를 무시한다', () => {
     expect(hangulIncludes('Flamingo', 'flam')).toBe(true)
     expect(hangulIncludes('flamingo', 'FLA')).toBe(true)
@@ -74,6 +83,7 @@ describe('hangulLooseIncludes', () => {
   it('미완성 글자·초성 검색도 그대로 동작한다', () => {
     expect(hangulLooseIncludes('요네츠겐시', '요네즈 켄시'.replace(' ', ''))).toBe(true)
     expect(hangulLooseIncludes('요네츠겐시', 'ㅇㄴㅈㄱㅅ')).toBe(true)
+    expect(hangulLooseIncludes('요네츠겐시', 'ㅇㄴㅈㄳ')).toBe(true)
   })
 
   it('무관한 문자열은 여전히 불일치한다', () => {

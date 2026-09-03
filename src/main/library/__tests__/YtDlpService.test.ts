@@ -62,6 +62,8 @@ describe('buildYtDlpArgs', () => {
       url: 'https://example.test/watch'
     })
     expect(args).toEqual([
+      '--encoding',
+      'utf-8',
       '-f',
       'bestaudio[ext=m4a]',
       '--no-playlist',

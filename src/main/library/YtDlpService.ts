@@ -87,6 +87,10 @@ export function buildYtDlpArgs(params: {
   url: string
 }): string[] {
   return [
+    // Windows에서 파이프로 받는 stdout이 시스템 코드페이지(cp949)로 나와 한자·가나가 깨진다.
+    // PYTHONIOENCODING은 PyInstaller 번들에 먹지 않으므로 yt-dlp 자체 옵션으로 고정한다
+    '--encoding',
+    'utf-8',
     '-f',
     'bestaudio[ext=m4a]',
     '--no-playlist',

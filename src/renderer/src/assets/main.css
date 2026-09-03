@@ -889,6 +889,23 @@
   border-color: var(--ev-c-gray-1);
 }
 
+/* 가사 초기화 진입: 왼쪽 끝 링크 톤 (테두리 없음, 흐린 색, 호버 시 밑줄) */
+.lyrics-tools button.lyrics-tools-link {
+  margin-right: auto;
+  padding: 4px 0;
+  border: none;
+  border-radius: 0;
+  color: var(--ev-c-text-3);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+}
+
+.lyrics-tools button.lyrics-tools-link:hover {
+  color: var(--ev-c-text-2);
+  text-decoration-color: currentColor;
+}
+
 /* 가사 초기화 확인 단계 */
 .lyrics-tools button.danger,
 .lyrics-tools button.danger:hover {

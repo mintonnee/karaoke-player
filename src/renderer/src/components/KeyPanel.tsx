@@ -16,8 +16,10 @@ function KeyPanel(): React.JSX.Element {
 
   return (
     <div className="key-panel">
-      <span className="key-panel-title">키</span>
-      <div className="key-box key-original">{originalKey}</div>
+      <div className="key-box key-original">
+        <span className="key-box-label">원키</span>
+        <span className="key-box-value">{originalKey}</span>
+      </div>
       <div className="key-row">
         <button onClick={() => setPitch(pitch - 1)} disabled={!active || pitch <= -6}>
           −
@@ -34,7 +36,10 @@ function KeyPanel(): React.JSX.Element {
           +
         </button>
       </div>
-      <div className={`key-box key-current${pitch !== 0 ? ' shifted' : ''}`}>{currentKey}</div>
+      <div className={`key-box key-current${pitch !== 0 ? ' shifted' : ''}`}>
+        <span className="key-box-label">조정키</span>
+        <span className="key-box-value">{currentKey}</span>
+      </div>
     </div>
   )
 }

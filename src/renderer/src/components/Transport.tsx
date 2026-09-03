@@ -181,6 +181,12 @@ function Transport(): React.JSX.Element | null {
         </div>
 
         <div className="player-transport">
+          <span
+            className={`transport-bpm${bpmText ? '' : ' transport-bpm-empty'}`}
+            title="BPM (분석값 또는 메타 편집값)"
+          >
+            {bpmText ?? '—'}
+          </span>
           <button
             className="play-toggle"
             title={playing ? '일시정지 (Space)' : '재생 (Space)'}
@@ -207,12 +213,6 @@ function Transport(): React.JSX.Element | null {
             <MdRepeat />
             {!loop && loopMarkA !== null && <span className="loop-ab-badge">A</span>}
           </button>
-          <span
-            className={`transport-bpm${bpmText ? '' : ' transport-bpm-empty'}`}
-            title="BPM (분석값 또는 메타 편집값)"
-          >
-            {bpmText ?? '—'}
-          </span>
         </div>
       </div>
     </div>

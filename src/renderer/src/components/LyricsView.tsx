@@ -224,7 +224,10 @@ function LyricsView(): React.JSX.Element | null {
       ) : (
         <div className="lyrics-tools">
           {workError && <span className="lyrics-error">실패: {workError}</span>}
-          <button onClick={() => setResetArmedFor(track.id)}>가사 초기화</button>
+          {/* 파괴적 동작은 왼쪽 끝에 링크 톤으로 낮춰 둔다 (다른 도구 버튼과 위계 분리) */}
+          <button className="lyrics-tools-link" onClick={() => setResetArmedFor(track.id)}>
+            가사 초기화
+          </button>
           {isJa &&
             (hints ? (
               <button onClick={toggleHints}>

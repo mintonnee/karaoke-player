@@ -5,10 +5,12 @@ import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { IPC_CHANNELS } from '../../../shared/types'
 import type { ImportFilesResponse, Track, UrlImportProgressEvent } from '../../../shared/types'
+import type { ImportMetaHint } from '../ImportService'
 import {
   YtDlpService,
   buildYtDlpArgs,
   hasUrlImportBinaries,
+  normalizeArtist,
   parseDownloadProgress
 } from '../YtDlpService'
 
@@ -68,6 +70,8 @@ describe('buildYtDlpArgs', () => {
       '--progress',
       '--print',
       'after_move:filepath',
+      '--print',
+      'after_move:__artist__=%(artist,channel,uploader|)s',
       '--js-runtimes',
       'deno:C:\\bin\\deno.exe',
       '-o',
@@ -76,6 +80,24 @@ describe('buildYtDlpArgs', () => {
     ])
     // URL은 항상 마지막 — 옵션으로 해석되지 않게 한다
     expect(args[args.length - 1]).toBe('https://example.test/watch')
+  })
+})
+
+describe('normalizeArtist', () => {
+  it('YouTube Music 자동 생성 채널의 " - Topic" 꼬리를 뗀다', () => {
+    expect(normalizeArtist('YOASOBI - Topic')).toBe('YOASOBI')
+    expect(normalizeArtist('  Yorushika - topic ')).toBe('Yorushika')
+  })
+
+  it('일반 채널명과 음악 메타 아티스트는 그대로 둔다', () => {
+    expect(normalizeArtist('Official Channel')).toBe('Official Channel')
+    expect(normalizeArtist('Artist A, Artist B')).toBe('Artist A, Artist B')
+    expect(normalizeArtist('Topic Talk')).toBe('Topic Talk')
+  })
+
+  it('빈 값은 null', () => {
+    expect(normalizeArtist('')).toBeNull()
+    expect(normalizeArtist('   ')).toBeNull()
   })
 })
 
@@ -107,6 +129,8 @@ describe('YtDlpService', () => {
   let scratchRoot: string
   let tracksDir: string
   let imported: string[][]
+  /** importFiles에 함께 넘어온 메타 힌트 (호출 순서대로) */
+  let hints: (ImportMetaHint | undefined)[]
   let events: Array<{ channel: string; payload: unknown }>
   let importResult: ImportFilesResponse
 
@@ -115,6 +139,7 @@ describe('YtDlpService', () => {
     scratchRoot = join(root, 'tmp', 'url-import')
     tracksDir = join(root, 'tracks')
     imported = []
+    hints = []
     events = []
     importResult = { imported: [track('t1')], rejected: [] }
   })
@@ -130,8 +155,9 @@ describe('YtDlpService', () => {
       denoPath: join(root, 'deno.exe'),
       scratchRoot,
       tracksDir,
-      importFiles: async (filePaths) => {
+      importFiles: async (filePaths, hint) => {
         imported.push(filePaths)
+        hints.push(hint)
         return importResult
       },
       notify: (channel, payload) => events.push({ channel, payload }),
@@ -160,6 +186,8 @@ describe('YtDlpService', () => {
     // 다운로드 파일이 스크래치에서 그대로 파이프라인으로 넘어간다
     expect(imported).toHaveLength(1)
     expect(imported[0][0]).toMatch(/Fake Song \[abc123\]\.m4a$/)
+    // --print 아티스트 힌트가 " - Topic" 제거 후 파이프라인에 전달된다
+    expect(hints[0]).toEqual({ artist: 'Fake Artist' })
 
     const pcts = progressEvents().map((e) => e.pct)
     expect(pcts).toEqual([0, 0.3, 45.3, 100, 100])
@@ -205,6 +233,8 @@ describe('YtDlpService', () => {
     expect(response.imported).toHaveLength(1)
     expect(existsSync(join(tracksDir, 't1', 'cover.jpg'))).toBe(false)
     expect(events.filter((e) => e.channel === IPC_CHANNELS.trackUpdated)).toEqual([])
+    // 아티스트 후보가 비어 있으면 힌트도 null — 태그/기본값에 맡긴다
+    expect(hints[0]).toEqual({ artist: null })
   })
 
   it('실패 경로: stderr의 ERROR 줄을 rejection 사유로 쓰고 스크래치를 정리한다', async () => {

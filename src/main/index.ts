@@ -204,7 +204,7 @@ app.whenReady().then(() => {
         denoPath,
         scratchRoot: join(userData, 'tmp', 'url-import'),
         tracksDir,
-        importFiles: (filePaths) => importService.importFiles(filePaths),
+        importFiles: (filePaths, hint) => importService.importFiles(filePaths, hint),
         notify,
         // 커버를 덮어쓴 뒤 updatedAt을 갱신해야 렌더러의 media:// 캐시 키가 바뀐다
         touchTrack: (track) =>

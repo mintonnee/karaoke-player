@@ -25,11 +25,15 @@ switch (mode) {
     writeFileSync(mediaPath, 'fake-m4a-bytes')
     writeFileSync(thumbPath, 'fake-webp-bytes')
     process.stdout.write(`${mediaPath}\n`)
+    // 두 번째 --print: 아티스트 힌트 (YouTube Music 자동 생성 채널 형태)
+    process.stdout.write('__artist__=Fake Artist - Topic\n')
     break
   case 'nothumb':
     emitProgress()
     writeFileSync(mediaPath, 'fake-m4a-bytes')
     process.stdout.write(`${mediaPath}\n`)
+    // 아티스트 후보가 하나도 없으면 빈 값이 찍힌다
+    process.stdout.write('__artist__=\n')
     break
   case 'noprint':
     // --print 출력이 없어도 스크래치 글로빙으로 파일을 찾아야 한다

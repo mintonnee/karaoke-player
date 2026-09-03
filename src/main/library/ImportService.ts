@@ -40,6 +40,14 @@ export interface ImportServiceOptions {
   onLog?: (line: string) => void
 }
 
+/**
+ * 파일 태그(probe)에 값이 없을 때 대신 쓰는 메타 힌트.
+ * URL 임포트에서 yt-dlp가 알려준 아티스트/채널명을 넘기는 용도 — 태그가 있으면 태그가 우선한다.
+ */
+export interface ImportMetaHint {
+  artist?: string | null
+}
+
 /** 임포트 파이프라인: probe → 원본 복사 → DB 등록 → 분리 잡 큐잉 (S1.2/S1.3) */
 export class ImportService {
   private readonly queue: JobQueue
@@ -48,13 +56,13 @@ export class ImportService {
     this.queue = options.queue
   }
 
-  async importFiles(filePaths: string[]): Promise<ImportFilesResponse> {
+  async importFiles(filePaths: string[], hint?: ImportMetaHint): Promise<ImportFilesResponse> {
     const imported: Track[] = []
     const rejected: ImportRejection[] = []
 
     for (const filePath of filePaths) {
       try {
-        imported.push(await this.importOne(filePath))
+        imported.push(await this.importOne(filePath, hint))
       } catch (error) {
         rejected.push({ filePath, reason: describeError(error) })
       }
@@ -62,7 +70,7 @@ export class ImportService {
     return { imported, rejected }
   }
 
-  private async importOne(filePath: string): Promise<Track> {
+  private async importOne(filePath: string, hint?: ImportMetaHint): Promise<Track> {
     const probe = (await this.options.sidecar.run(['probe', '--input', filePath, '--json'], {
       timeoutMs: PROBE_TIMEOUT_MS
     })) as ProbeResult
@@ -81,7 +89,7 @@ export class ImportService {
     const track = this.options.store.createTrack({
       id,
       title: probe.title ?? basename(filePath, extname(filePath)),
-      artist: probe.artist ?? null,
+      artist: probe.artist ?? hint?.artist ?? null,
       album: probe.album ?? null,
       duration: probe.duration,
       sourcePath: filePath

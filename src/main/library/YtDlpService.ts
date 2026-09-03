@@ -11,9 +11,22 @@ import type {
   Track,
   UrlImportProgressEvent
 } from '../../shared/types'
+import type { ImportMetaHint } from './ImportService'
 
 /** yt-dlp 출력 템플릿 (스펙 001 §4.3) */
 const OUTPUT_TEMPLATE = '%(title)s [%(id)s].%(ext)s'
+
+/**
+ * 아티스트 힌트 `--print` 줄의 접두어. 파일 경로 출력과 같은 stdout에 섞이므로
+ * 경로로 오인되지 않을 문자열로 구분한다.
+ */
+const ARTIST_PRINT_PREFIX = '__artist__='
+
+/**
+ * 아티스트 후보 필드: 음악 메타(artist) → 채널명 → 업로더 순으로 첫 값.
+ * 모두 없으면 빈 문자열(`|` 기본값)이 찍힌다.
+ */
+const ARTIST_PRINT_TEMPLATE = `after_move:${ARTIST_PRINT_PREFIX}%(artist,channel,uploader|)s`
 
 /** `-f bestaudio[ext=m4a]` 고정이지만 폴백 탐색은 조금 넓게 본다 */
 const AUDIO_EXTS = new Set(['.m4a', '.mp4', '.aac', '.mp3', '.opus', '.webm'])
@@ -34,8 +47,8 @@ export interface YtDlpServiceOptions {
   scratchRoot: string
   /** <userData>/tracks */
   tracksDir: string
-  /** 기존 임포트 파이프라인 (ImportService.importFiles) */
-  importFiles: (filePaths: string[]) => Promise<ImportFilesResponse>
+  /** 기존 임포트 파이프라인 (ImportService.importFiles). hint는 태그에 없는 아티스트 보완용 */
+  importFiles: (filePaths: string[], hint?: ImportMetaHint) => Promise<ImportFilesResponse>
   /** 렌더러 브로드캐스트 */
   notify: (channel: string, payload: unknown) => void
   /**
@@ -76,6 +89,8 @@ export function buildYtDlpArgs(params: {
     '--progress',
     '--print',
     'after_move:filepath',
+    '--print',
+    ARTIST_PRINT_TEMPLATE,
     '--js-runtimes',
     `deno:${params.denoPath}`,
     '-o',
@@ -88,7 +103,18 @@ interface DownloadOutcome {
   code: number
   /** `--print after_move:filepath` 로 찍힌 줄들 */
   printed: string[]
+  /** `--print` 아티스트 힌트 (정규화 후). 없으면 null */
+  artist: string | null
   stderr: string[]
+}
+
+/**
+ * yt-dlp가 찍은 아티스트 후보를 표시용으로 다듬는다.
+ * YouTube Music 자동 생성 채널의 " - Topic" 꼬리는 뗀다. 비어 있으면 null.
+ */
+export function normalizeArtist(raw: string): string | null {
+  const trimmed = raw.trim().replace(/\s*-\s*Topic$/i, '')
+  return trimmed === '' ? null : trimmed
 }
 
 /**
@@ -145,7 +171,7 @@ export class YtDlpService {
       }
 
       this.emit({ id, url, pct: 100, msg: '라이브러리에 추가 중' })
-      const response = await this.options.importFiles([mediaPath])
+      const response = await this.options.importFiles([mediaPath], { artist: outcome.artist })
       const track = response.imported[0]
       if (track) await this.applyThumbnail(scratch, mediaPath, track)
 
@@ -176,6 +202,7 @@ export class YtDlpService {
       this.running.add(child)
       const printed: string[] = []
       const stderr: string[] = []
+      let artist: string | null = null
 
       readLines(child.stdout, (line) => {
         const pct = parseDownloadProgress(line)
@@ -184,6 +211,10 @@ export class YtDlpService {
           return
         }
         const trimmed = line.trim()
+        if (trimmed.startsWith(ARTIST_PRINT_PREFIX)) {
+          artist = normalizeArtist(trimmed.slice(ARTIST_PRINT_PREFIX.length))
+          return
+        }
         // `--print` 출력은 접두어가 없다. `[youtube] ...` 같은 상태 줄은 버린다
         if (trimmed && !trimmed.startsWith('[')) printed.push(trimmed)
       })
@@ -201,7 +232,7 @@ export class YtDlpService {
       })
       child.on('close', (code) => {
         this.running.delete(child)
-        resolve({ code: code ?? -1, printed, stderr })
+        resolve({ code: code ?? -1, printed, artist, stderr })
       })
     })
   }

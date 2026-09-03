@@ -3,6 +3,7 @@ import type { Track } from '../../../shared/types'
 import type { AudioEngine, AudioEngineState, AudioLevels, LoopRange } from '../audio/AudioEngine'
 import { normalizeLoop } from '../audio/audioMath'
 import { WebAudioEngine } from '../audio/WebAudioEngine'
+import { reportError } from './errorStore'
 
 // 엔진 구현체 교체 지점 (v2: NativeEngine)
 const engine: AudioEngine = new WebAudioEngine()
@@ -102,11 +103,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         applyGains()
         set({ duration: engine.duration, engineState: engine.state })
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        reportError('player', `"${track.title}" 재생 로드 실패: ${message}`, track.id)
         set({
           track: null,
           duration: 0,
           engineState: engine.state,
-          loadError: error instanceof Error ? error.message : String(error)
+          loadError: message
         })
       }
     },

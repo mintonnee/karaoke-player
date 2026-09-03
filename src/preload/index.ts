@@ -9,6 +9,8 @@ import type {
   BootstrapState,
   ImportFilesResponse,
   ImportProgressEvent,
+  AppErrorReport,
+  AppInfo,
   LyricsPayload,
   LyricsProgressEvent,
   Track,
@@ -56,6 +58,12 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.lyricsReset, trackId),
   onLyricsProgress: (callback: (event: LyricsProgressEvent) => void): (() => void) =>
     subscribe(IPC_CHANNELS.lyricsProgress, callback),
+  /** 메인 프로세스 실패 통지 (오류 센터) */
+  onAppError: (callback: (report: AppErrorReport) => void): (() => void) =>
+    subscribe(IPC_CHANNELS.appError, callback),
+  getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke(IPC_CHANNELS.appInfo),
+  /** 외부 브라우저로 열기 (https만 허용) */
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
   /** §6 KARAOKE_GUIDE_VOCAL_DB (기본 -20 dB) */
   guideVocalDefaultDb: ((): number => {
     const parsed = Number(process.env.KARAOKE_GUIDE_VOCAL_DB)

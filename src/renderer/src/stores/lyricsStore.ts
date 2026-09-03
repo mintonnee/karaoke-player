@@ -9,8 +9,17 @@ import type {
   PronunciationLine
 } from '../../../shared/types'
 
+import { reportError } from './errorStore'
+
 /** §4.4: 가창 특성상 이 값 미만이면 정렬을 의심하고 UI에 경고한다 */
 export const CONF_WARN_THRESHOLD = 0.1
+
+/** 실패 메시지를 오류 센터에 남기고 workError용 문자열로 돌려준다 */
+function failLyrics(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  reportError('lyrics', message)
+  return message
+}
 
 interface LyricsState {
   /** 표시용 싱크 가사. 없으면 빈 배열 */
@@ -126,7 +135,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
         set({
           working: null,
           progress: null,
-          workError: error instanceof Error ? error.message : String(error)
+          workError: failLyrics(error)
         })
       }
     },
@@ -140,7 +149,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
         set({
           working: null,
           progress: null,
-          workError: error instanceof Error ? error.message : String(error)
+          workError: failLyrics(error)
         })
         return ''
       }
@@ -153,7 +162,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
         set({
           working: null,
           progress: null,
-          workError: error instanceof Error ? error.message : String(error)
+          workError: failLyrics(error)
         })
       }
     },
@@ -164,7 +173,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
       } catch (error) {
         set({
           loading: false,
-          workError: error instanceof Error ? error.message : String(error)
+          workError: failLyrics(error)
         })
       }
     },

@@ -3,6 +3,7 @@ import { copyFile, mkdir, writeFile } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import { IPC_CHANNELS } from '../../shared/types'
 import type {
+  AppErrorReport,
   ImportFilesResponse,
   ImportProgressEvent,
   ImportRejection,
@@ -137,8 +138,17 @@ export class ImportService {
         // ready 통지 이후에 큐잉하므로 재생 가능 시점이 늦어지지 않는다
         this.options.analyze?.(readyTrack)
       } catch (error) {
-        this.log(`separate failed for ${trackId}: ${describeError(error)}`)
+        const message = describeError(error)
+        this.log(`separate failed for ${trackId}: ${message}`)
         this.notifyTrack(this.options.store.updateStatus(trackId, 'failed'))
+        // 오류 센터로: 상태 아이콘만으로는 사유를 알 수 없다
+        const report: AppErrorReport = {
+          source: 'separate',
+          message: `"${track.title}" 보컬 분리 실패: ${message}`,
+          at: new Date().toISOString(),
+          trackId
+        }
+        this.options.notify(IPC_CHANNELS.appError, report)
       }
     })
   }

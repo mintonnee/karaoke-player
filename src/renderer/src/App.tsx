@@ -11,11 +11,13 @@ import {
   MdErrorOutline,
   MdHelpOutline,
   MdLink,
+  MdNotificationsNone,
   MdSchedule,
   MdSettings
 } from 'react-icons/md'
 import BootstrapScreen from './components/BootstrapScreen'
 import CoverArt from './components/CoverArt'
+import ErrorCenter from './components/ErrorCenter'
 import KeyPanel from './components/KeyPanel'
 import LyricsView from './components/LyricsView'
 import MixerPanel from './components/MixerPanel'
@@ -23,6 +25,7 @@ import SettingsModal from './components/SettingsModal'
 import ShortcutHelp from './components/ShortcutHelp'
 import Transport from './components/Transport'
 import UrlImportForm from './components/UrlImportForm'
+import { useErrorStore } from './stores/errorStore'
 import { useLibraryStore } from './stores/libraryStore'
 import { useLyricsStore } from './stores/lyricsStore'
 import { usePlayerStore } from './stores/playerStore'
@@ -313,6 +316,9 @@ function App(): React.JSX.Element {
   const [dragOver, setDragOver] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  const [showErrors, setShowErrors] = useState(false)
+  const unseenErrors = useErrorStore((s) => s.entries.filter((e) => !e.seen).length)
+  const markErrorsSeen = useErrorStore((s) => s.markAllSeen)
   const [showUrlImport, setShowUrlImport] = useState(false)
   // null = 아직 조회 전. ready가 아니면 라이브러리 대신 부트스트랩 화면 (스펙 001 §4.1)
   const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null)
@@ -589,6 +595,19 @@ function App(): React.JSX.Element {
       {/* 사이드 컬럼 (스펙 003 §4.1·§4.4): 설정·도움말 툴바, 믹서, 키 패널 */}
       <aside className="side-column">
         <div className="side-toolbar">
+          <button
+            className={`icon-btn icon-btn-badge-host${unseenErrors > 0 ? ' has-badge' : ''}`}
+            title={unseenErrors > 0 ? `오류 ${unseenErrors}건 (보고하기)` : '오류 기록'}
+            onClick={() => {
+              markErrorsSeen()
+              setShowErrors(true)
+            }}
+          >
+            <MdNotificationsNone />
+            {unseenErrors > 0 && (
+              <span className="icon-btn-badge">{unseenErrors > 9 ? '9+' : unseenErrors}</span>
+            )}
+          </button>
           <button className="icon-btn" title="설정" onClick={() => setShowSettings(true)}>
             <MdSettings />
           </button>
@@ -610,6 +629,7 @@ function App(): React.JSX.Element {
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} />}
+      {showErrors && <ErrorCenter onClose={() => setShowErrors(false)} />}
     </div>
   )
 }

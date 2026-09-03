@@ -1,7 +1,7 @@
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { IPC_CHANNELS } from '../../shared/types'
-import type { AnalyzeResult } from '../../shared/types'
+import type { AnalyzeResult, AppErrorReport } from '../../shared/types'
 import { SidecarError } from '../sidecar/SidecarManager'
 import type { SidecarManager } from '../sidecar/SidecarManager'
 import type { JobQueue } from './JobQueue'
@@ -35,7 +35,16 @@ export class AnalysisService {
       try {
         await this.analyze(trackId)
       } catch (error) {
-        this.log(`analyze failed for ${trackId}: ${describeError(error)}`)
+        const message = describeError(error)
+        this.log(`analyze failed for ${trackId}: ${message}`)
+        const title = this.options.store.getTrack(trackId)?.title ?? trackId
+        const report: AppErrorReport = {
+          source: 'analyze',
+          message: `"${title}" BPM·키 분석 실패: ${message}`,
+          at: new Date().toISOString(),
+          trackId
+        }
+        this.options.notify(IPC_CHANNELS.appError, report)
       }
     })
   }

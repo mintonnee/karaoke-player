@@ -157,7 +157,14 @@ app.whenReady().then(() => {
     BrowserWindow.getAllWindows().forEach((window) => window.webContents.send(channel, payload))
   }
   // 분리/정렬/전사(GPU 작업)를 하나의 큐로 직렬화한다 (§4)
-  const jobQueue = new JobQueue((error) => console.error('[jobs]', error))
+  const jobQueue = new JobQueue((error) => {
+    console.error('[jobs]', error)
+    notify(IPC_CHANNELS.appError, {
+      source: 'jobs',
+      message: error instanceof Error ? error.message : String(error),
+      at: new Date().toISOString()
+    })
+  })
   const lyricsService = new LyricsService({
     store,
     sidecar,

@@ -6,6 +6,14 @@ import type {
   TrackMetaInput,
   UrlImportProgressEvent
 } from '../../../shared/types'
+import { reportError } from './errorStore'
+
+/** 임포트 거부 사유를 오류 센터에도 남긴다 (배너는 닫으면 사라지므로) */
+function reportRejections(source: 'import' | 'url-import', rejected: ImportRejection[]): void {
+  for (const rejection of rejected) {
+    reportError(source, `${rejection.filePath} — ${rejection.reason}`)
+  }
+}
 
 interface LibraryState {
   tracks: Track[]
@@ -65,6 +73,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     try {
       const { rejected } = await run()
       set((state) => ({ rejections: [...state.rejections, ...rejected] }))
+      reportRejections('import', rejected)
     } finally {
       set({ importing: false })
       await get().refresh()
@@ -99,6 +108,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
         const { imported, rejected } = await window.api.importUrl(url)
         if (rejected.length > 0) {
           set((state) => ({ rejections: [...state.rejections, ...rejected] }))
+          reportRejections('url-import', rejected)
         }
         return imported.length > 0
       } finally {

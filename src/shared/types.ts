@@ -208,5 +208,30 @@ export const IPC_CHANNELS = {
   bootstrapState: 'bootstrap:state',
   capabilities: 'app:capabilities',
   importUrl: 'library:import-url',
-  urlImportProgress: 'library:url-import-progress'
+  urlImportProgress: 'library:url-import-progress',
+  /** 메인 → 렌더러: 사용자에게 보여줄 실패 (오류 센터에 쌓인다) */
+  appError: 'app:error',
+  appInfo: 'app:info',
+  openExternal: 'app:open-external'
 } as const
+
+/** 오류 센터 항목의 출처. 이슈 제목 접두어로도 쓴다 */
+export type AppErrorSource =
+  'import' | 'separate' | 'analyze' | 'lyrics' | 'player' | 'jobs' | 'url-import'
+
+/** 메인/렌더러가 오류 센터로 보내는 실패 한 건 */
+export interface AppErrorReport {
+  source: AppErrorSource
+  message: string
+  /** ISO 시각 */
+  at: string
+  trackId?: string
+}
+
+/** 이슈 보고에 붙는 환경 정보 */
+export interface AppInfo {
+  version: string
+  platform: string
+  arch: string
+  electron: string
+}

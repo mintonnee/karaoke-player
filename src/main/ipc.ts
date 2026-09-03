@@ -1,4 +1,4 @@
-import { dialog, ipcMain } from 'electron'
+import { app, dialog, ipcMain, shell } from 'electron'
 import { existsSync } from 'fs'
 import { rm } from 'fs/promises'
 import { join } from 'path'
@@ -7,6 +7,7 @@ import type {
   AlignLang,
   AlignedLine,
   AppCapabilities,
+  AppInfo,
   AppSettings,
   ImportFilesResponse,
   Track,
@@ -155,6 +156,20 @@ export function registerIpcHandlers({
 
   // 스펙 001 §4.3: 렌더러는 이 플래그가 false면 URL 임포트 UI를 아예 그리지 않는다 (기준 6)
   ipcMain.handle(IPC_CHANNELS.capabilities, (): AppCapabilities => capabilities)
+
+  // 오류 센터 이슈 보고용 환경 정보
+  ipcMain.handle(IPC_CHANNELS.appInfo, (): AppInfo => ({
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    electron: process.versions.electron
+  }))
+
+  // 외부 브라우저로 열기. 렌더러가 넘긴 값은 https만 허용한다 (file:// 등 차단)
+  ipcMain.handle(IPC_CHANNELS.openExternal, async (_event, url: string): Promise<void> => {
+    if (!/^https:\/\//i.test(url)) throw new Error(`refusing to open non-https url: ${url}`)
+    await shell.openExternal(url)
+  })
 
   ipcMain.handle(IPC_CHANNELS.importUrl, (_event, url: string): Promise<ImportFilesResponse> => {
     if (!ytDlpService) {

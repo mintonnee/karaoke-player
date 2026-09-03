@@ -1403,11 +1403,18 @@
   transition: width 0.3s ease;
 }
 
+/* 라벨은 바 안에 절대 배치로 가운데 고정 — 인라인이면 행의 줄 높이에 밀려 아래로 잘린다 */
 .progress-label {
-  position: relative;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 11px;
-  line-height: 18px;
-  padding: 0 8px;
+  line-height: 1;
+  color: var(--ev-c-text-1);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 .track-empty {

@@ -28,6 +28,13 @@ const ARTIST_PRINT_PREFIX = '__artist__='
  */
 const ARTIST_PRINT_TEMPLATE = `after_move:${ARTIST_PRINT_PREFIX}%(artist,channel,uploader|)s`
 
+/** 제목 힌트 `--print` 줄의 접두어. 출력 템플릿의 `[id]` 꼬리가 없는 원제목을 받는다 */
+const TITLE_PRINT_PREFIX = '__title__='
+const TITLE_PRINT_TEMPLATE = `after_move:${TITLE_PRINT_PREFIX}%(title|)s`
+
+/** 출력 템플릿 `%(title)s [%(id)s]`의 꼬리. id 길이는 사이트마다 달라 고정하지 않는다 */
+const FILENAME_ID_SUFFIX_RE = /\s*\[[A-Za-z0-9_-]+\]$/
+
 /** `-f bestaudio[ext=m4a]` 고정이지만 폴백 탐색은 조금 넓게 본다 */
 const AUDIO_EXTS = new Set(['.m4a', '.mp4', '.aac', '.mp3', '.opus', '.webm'])
 
@@ -91,6 +98,8 @@ export function buildYtDlpArgs(params: {
     'after_move:filepath',
     '--print',
     ARTIST_PRINT_TEMPLATE,
+    '--print',
+    TITLE_PRINT_TEMPLATE,
     '--js-runtimes',
     `deno:${params.denoPath}`,
     '-o',
@@ -105,7 +114,18 @@ interface DownloadOutcome {
   printed: string[]
   /** `--print` 아티스트 힌트 (정규화 후). 없으면 null */
   artist: string | null
+  /** `--print` 제목 힌트. 없으면 null (파일명 폴백) */
+  title: string | null
   stderr: string[]
+}
+
+/**
+ * `--print` 제목이 없을 때의 폴백: 다운로드 파일명에서 확장자와 `[id]` 꼬리를 뗀다.
+ * "Song Name [dQw4w9WgXcQ].m4a" → "Song Name". 꼬리가 없으면 그대로.
+ */
+export function titleFromFilename(mediaPath: string): string | null {
+  const stem = basename(mediaPath, extname(mediaPath)).replace(FILENAME_ID_SUFFIX_RE, '').trim()
+  return stem === '' ? null : stem
 }
 
 /**
@@ -171,7 +191,10 @@ export class YtDlpService {
       }
 
       this.emit({ id, url, pct: 100, msg: '라이브러리에 추가 중' })
-      const response = await this.options.importFiles([mediaPath], { artist: outcome.artist })
+      const response = await this.options.importFiles([mediaPath], {
+        title: outcome.title ?? titleFromFilename(mediaPath),
+        artist: outcome.artist
+      })
       const track = response.imported[0]
       if (track) await this.applyThumbnail(scratch, mediaPath, track)
 
@@ -203,6 +226,7 @@ export class YtDlpService {
       const printed: string[] = []
       const stderr: string[] = []
       let artist: string | null = null
+      let title: string | null = null
 
       readLines(child.stdout, (line) => {
         const pct = parseDownloadProgress(line)
@@ -213,6 +237,11 @@ export class YtDlpService {
         const trimmed = line.trim()
         if (trimmed.startsWith(ARTIST_PRINT_PREFIX)) {
           artist = normalizeArtist(trimmed.slice(ARTIST_PRINT_PREFIX.length))
+          return
+        }
+        if (trimmed.startsWith(TITLE_PRINT_PREFIX)) {
+          const value = trimmed.slice(TITLE_PRINT_PREFIX.length).trim()
+          title = value === '' ? null : value
           return
         }
         // `--print` 출력은 접두어가 없다. `[youtube] ...` 같은 상태 줄은 버린다
@@ -232,7 +261,7 @@ export class YtDlpService {
       })
       child.on('close', (code) => {
         this.running.delete(child)
-        resolve({ code: code ?? -1, printed, artist, stderr })
+        resolve({ code: code ?? -1, printed, artist, title, stderr })
       })
     })
   }

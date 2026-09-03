@@ -27,6 +27,8 @@ switch (mode) {
     process.stdout.write(`${mediaPath}\n`)
     // 두 번째 --print: 아티스트 힌트 (YouTube Music 자동 생성 채널 형태)
     process.stdout.write('__artist__=Fake Artist - Topic\n')
+    // 세 번째 --print: 원제목 ([id] 꼬리 없음)
+    process.stdout.write('__title__=Fake Song\n')
     break
   case 'nothumb':
     emitProgress()

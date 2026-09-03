@@ -11,7 +11,8 @@ import {
   buildYtDlpArgs,
   hasUrlImportBinaries,
   normalizeArtist,
-  parseDownloadProgress
+  parseDownloadProgress,
+  titleFromFilename
 } from '../YtDlpService'
 
 const FAKE_YTDLP = join(process.cwd(), 'src', 'main', 'library', '__tests__', 'fake_ytdlp.mjs')
@@ -72,6 +73,8 @@ describe('buildYtDlpArgs', () => {
       'after_move:filepath',
       '--print',
       'after_move:__artist__=%(artist,channel,uploader|)s',
+      '--print',
+      'after_move:__title__=%(title|)s',
       '--js-runtimes',
       'deno:C:\\bin\\deno.exe',
       '-o',
@@ -98,6 +101,22 @@ describe('normalizeArtist', () => {
   it('빈 값은 null', () => {
     expect(normalizeArtist('')).toBeNull()
     expect(normalizeArtist('   ')).toBeNull()
+  })
+})
+
+describe('titleFromFilename', () => {
+  it('출력 템플릿의 [id] 꼬리와 확장자를 뗀다', () => {
+    expect(titleFromFilename('C:\\scratch\\Song Name [dQw4w9WgXcQ].m4a')).toBe('Song Name')
+    expect(titleFromFilename('/tmp/曲名 feat. X [abc123].webm')).toBe('曲名 feat. X')
+  })
+
+  it('꼬리가 없으면 파일명 그대로, 제목 안의 대괄호는 건드리지 않는다', () => {
+    expect(titleFromFilename('C:\\scratch\\Plain Title.m4a')).toBe('Plain Title')
+    expect(titleFromFilename('C:\\scratch\\[MV] Title [dQw4w9WgXcQ].m4a')).toBe('[MV] Title')
+  })
+
+  it('꼬리를 떼고 아무것도 남지 않으면 null', () => {
+    expect(titleFromFilename('C:\\scratch\\[dQw4w9WgXcQ].m4a')).toBeNull()
   })
 })
 
@@ -186,8 +205,8 @@ describe('YtDlpService', () => {
     // 다운로드 파일이 스크래치에서 그대로 파이프라인으로 넘어간다
     expect(imported).toHaveLength(1)
     expect(imported[0][0]).toMatch(/Fake Song \[abc123\]\.m4a$/)
-    // --print 아티스트 힌트가 " - Topic" 제거 후 파이프라인에 전달된다
-    expect(hints[0]).toEqual({ artist: 'Fake Artist' })
+    // --print 제목·아티스트 힌트가 파이프라인에 전달된다 (아티스트는 " - Topic" 제거 후)
+    expect(hints[0]).toEqual({ title: 'Fake Song', artist: 'Fake Artist' })
 
     const pcts = progressEvents().map((e) => e.pct)
     expect(pcts).toEqual([0, 0.3, 45.3, 100, 100])
@@ -233,8 +252,8 @@ describe('YtDlpService', () => {
     expect(response.imported).toHaveLength(1)
     expect(existsSync(join(tracksDir, 't1', 'cover.jpg'))).toBe(false)
     expect(events.filter((e) => e.channel === IPC_CHANNELS.trackUpdated)).toEqual([])
-    // 아티스트 후보가 비어 있으면 힌트도 null — 태그/기본값에 맡긴다
-    expect(hints[0]).toEqual({ artist: null })
+    // 아티스트 후보가 비어 있으면 null. 제목 --print가 없으면 파일명에서 [id] 꼬리를 뗀 값으로 폴백
+    expect(hints[0]).toEqual({ title: 'Fake Song', artist: null })
   })
 
   it('실패 경로: stderr의 ERROR 줄을 rejection 사유로 쓰고 스크래치를 정리한다', async () => {

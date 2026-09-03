@@ -45,6 +45,8 @@ export interface ImportServiceOptions {
  * URL 임포트에서 yt-dlp가 알려준 아티스트/채널명을 넘기는 용도 — 태그가 있으면 태그가 우선한다.
  */
 export interface ImportMetaHint {
+  /** 태그에 제목이 없을 때 파일명 대신 쓸 제목 (yt-dlp `%(title)s`) */
+  title?: string | null
   artist?: string | null
 }
 
@@ -88,7 +90,7 @@ export class ImportService {
 
     const track = this.options.store.createTrack({
       id,
-      title: probe.title ?? basename(filePath, extname(filePath)),
+      title: probe.title ?? hint?.title ?? basename(filePath, extname(filePath)),
       artist: probe.artist ?? hint?.artist ?? null,
       album: probe.album ?? null,
       duration: probe.duration,

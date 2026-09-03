@@ -70,8 +70,12 @@ const STATUS_ICON: Record<Track['status'], React.JSX.Element> = {
 
 interface TrackRowProps {
   track: Track
+  /** 목록 순번 (1부터) */
+  index: number
   progressPct: number | undefined
   isCurrent: boolean
+  /** 현재 곡이면서 재생 중 — 순번 자리에 이퀄라이저 애니메이션 */
+  isPlaying: boolean
   onLoad: () => void
   onDelete: () => void
   onSaveMeta: (meta: TrackMetaInput) => Promise<void>
@@ -79,8 +83,10 @@ interface TrackRowProps {
 
 function TrackRow({
   track,
+  index,
   progressPct,
   isCurrent,
+  isPlaying,
   onLoad,
   onDelete,
   onSaveMeta
@@ -192,6 +198,18 @@ function TrackRow({
       onClick={playable ? onLoad : undefined}
     >
       <div className="track-main">
+        {/* 순번 칸: 재생 중이면 이퀄라이저 바, 현재 곡(일시정지)은 강조색 번호 */}
+        <span className="track-index" aria-label={isPlaying ? '재생 중' : undefined}>
+          {isPlaying ? (
+            <span className="track-eq" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          ) : (
+            index
+          )}
+        </span>
         <CoverArt trackId={track.id} version={track.updatedAt} className="track-cover" />
         <div className="track-info">
           <span className="track-title">{track.title}</span>
@@ -252,6 +270,7 @@ function App(): React.JSX.Element {
   const loadTrack = usePlayerStore((s) => s.loadTrack)
   const unload = usePlayerStore((s) => s.unload)
   const currentTrackId = usePlayerStore((s) => s.track?.id)
+  const isPlaying = usePlayerStore((s) => s.engineState === 'playing')
   const loadLyrics = useLyricsStore((s) => s.load)
   const clearLyrics = useLyricsStore((s) => s.clear)
   const [dragOver, setDragOver] = useState(false)
@@ -435,12 +454,14 @@ function App(): React.JSX.Element {
           )}
 
           <ul className="track-list">
-            {tracks.map((track) => (
+            {tracks.map((track, i) => (
               <TrackRow
                 key={track.id}
                 track={track}
+                index={i + 1}
                 progressPct={progress[track.id]?.pct}
                 isCurrent={track.id === currentTrackId}
+                isPlaying={track.id === currentTrackId && isPlaying}
                 onLoad={() => void loadTrack(track)}
                 onDelete={() => void onDelete(track)}
                 onSaveMeta={(meta) => updateTrackMeta(track.id, meta)}

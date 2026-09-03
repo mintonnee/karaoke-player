@@ -1124,6 +1124,61 @@
   border-radius: 6px;
 }
 
+/* 현재 곡: 제목을 강조색으로 (스포티파이의 초록 제목 관습, 여기서는 앱 강조색 파랑) */
+.track-item.current .track-title,
+.track-item.current .track-index {
+  color: #6b9fd8;
+}
+
+/* 순번 칸: 고정 폭 오른쪽 정렬, 두 자리 이상도 흔들리지 않게 */
+.track-index {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 22px;
+  font-size: 13px;
+  color: var(--ev-c-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 재생 중 이퀄라이저: 세 막대가 엇갈려 뛴다 */
+.track-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 14px;
+  height: 14px;
+}
+
+.track-eq i {
+  display: block;
+  width: 3px;
+  height: 100%;
+  border-radius: 1px;
+  background-color: currentColor;
+  transform-origin: bottom;
+  animation: track-eq-bounce 0.9s ease-in-out infinite;
+}
+
+.track-eq i:nth-child(2) {
+  animation-delay: -0.3s;
+}
+
+.track-eq i:nth-child(3) {
+  animation-delay: -0.6s;
+}
+
+@keyframes track-eq-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
 .track-item {
   display: flex;
   align-items: center;

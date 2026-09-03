@@ -411,6 +411,10 @@ function App(): React.JSX.Element {
         case 'KeyL':
           player.cycleLoopAB()
           break
+        case 'KeyR':
+          // 처음으로: 재생 상태는 유지한 채 0초로
+          player.seek(0)
+          break
       }
     }
     window.addEventListener('keydown', onKeyDown)

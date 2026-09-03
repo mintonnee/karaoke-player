@@ -17,7 +17,8 @@ function ShortcutList(): React.JSX.Element {
         <kbd>−</kbd> <kbd>=</kbd> 키 내림 / 올림
       </li>
       <li>
-        <kbd>M</kbd> 메인 뮤트 <kbd>V</kbd> 보컬 뮤트 <kbd>L</kbd> A-B 루프(A → B → 해제)
+        <kbd>M</kbd> 메인 뮤트 <kbd>V</kbd> 보컬 뮤트 <kbd>L</kbd> A-B 루프(A → B → 해제){' '}
+        <kbd>R</kbd> 처음으로
       </li>
       <li>
         <kbd>/</kbd> 이 도움말 표시 / 닫기

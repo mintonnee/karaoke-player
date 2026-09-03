@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
-import { MdMusicNote, MdPause, MdPlayArrow, MdRepeat, MdStop } from 'react-icons/md'
+import { MdMusicNote, MdPause, MdPlayArrow, MdRepeat, MdSkipPrevious, MdStop } from 'react-icons/md'
 import { normalizeLoop } from '../audio/audioMath'
 import { usePlayerStore } from '../stores/playerStore'
 import { formatBpmDisplay } from '../../../shared/analysisFormat'
@@ -187,6 +187,9 @@ function Transport(): React.JSX.Element | null {
           >
             {bpmText ?? '—'}
           </span>
+          <button title="처음으로 (R, 재생 상태 유지)" disabled={!active} onClick={() => seek(0)}>
+            <MdSkipPrevious />
+          </button>
           <button
             className="play-toggle"
             title={playing ? '일시정지 (Space)' : '재생 (Space)'}

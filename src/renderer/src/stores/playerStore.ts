@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Track } from '../../../shared/types'
 import type { AudioEngine, AudioEngineState, AudioLevels, LoopRange } from '../audio/AudioEngine'
+import { normalizeLoop } from '../audio/audioMath'
 import { WebAudioEngine } from '../audio/WebAudioEngine'
 
 // 엔진 구현체 교체 지점 (v2: NativeEngine)
@@ -20,6 +21,8 @@ interface PlayerState {
   /** 메인 뮤트: 채널별 뮤트 상태를 보존한 채 두 채널을 모두 무음으로 */
   masterMuted: boolean
   loop: LoopRange | null
+  /** A-B 반복의 시작점(A)만 찍힌 상태. 루프가 확정되거나 해제되면 null */
+  loopMarkA: number | null
   /** 키 변경 (반음, -6..+6) */
   pitch: number
   loadError: string | null
@@ -38,6 +41,11 @@ interface PlayerState {
   toggleVocalMute: () => void
   toggleMasterMute: () => void
   setLoop: (range: LoopRange | null) => void
+  /**
+   * A-B 반복 순환 (반복 버튼 / L 키). 루프 있음 → 해제, A 없음 → 현재 위치를 A로,
+   * A 있음 → A~현재 위치를 루프로 확정. 확정 구간이 너무 짧으면 A를 유지한다.
+   */
+  cycleLoopAB: () => void
   setPitch: (semitones: number) => void
   /** 레벨 미터 구독. 30 Hz 갱신이라 스토어 상태를 거치지 않는다 (전체 리렌더 방지) */
   subscribeLevels: (cb: (levels: AudioLevels) => void) => () => void
@@ -75,11 +83,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     vocalMuted: false,
     masterMuted: false,
     loop: null,
+    loopMarkA: null,
     pitch: 0,
     loadError: null,
 
     loadTrack: async (track) => {
-      set({ track, loadError: null, loop: null, engineState: 'loading', position: 0 })
+      set({
+        track,
+        loadError: null,
+        loop: null,
+        loopMarkA: null,
+        engineState: 'loading',
+        position: 0
+      })
       try {
         const files = await window.api.trackFiles(track.id)
         await engine.load(files)
@@ -96,7 +112,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
     unload: () => {
       engine.stop()
-      set({ track: null, duration: 0, position: 0, loop: null, engineState: engine.state })
+      set({
+        track: null,
+        duration: 0,
+        position: 0,
+        loop: null,
+        loopMarkA: null,
+        engineState: engine.state
+      })
     },
     play: () => {
       engine.play()
@@ -139,8 +162,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       applyGains()
     },
     setLoop: (range) => {
-      set({ loop: range })
+      set({ loop: range, loopMarkA: null })
       engine.setLoop(range)
+    },
+    cycleLoopAB: () => {
+      const { loop, loopMarkA, position, duration, setLoop } = get()
+      if (loop) {
+        setLoop(null)
+        return
+      }
+      if (loopMarkA === null) {
+        set({ loopMarkA: position })
+        return
+      }
+      const range = normalizeLoop(loopMarkA, position, duration)
+      if (range) setLoop(range)
     },
     setPitch: (semitones) => {
       const clamped = Math.max(-6, Math.min(6, Math.round(semitones)))

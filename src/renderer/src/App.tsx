@@ -347,7 +347,7 @@ function App(): React.JSX.Element {
           player.toggleVocalMute()
           break
         case 'KeyL':
-          if (player.loop) player.setLoop(null)
+          player.cycleLoopAB()
           break
       }
     }

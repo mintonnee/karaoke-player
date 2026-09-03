@@ -8,6 +8,15 @@ import { usePlayerStore } from '../stores/playerStore'
 /** 현재 줄을 컨테이너 상단에서 이 비율 지점에 붙인다 (Apple Music 느낌) */
 const ANCHOR_RATIO = 0.22
 
+/** 전주 카운트다운 표기: 60초 미만은 "12초", 이상은 "1분 05초" */
+function formatCountdown(seconds: number): string {
+  const total = Math.max(0, Math.ceil(seconds))
+  if (total < 60) return `${total}초`
+  const m = Math.floor(total / 60)
+  const s = total - m * 60
+  return `${m}분 ${String(s).padStart(2, '0')}초`
+}
+
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = seconds - m * 60
@@ -48,6 +57,10 @@ function LyricsView(): React.JSX.Element | null {
 
   const index = currentLineIndex(lines, position)
   const waitingIntro = lines.length > 0 && index === -1
+  /** 첫 소절까지 남은 시간(초). 전주 대기 중이 아니면 0 */
+  const introRemaining = waitingIntro ? Math.max(0, lines[0].time - position) : 0
+  /** 전주 진행률 0..1 (게이지용). 첫 소절이 0초라면 대기 자체가 없다 */
+  const introProgress = waitingIntro && lines[0].time > 0 ? 1 - introRemaining / lines[0].time : 0
 
   useEffect(() => {
     if (correcting) return
@@ -138,9 +151,17 @@ function LyricsView(): React.JSX.Element | null {
     <div className="lyrics-pane">
       <div ref={containerRef} className="lyrics">
         <div className={`lyrics-intro${waitingIntro ? ' active' : ''}`}>
-          <span />
-          <span />
-          <span />
+          <span className="lyrics-intro-dot" />
+          <span className="lyrics-intro-dot" />
+          <span className="lyrics-intro-dot" />
+          {waitingIntro && (
+            <span className="lyrics-intro-countdown" title="첫 소절까지 남은 시간">
+              {formatCountdown(introRemaining)}
+              <span className="lyrics-intro-gauge">
+                <span style={{ width: `${introProgress * 100}%` }} />
+              </span>
+            </span>
+          )}
         </div>
         {lines.map((line, i) => {
           const state = i < index ? 'past' : i === index ? 'current' : 'future'

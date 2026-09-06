@@ -2,6 +2,8 @@
 name = "karaoke-worker"
 version = "0.1.0"
 description = "Python sidecar for karaoke-player: probe/separate/align/transcribe"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "mutagen>=1.47",

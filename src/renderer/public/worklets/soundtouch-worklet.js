@@ -1,5 +1,12 @@
-/* Vendored from soundtouchjs v0.3.0 (https://github.com/cutterbl/SoundTouchJS, LGPL-2.1).
- * AudioWorklet은 모듈 import가 제한되어 단일 파일로 동봉한다. 원본 고지는 아래에 유지. */
+/* SPDX-License-Identifier: LGPL-2.1-or-later
+ * Vendored from soundtouchjs v0.3.0 (https://github.com/cutterbl/SoundTouchJS).
+ * Modified for Karaoke Player: AudioWorklet adapter, streaming input,
+ * priming, latency reporting and seek handling. Licensing notice updated 2026-09-06.
+ * Copyright 2026 mgkwak (project modifications).
+ * This entire file, including the adapter and modifications, remains LGPL-2.1-or-later;
+ * it is excluded from the project's Apache-2.0 license. See LICENSE_SCOPE.md and
+ * scripts/licenses/LGPL-2.1.txt. Upstream notices are preserved below.
+ * AudioWorklet은 모듈 import가 제한되어 단일 파일로 동봉한다. */
 /*
  * SoundTouch JS v0.3.0 audio processing library
  * Copyright (c) Olli Parviainen

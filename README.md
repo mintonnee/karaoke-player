@@ -125,6 +125,10 @@ docs/            스펙 문서 (docs/specs/README.md 인덱스)
 
 ## 라이선스
 
-이 저장소 자체의 라이선스는 아직 정하지 않았다. 배포물에 포함되거나 실행 시 내려받는 서드파티 소프트웨어의 고지는 배포물 루트의 `THIRD-PARTY-NOTICES.txt`와 앱 설정 화면에서 볼 수 있다. YouTube URL 임포트는 개인 사용 목적의 기능이며, 콘텐츠 이용 약관과 저작권 준수는 사용자 책임이다.
+이 프로젝트의 **자체 코드**(앱 소스, 테스트, 빌드 스크립트 및 소프트웨어 설정)는 [Apache License 2.0](LICENSE)을 따른다. 문서, 이미지·아이콘, 음원·가사, 모델 가중치 등 코드가 아닌 자료에는 이 라이선스를 적용하지 않는다. 정확한 범위는 [LICENSE_SCOPE.md](LICENSE_SCOPE.md)를 참조한다.
+
+**SoundTouch 예외:** `src/renderer/public/worklets/soundtouch-worklet.js` 전체(이 프로젝트의 AudioWorklet 어댑터와 수정 부분 포함)는 기존 **LGPL-2.1-or-later**를 유지하며 Apache-2.0 적용 대상에서 제외한다. 원저작자 고지는 파일 헤더에, 라이선스 전문은 [scripts/licenses/LGPL-2.1.txt](scripts/licenses/LGPL-2.1.txt)에 있다. 배포물에도 해당 라이선스와 수정 가능한 worklet 소스를 동봉한다.
+
+다른 서드파티 코드·런타임·모델·에셋은 각자의 라이선스를 유지한다. 고지는 배포물 루트의 `THIRD-PARTY-NOTICES.txt`와 앱 설정 화면에서 볼 수 있다. YouTube URL 임포트는 개인 사용 목적의 기능이며, 콘텐츠 이용 약관과 저작권 준수는 사용자 책임이다.
 
 이슈: https://github.com/plan12be/karaoke-player/issues

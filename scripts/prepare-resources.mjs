@@ -139,7 +139,7 @@ function stageSidecar() {
   rmSync(sidecarStageDir, { recursive: true, force: true })
   mkdirSync(sidecarStageDir, { recursive: true })
 
-  for (const name of ['pyproject.toml', 'uv.lock', '.python-version']) {
+  for (const name of ['pyproject.toml', 'uv.lock', '.python-version', 'LICENSE']) {
     const from = join(sidecarSrcDir, name)
     if (!existsSync(from)) {
       fail(`sidecar/${name} not found`)

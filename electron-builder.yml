@@ -25,6 +25,16 @@ files:
 # out/main/index.js 의 `path.join(__dirname, "../../resources/icon.png")` 로 확인,
 # 이 경로는 asar 내부를 그대로 가리키므로 언패킹 없이도 Node의 asar-투명 fs 로 읽힌다).
 extraFiles:
+  - from: LICENSE
+    to: LICENSE
+  - from: LICENSE_SCOPE.md
+    to: LICENSE_SCOPE.md
+  - from: NOTICE
+    to: NOTICE
+  - from: scripts/licenses/LGPL-2.1.txt
+    to: licenses/LGPL-2.1.txt
+  - from: src/renderer/public/worklets/soundtouch-worklet.js
+    to: third-party-source/soundtouch-worklet.js
   - from: src/renderer/src/generated/third-party-notices.txt
     to: THIRD-PARTY-NOTICES.txt
 win:

@@ -2,7 +2,7 @@
  * Vendored from soundtouchjs v0.3.0 (https://github.com/cutterbl/SoundTouchJS).
  * Modified for Karaoke Player: AudioWorklet adapter, streaming input,
  * priming, latency reporting and seek handling. Licensing notice updated 2026-09-06.
- * Copyright 2026 mgkwak (project modifications).
+ * Copyright 2026 mintonnee (project modifications).
  * This entire file, including the adapter and modifications, remains LGPL-2.1-or-later;
  * it is excluded from the project's Apache-2.0 license. See LICENSE_SCOPE.md and
  * scripts/licenses/LGPL-2.1.txt. Upstream notices are preserved below.

@@ -1,4 +1,4 @@
-appId: com.mgkwak.karaoke-player
+appId: com.mintonnee.karaoke-player
 productName: Karaoke Player
 directories:
   buildResources: build
@@ -47,7 +47,7 @@ dmg:
 linux:
   target:
     - AppImage
-  maintainer: mgkwak
+  maintainer: mintonnee
   category: AudioVideo
 appImage:
   artifactName: ${name}-${version}.${ext}

@@ -131,4 +131,4 @@ docs/            스펙 문서 (docs/specs/README.md 인덱스)
 
 다른 서드파티 코드·런타임·모델·에셋은 각자의 라이선스를 유지한다. 고지는 배포물 루트의 `THIRD-PARTY-NOTICES.txt`와 앱 설정 화면에서 볼 수 있다. YouTube URL 임포트는 개인 사용 목적의 기능이며, 콘텐츠 이용 약관과 저작권 준수는 사용자 책임이다.
 
-이슈: https://github.com/plan12be/karaoke-player/issues
+이슈: https://github.com/mintonnee/karaoke-player/issues

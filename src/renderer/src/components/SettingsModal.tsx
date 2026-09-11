@@ -5,7 +5,7 @@ import type { AppSettings } from '../../../shared/types'
 import notices from '../generated/third-party-notices.txt?raw'
 import ShortcutList from './ShortcutList'
 
-const REPO_URL = 'https://github.com/plan12be/karaoke-player'
+const REPO_URL = 'https://github.com/mintonnee/karaoke-player'
 
 interface SettingsModalProps {
   onClose: () => void
@@ -74,7 +74,7 @@ function SettingsModal({ onClose }: SettingsModalProps): React.JSX.Element {
               로컬 노래방 데스크톱 앱 — Demucs 보컬 분리, 싱크 가사, 한글 발음 힌트, 키 변경. 모든
               처리는 로컬에서 수행되며 외부 업로드가 없습니다.
             </p>
-            <p>만든이: mgkwak</p>
+            <p>만든이: mintonnee</p>
             <p>
               {/* 외부 링크는 메인의 setWindowOpenHandler가 기본 브라우저로 연다 */}
               <a href={REPO_URL} target="_blank" rel="noreferrer">

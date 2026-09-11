@@ -4,7 +4,7 @@
  */
 import type { AppErrorReport, AppInfo } from './types'
 
-export const ISSUES_NEW_URL = 'https://github.com/plan12be/karaoke-player/issues/new'
+export const ISSUES_NEW_URL = 'https://github.com/mintonnee/karaoke-player/issues/new'
 
 /** 브라우저·GitHub가 안전하게 받는 URL 길이. 넘치면 본문을 자른다 */
 const MAX_URL_LENGTH = 7000

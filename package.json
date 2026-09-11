@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Local karaoke desktop app: Demucs vocal separation, synced lyrics, key shift",
   "main": "./out/main/index.js",
-  "author": "mgkwak",
+  "author": "mintonnee",
   "license": "Apache-2.0",
   "scripts": {
     "format": "prettier --write .",

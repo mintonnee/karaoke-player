@@ -1,6 +1,6 @@
 # License scope
 
-Copyright 2026 mgkwak
+Copyright 2026 mintonnee
 
 ## Project code: Apache-2.0
 

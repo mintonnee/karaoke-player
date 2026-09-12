@@ -87,7 +87,7 @@
 ### 4.3 URL 임포트 (zip 전용)
 
 - 활성화 조건: 메인 프로세스가 시작 시 `resources/bin/yt-dlp.exe`와 `resources/bin/deno.exe` **둘 다** 존재하는지 확인해 preload 플래그로 렌더러에 노출한다. dev에서는 `resources/bin`에 두 파일을 두면 켜진다 (기준 6의 dev 검증 경로).
-- UI: 라이브러리 패널 헤더의 `+ 가져오기` 옆에 URL 입력 진입점을 추가한다. 다운로드 중에는 진행률(yt-dlp stdout의 `%` 파싱)을 표시한다.
+- UI: 기존 구현은 라이브러리 패널 헤더의 `+ 가져오기` 옆에 URL 입력 진입점을 둔다. `004-import-dialog.md` 구현 시 가져오기 팝업의 YouTube 방식으로 통합한다 (현재 구현 미착수). 다운로드 중에는 진행률(yt-dlp stdout의 `%` 파싱)을 표시하며 capability에 따른 미노출 계약은 유지한다.
 - 다운로드: `yt-dlp -f "bestaudio[ext=m4a]" --no-playlist --write-thumbnail --js-runtimes deno:<resources>/bin/deno.exe -o <scratch>/%(title)s [%(id)s].%(ext)s <url>`. m4a 고정으로 ffmpeg 동봉을 회피하고, JS 런타임은 동봉 `deno.exe`를 경로로 지정해 PATH에 의존하지 않는다. m4a 미제공 영상은 오류로 안내한다 (비목표 표 참조).
 - 커버: YouTube m4a에는 내장 앨범 아트가 없으므로 `--write-thumbnail`로 받은 썸네일 파일(보통 webp)을 임포트 성공 후 `tracks/<id>/cover.jpg`로 복사한다. 파일명은 확장자와 무관하게 고정한다 — 렌더러 `<img>`가 매직 바이트로 포맷을 판별하는 기존 관례(사이드카 `cover` 명령과 동일). 썸네일 변환(`--convert-thumbnails`)과 태그 내장(`--embed-thumbnail`)은 ffmpeg가 필요해 쓰지 않는다. 기존 `CoverService`는 내장 아트 부재 시 `cover.none` 마커만 남기고 `cover.jpg`를 쓰지 않으므로 충돌이 없다.
 - 완료된 파일 경로를 기존 `importService.importFiles([path])`에 전달한다 — probe/분리/가사 파이프라인은 수정하지 않는다. 임포트 성공 후 스크래치 파일은 삭제한다 (원본은 §4.3 데이터 레이아웃대로 트랙 디렉토리에 복사돼 있음).

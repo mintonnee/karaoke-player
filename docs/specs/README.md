@@ -10,6 +10,7 @@ Karaoke Player의 기능 스펙 문서 모음. 새 스펙은 아래 템플릿 �
 | 001  | [`001-packaging-distribution.md`](001-packaging-distribution.md)                   | 000 §5 S7 — 패키징·배포 (zip/MSIX)                          | 구현 완료 (기준 1·2 자동 검증, 3–8 수동 검증 대기)                                     |
 | 002  | [`002-bpm-key-analysis.md`](002-bpm-key-analysis.md)                               | 000 §2 추가 목표 — BPM·키 분석 표시                         | 구현 완료 (v2 알고리즘, 13곡 대조 BPM 13/13·키 12/13. 기준 2·4·6 앱 내 수동 확인 대기) |
 | 003  | [`003-player-layout.md`](003-player-layout.md)                                     | 000 S2.2·S6.2 UI 배치 — 믹서(레벨 미터)·키 패널 사이드 컬럼 | 구현 완료 (기준 7·8 자동 검증, 1–6·9 사용자 수동 확인 완료)                            |
+| 004 | [`004-import-dialog.md`](004-import-dialog.md) | 000 S1.3·001 §4.3 — 가져오기 팝업, 일반 음원·MR/가이드 쌍·YouTube | 스펙 작성 완료, 구현 미착수 |
 
 ## 템플릿
 

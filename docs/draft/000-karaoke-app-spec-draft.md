@@ -14,6 +14,7 @@
 **목표 (v1)**
 
 - 로컬 오디오 파일(MP3/WAV/FLAC/M4A) 임포트 → 2-stem 분리 (vocals / no_vocals)
+- 가져오기 팝업에서 일반 음원 1개(분리), MR + AR/보컬 가이드 2개(분리 없음), YouTube URL(분리)을 선택한다. 가이드 종류별 재생·입력·저장 계약은 `docs/specs/004-import-dialog.md`를 따른다 (2026-09-12 스펙 추가, 구현 미착수).
 - 반주 재생, 가이드 보컬 볼륨 조절(기본 -20 dB, 뮤트 가능), 루프, 시크
 - 가사 표시 및 줄 단위 하이라이트 (LRCLIB 동기 가사 → 없으면 텍스트 + forced alignment)
 - 키 변경 (±6 반음), 템포는 v1 범위 밖
@@ -75,6 +76,8 @@
 ### 4.1 AudioEngine 인터페이스 (결정 — 변경 시 반드시 문서 갱신)
 
 렌더러의 어떤 코드도 `AudioContext`를 직접 만지지 않는다. 오직 `WebAudioEngine` 내부에서만 사용한다.
+
+두 파일 가져오기의 AR 재생 계약은 `docs/specs/004-import-dialog.md` §4.5에 정의한다. 아래는 현재 인터페이스이며, 해당 기능 구현 시 가이드 입력 의미와 경로 계약을 함께 갱신한다.
 
 ```ts
 export interface AudioEngine {
@@ -186,6 +189,7 @@ LRC 포맷: `[mm:ss.xx] 가사` 줄 단위. 줄 내 진행바는 (다음 줄 시
 - S1.1 `separate` 명령: Demucs `htdemucs_ft --two-stems=vocals`, 진행률 파싱(stderr의 tqdm)
 - S1.2 `JobQueue`: 동시 1개, 상태를 SQLite에 반영, 앱 재시작 시 `separating` 상태를 `failed`로 정리
 - S1.3 임포트 UI: 드롭존 → 진행 바 → 완료
+- S1.3 확장: 가져오기 팝업과 MR/가이드 직접 등록의 상세·후속 구현 슬라이스는 `docs/specs/004-import-dialog.md`를 따른다 (구현 미착수).
 - DoD: 3분 곡을 임포트하면 `inst.wav`, `vocal.wav`가 생기고 라이브러리에 `ready`로 표시된다
 
 ### S2 — 재생 엔진 (Web Audio)

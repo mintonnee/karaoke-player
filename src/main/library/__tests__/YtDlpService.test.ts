@@ -4,7 +4,12 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { IPC_CHANNELS } from '../../../shared/types'
-import type { ImportFilesResponse, Track, UrlImportProgressEvent } from '../../../shared/types'
+import type {
+  ImportFilesResponse,
+  ImportUserMeta,
+  Track,
+  UrlImportProgressEvent
+} from '../../../shared/types'
 import type { ImportMetaHint } from '../ImportService'
 import {
   YtDlpService,
@@ -32,6 +37,8 @@ function track(id: string): Track {
     bpmConf: null,
     keyConf: null,
     analysisSource: 'none',
+    importKind: 'separated',
+    guideKind: 'vocal_only',
     createdAt: '2026-09-02T00:00:00.000Z',
     updatedAt: '2026-09-02T00:00:00.000Z'
   }
@@ -152,6 +159,7 @@ describe('YtDlpService', () => {
   let imported: string[][]
   /** importFiles에 함께 넘어온 메타 힌트 (호출 순서대로) */
   let hints: (ImportMetaHint | undefined)[]
+  let userMetas: (ImportUserMeta | undefined)[]
   let events: Array<{ channel: string; payload: unknown }>
   let importResult: ImportFilesResponse
 
@@ -161,6 +169,7 @@ describe('YtDlpService', () => {
     tracksDir = join(root, 'tracks')
     imported = []
     hints = []
+    userMetas = []
     events = []
     importResult = { imported: [track('t1')], rejected: [] }
   })
@@ -176,9 +185,10 @@ describe('YtDlpService', () => {
       denoPath: join(root, 'deno.exe'),
       scratchRoot,
       tracksDir,
-      importFiles: async (filePaths, hint) => {
+      importFiles: async (filePaths, hint, userMeta) => {
         imported.push(filePaths)
         hints.push(hint)
+        userMetas.push(userMeta)
         return importResult
       },
       notify: (channel, payload) => events.push({ channel, payload }),
@@ -199,7 +209,7 @@ describe('YtDlpService', () => {
 
   it('성공 경로: 진행률 브로드캐스트 → importFiles → cover.jpg 복사 → 스크래치 정리', async () => {
     const service = createService()
-    const response = await service.importUrl('https://fake.test/ok')
+    const response = await service.importUrl('https://youtu.be/ok')
 
     expect(response.rejected).toEqual([])
     expect(response.imported).toHaveLength(1)
@@ -209,10 +219,11 @@ describe('YtDlpService', () => {
     expect(imported[0][0]).toMatch(/Fake Song \[abc123\]\.m4a$/)
     // --print 제목·아티스트 힌트가 파이프라인에 전달된다 (아티스트는 " - Topic" 제거 후)
     expect(hints[0]).toEqual({ title: 'Fake Song', artist: 'Fake Artist' })
+    expect(userMetas[0]).toBeUndefined()
 
     const pcts = progressEvents().map((e) => e.pct)
     expect(pcts).toEqual([0, 0.3, 45.3, 100, 100])
-    expect(progressEvents().every((e) => e.url === 'https://fake.test/ok')).toBe(true)
+    expect(progressEvents().every((e) => e.url === 'https://youtu.be/ok')).toBe(true)
     expect(new Set(progressEvents().map((e) => e.id)).size).toBe(1)
 
     // 썸네일이 확장자와 무관하게 cover.jpg 로 고정 복사된다
@@ -232,7 +243,7 @@ describe('YtDlpService', () => {
     const service = createService({
       touchTrack: (t) => ({ ...t, updatedAt: '2026-09-02T01:00:00.000Z' })
     })
-    await service.importUrl('https://fake.test/ok')
+    await service.importUrl('https://youtu.be/ok')
 
     const updates = events.filter((e) => e.channel === IPC_CHANNELS.trackUpdated)
     expect((updates[0].payload as Track).updatedAt).toBe('2026-09-02T01:00:00.000Z')
@@ -240,7 +251,7 @@ describe('YtDlpService', () => {
 
   it('--print 출력이 없어도 스크래치에서 오디오 파일을 찾는다', async () => {
     const service = createService()
-    const response = await service.importUrl('https://fake.test/noprint')
+    const response = await service.importUrl('https://youtu.be/noprint')
 
     expect(response.rejected).toEqual([])
     expect(imported[0][0]).toMatch(/Fake Song \[abc123\]\.m4a$/)
@@ -249,7 +260,7 @@ describe('YtDlpService', () => {
 
   it('썸네일이 없어도 임포트는 성공한다', async () => {
     const service = createService()
-    const response = await service.importUrl('https://fake.test/nothumb')
+    const response = await service.importUrl('https://youtu.be/nothumb')
 
     expect(response.imported).toHaveLength(1)
     expect(existsSync(join(tracksDir, 't1', 'cover.jpg'))).toBe(false)
@@ -260,12 +271,12 @@ describe('YtDlpService', () => {
 
   it('실패 경로: stderr의 ERROR 줄을 rejection 사유로 쓰고 스크래치를 정리한다', async () => {
     const service = createService()
-    const response = await service.importUrl('https://fake.test/fail')
+    const response = await service.importUrl('https://youtu.be/fail')
 
     expect(response.imported).toEqual([])
     expect(response.rejected).toEqual([
       {
-        filePath: 'https://fake.test/fail',
+        filePath: 'https://youtu.be/fail',
         reason: 'ERROR: [youtube] zzz: Requested format is not available'
       }
     ])
@@ -275,10 +286,20 @@ describe('YtDlpService', () => {
 
   it('다운로드가 파일을 남기지 않으면 거부한다', async () => {
     const service = createService()
-    const response = await service.importUrl('https://fake.test/empty')
+    const response = await service.importUrl('https://youtu.be/empty')
 
     expect(response.imported).toEqual([])
     expect(response.rejected[0].reason).toContain('오디오 파일을 찾지 못했습니다')
+    expect(await scratchDirs()).toEqual([])
+  })
+
+  it('YouTube가 아닌 http URL은 프로세스를 띄우지 않고 거부한다', async () => {
+    const service = createService()
+    const response = await service.importUrl('https://example.com/watch?v=abc')
+
+    expect(response.imported).toEqual([])
+    expect(response.rejected[0].reason).toContain('YouTube')
+    expect(imported).toEqual([])
     expect(await scratchDirs()).toEqual([])
   })
 
@@ -287,8 +308,22 @@ describe('YtDlpService', () => {
     const response = await service.importUrl('--version')
 
     expect(response.rejected[0].filePath).toBe('--version')
-    expect(response.rejected[0].reason).toContain('http(s) URL')
+    expect(response.rejected[0].reason).toMatch(/올바른 URL|http\(s\) YouTube/)
     expect(await scratchDirs()).toEqual([])
+  })
+
+  it('사용자 커버가 있으면 YouTube 썸네일을 복사하지 않는다', async () => {
+    await createService().importUrl('https://youtu.be/ok', { coverPath: 'C:\\art.jpg' })
+    expect(existsSync(join(tracksDir, 't1', 'cover.jpg'))).toBe(false)
+  })
+
+  it('사용자 곡 정보는 importFiles 세 번째 인자로 넘기고 yt-dlp 힌트는 유지한다', async () => {
+    await createService().importUrl('https://youtu.be/ok', {
+      title: '내 제목',
+      artist: '내 가수'
+    })
+    expect(hints[0]).toEqual({ title: 'Fake Song', artist: 'Fake Artist' })
+    expect(userMetas[0]).toEqual({ title: '내 제목', artist: '내 가수' })
   })
 
   it('importFiles의 거부 사유는 URL을 filePath로 바꿔 표면화한다', async () => {
@@ -297,16 +332,16 @@ describe('YtDlpService', () => {
       rejected: [{ filePath: 'C:/scratch/x.m4a', reason: 'too long' }]
     }
     const service = createService()
-    const response = await service.importUrl('https://fake.test/ok')
+    const response = await service.importUrl('https://youtu.be/ok')
 
-    expect(response.rejected).toEqual([{ filePath: 'https://fake.test/ok', reason: 'too long' }])
+    expect(response.rejected).toEqual([{ filePath: 'https://youtu.be/ok', reason: 'too long' }])
   })
 
   it('동시 요청을 직렬화한다', async () => {
     const service = createService()
     const [a, b] = await Promise.all([
-      service.importUrl('https://fake.test/ok'),
-      service.importUrl('https://fake.test/ok')
+      service.importUrl('https://youtu.be/ok'),
+      service.importUrl('https://youtu.be/ok')
     ])
 
     expect(a.imported).toHaveLength(1)
@@ -320,7 +355,7 @@ describe('YtDlpService', () => {
   it('dispose 후에는 새 요청을 받지 않는다', async () => {
     const service = createService()
     service.dispose()
-    const response = await service.importUrl('https://fake.test/ok')
+    const response = await service.importUrl('https://youtu.be/ok')
 
     expect(response.rejected[0].reason).toContain('종료 중')
     expect(imported).toEqual([])

@@ -32,6 +32,41 @@ function createV2Database(dbPath: string): void {
   db.close()
 }
 
+/** 스펙 004 이전(v4) 스키마. import_kind/guide_kind 없음 */
+function createV4Database(dbPath: string): void {
+  const db = new Database(dbPath)
+  db.exec(`
+    CREATE TABLE tracks (
+      id            TEXT PRIMARY KEY,
+      title         TEXT NOT NULL,
+      artist        TEXT,
+      album         TEXT,
+      duration      REAL NOT NULL,
+      source_path   TEXT NOT NULL,
+      status        TEXT NOT NULL,
+      lyrics_source TEXT NOT NULL DEFAULT 'none',
+      created_at    TEXT NOT NULL,
+      updated_at    TEXT NOT NULL,
+      search_keys   TEXT NOT NULL DEFAULT '',
+      bpm           REAL,
+      music_key     TEXT,
+      bpm_conf      REAL,
+      key_conf      REAL,
+      analysis_version INTEGER NOT NULL DEFAULT 0,
+      analysis_source  TEXT NOT NULL DEFAULT 'none',
+      sort_order    INTEGER NOT NULL DEFAULT 0
+    )
+  `)
+  db.prepare(
+    `INSERT INTO tracks (id, title, artist, album, duration, source_path, status, lyrics_source,
+                         created_at, updated_at, search_keys, sort_order)
+     VALUES ('old', '옛 트랙', 'Eve', null, 200, 'C:\\music\\old.flac', 'ready', 'lrclib_synced',
+             '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', '요루시카', 0)`
+  ).run()
+  db.pragma('user_version = 4')
+  db.close()
+}
+
 describe('LibraryStore', () => {
   let dir: string
   let store: LibraryStore
@@ -60,14 +95,34 @@ describe('LibraryStore', () => {
       ...overrides
     })
 
-  it('트랙 생성 시 imported/none 기본 상태로 저장한다', () => {
+  it('트랙 생성 시 imported/none 기본 상태와 separated/vocal_only를 저장한다', () => {
     const track = createTrack('t1')
 
     expect(track.status).toBe('imported')
     expect(track.lyricsSource).toBe('none')
+    expect(track.importKind).toBe('separated')
+    expect(track.guideKind).toBe('vocal_only')
     expect(track.title).toBe('title-t1')
     expect(track.createdAt).toBe(track.updatedAt)
     expect(store.getTrack('t1')).toEqual(track)
+  })
+
+  it('separated + full_mix 조합은 거부하고 행을 만들지 않는다', () => {
+    expect(() => createTrack('bad', { importKind: 'separated', guideKind: 'full_mix' })).toThrow(
+      'separated tracks cannot have guideKind full_mix'
+    )
+    expect(store.getTrack('bad')).toBeUndefined()
+  })
+
+  it('paired + full_mix 는 ready 한 행으로 저장할 수 있다', () => {
+    const track = createTrack('p1', {
+      importKind: 'paired',
+      guideKind: 'full_mix',
+      status: 'ready'
+    })
+    expect(track.status).toBe('ready')
+    expect(track.importKind).toBe('paired')
+    expect(track.guideKind).toBe('full_mix')
   })
 
   it('상태 갱신 시 updated_at이 바뀌고 조회에 반영된다', () => {
@@ -191,14 +246,14 @@ describe('LibraryStore', () => {
   })
 
   describe('스키마 v4 마이그레이션 (드래그 정렬)', () => {
-    it('v2 DB를 열면 v4까지 올라가고 기존 행은 최신 순으로 번호가 매겨진다', () => {
+    it('v2 DB를 열면 최신 버전까지 올라가고 기존 행은 최신 순으로 번호가 매겨진다', () => {
       store.close()
       const dbPath = join(dir, 'v2-to-v4.sqlite')
       createV2Database(dbPath)
 
       store = new LibraryStore(dbPath)
       const raw = new Database(dbPath, { readonly: true })
-      expect(raw.pragma('user_version', { simple: true })).toBe(4)
+      expect(raw.pragma('user_version', { simple: true })).toBe(5)
       const row = raw.prepare('SELECT sort_order FROM tracks WHERE id = ?').get('old') as {
         sort_order: number
       }
@@ -219,7 +274,7 @@ describe('LibraryStore', () => {
 
       store = new LibraryStore(dbPath)
       const raw = new Database(dbPath, { readonly: true })
-      expect(raw.pragma('user_version', { simple: true })).toBe(4)
+      expect(raw.pragma('user_version', { simple: true })).toBe(5)
       raw.close()
 
       const old = store.getTrack('old')!
@@ -245,6 +300,38 @@ describe('LibraryStore', () => {
       expect(track.bpmConf).toBeNull()
       expect(track.keyConf).toBeNull()
       expect(track.analysisSource).toBe('none')
+    })
+  })
+
+  describe('스키마 v5 마이그레이션 (가져오기 종류)', () => {
+    it('v4 DB를 열면 v5로 올라가고 기존 행은 separated/vocal_only이며 데이터가 보존된다', () => {
+      store.close()
+      const dbPath = join(dir, 'v4-to-v5.sqlite')
+      createV4Database(dbPath)
+
+      store = new LibraryStore(dbPath)
+      const raw = new Database(dbPath, { readonly: true })
+      expect(raw.pragma('user_version', { simple: true })).toBe(5)
+      const row = raw
+        .prepare('SELECT import_kind, guide_kind, title, status FROM tracks WHERE id = ?')
+        .get('old') as {
+        import_kind: string
+        guide_kind: string
+        title: string
+        status: string
+      }
+      expect(row.import_kind).toBe('separated')
+      expect(row.guide_kind).toBe('vocal_only')
+      expect(row.title).toBe('옛 트랙')
+      expect(row.status).toBe('ready')
+      raw.close()
+
+      const old = store.getTrack('old')!
+      expect(old.importKind).toBe('separated')
+      expect(old.guideKind).toBe('vocal_only')
+      expect(old.artist).toBe('Eve')
+      expect(old.duration).toBe(200)
+      expect(old.sourcePath).toBe('C:\\music\\old.flac')
     })
   })
 

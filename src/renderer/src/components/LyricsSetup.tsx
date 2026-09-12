@@ -11,10 +11,11 @@ function guessLang(text: string): AlignLang {
 
 interface LyricsSetupProps {
   trackId: string
+  noGuide?: boolean
 }
 
 /** S5.2/S5.4: 동기 가사가 없을 때 — 붙여넣기(또는 전사) → 정렬 실행 */
-function LyricsSetup({ trackId }: LyricsSetupProps): React.JSX.Element {
+function LyricsSetup({ trackId, noGuide = false }: LyricsSetupProps): React.JSX.Element {
   const { plain, working, progress, workError, refetch, align, transcribe } = useLyricsStore()
   // 사용자가 건드리기 전에는 저장된 plain 가사를 따라간다 (로드 완료 시 자동 반영)
   const [editedText, setEditedText] = useState<string | null>(null)
@@ -46,29 +47,38 @@ function LyricsSetup({ trackId }: LyricsSetupProps): React.JSX.Element {
   return (
     <div className="lyrics lyrics-empty lyrics-setup">
       <p className="lyrics-note">
-        동기 가사가 없습니다. 가사를 붙여넣고 정렬하거나, LRCLIB에서 다시 찾아보세요.
+        {noGuide
+          ? '가이드 보컬이 없어 자동 정렬·받아쓰기를 사용할 수 없습니다. LRCLIB에서 동기 가사를 찾아보세요.'
+          : '동기 가사가 없습니다. 가사를 붙여넣고 정렬하거나, LRCLIB에서 다시 찾아보세요.'}
       </p>
       {workError && <p className="lyrics-error">실패: {workError}</p>}
       <textarea
+        disabled={noGuide}
         value={text}
         placeholder="여기에 가사를 붙여넣으세요 (한 줄 = 한 하이라이트)"
         onChange={(e) => onTextChange(e.target.value)}
         rows={8}
       />
       <div className="lyrics-setup-actions">
-        <select value={lang} onChange={(e) => setPickedLang(e.target.value as AlignLang)}>
+        <select
+          disabled={noGuide}
+          value={lang}
+          onChange={(e) => setPickedLang(e.target.value as AlignLang)}
+        >
           <option value="ko">한국어</option>
           <option value="ja">일본어</option>
           <option value="en">영어</option>
         </select>
         <button
-          disabled={!text.trim()}
+          disabled={noGuide || !text.trim()}
           onClick={() => void align(trackId, text, lang, text === (plain ?? ''))}
         >
           정렬 실행
         </button>
         <button onClick={() => void refetch(trackId)}>LRCLIB 재조회</button>
-        <button onClick={() => void runTranscribe()}>가사가 없어요 (받아쓰기)</button>
+        <button disabled={noGuide} onClick={() => void runTranscribe()}>
+          가사가 없어요 (받아쓰기)
+        </button>
       </div>
     </div>
   )

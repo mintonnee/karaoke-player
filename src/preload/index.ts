@@ -6,13 +6,17 @@ import type {
   AlignedLine,
   AppCapabilities,
   AppSettings,
+  AudioTagPreview,
   BootstrapState,
   ImportFilesResponse,
   ImportProgressEvent,
+  ImportUserMeta,
   AppErrorReport,
   AppInfo,
   LyricsPayload,
   LyricsProgressEvent,
+  PairImportProgressEvent,
+  PairImportRequest,
   Track,
   TrackFiles,
   TrackMetaInput,
@@ -73,9 +77,19 @@ const api = {
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
   setSettings: (patch: Partial<AppSettings>): Promise<AppSettings> =>
     ipcRenderer.invoke(IPC_CHANNELS.settingsSet, patch),
-  importFiles: (filePaths: string[]): Promise<ImportFilesResponse> =>
-    ipcRenderer.invoke(IPC_CHANNELS.importFiles, filePaths),
+  importFiles: (filePaths: string[], userMeta?: ImportUserMeta): Promise<ImportFilesResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.importFiles, filePaths, userMeta),
   importDialog: (): Promise<ImportFilesResponse> => ipcRenderer.invoke(IPC_CHANNELS.importDialog),
+  pickAudioFile: (): Promise<string | null> => ipcRenderer.invoke(IPC_CHANNELS.pickAudioFile),
+  pickImageFile: (): Promise<string | null> => ipcRenderer.invoke(IPC_CHANNELS.pickImageFile),
+  previewCover: (filePath: string): Promise<string | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.previewCover, filePath),
+  probeAudioTags: (filePath: string): Promise<AudioTagPreview> =>
+    ipcRenderer.invoke(IPC_CHANNELS.probeAudioTags, filePath),
+  importPair: (req: PairImportRequest): Promise<ImportFilesResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.importPair, req),
+  onPairImportProgress: (callback: (event: PairImportProgressEvent) => void): (() => void) =>
+    subscribe(IPC_CHANNELS.pairImportProgress, callback),
   /** 드롭된 File 객체에서 절대 경로 추출 (렌더러에서는 접근 불가) */
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   onTrackUpdated: (callback: (track: Track) => void): (() => void) =>
@@ -89,8 +103,8 @@ const api = {
     subscribe(IPC_CHANNELS.bootstrapState, callback),
   /** 배포 채널별 기능 플래그 (스펙 001 §4.3). urlImport가 false면 URL UI를 그리지 않는다 */
   getCapabilities: (): Promise<AppCapabilities> => ipcRenderer.invoke(IPC_CHANNELS.capabilities),
-  importUrl: (url: string): Promise<ImportFilesResponse> =>
-    ipcRenderer.invoke(IPC_CHANNELS.importUrl, url),
+  importUrl: (url: string, userMeta?: ImportUserMeta): Promise<ImportFilesResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.importUrl, url, userMeta),
   onUrlImportProgress: (callback: (event: UrlImportProgressEvent) => void): (() => void) =>
     subscribe(IPC_CHANNELS.urlImportProgress, callback)
 }

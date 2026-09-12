@@ -1,7 +1,7 @@
 import { readFile, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { formatLrc, parseLrc } from '../../shared/lrc'
-import { IPC_CHANNELS } from '../../shared/types'
+import { guideAudioFileName, IPC_CHANNELS } from '../../shared/types'
 import type {
   AlignLang,
   AlignedLine,
@@ -103,7 +103,8 @@ export class LyricsService {
     lang: AlignLang,
     fromLrclibPlain: boolean
   ): Promise<LyricsPayload> {
-    this.mustGetReadyTrack(trackId)
+    const track = this.mustGetReadyTrack(trackId)
+    const guidePath = this.guideAudioPath(track)
     const dir = this.trackDir(trackId)
     await writeFile(join(dir, 'lyrics.txt'), text, 'utf-8')
 
@@ -112,7 +113,7 @@ export class LyricsService {
         [
           'align',
           '--vocal',
-          join(dir, 'vocal.wav'),
+          guidePath,
           '--lyrics',
           join(dir, 'lyrics.txt'),
           '--lang',
@@ -157,22 +158,14 @@ export class LyricsService {
 
   /** S5.4: faster-whisper 전사. 교정용 텍스트를 반환한다 (파일은 transcript.txt) */
   async transcribe(trackId: string): Promise<string> {
-    this.mustGetReadyTrack(trackId)
+    const track = this.mustGetReadyTrack(trackId)
+    const guidePath = this.guideAudioPath(track)
     const dir = this.trackDir(trackId)
     const outPath = join(dir, 'transcript.txt')
 
     await this.runQueued(async () => {
       await this.options.sidecar.run(
-        [
-          'transcribe',
-          '--vocal',
-          join(dir, 'vocal.wav'),
-          '--lang',
-          'auto',
-          '--out',
-          outPath,
-          '--json'
-        ],
+        ['transcribe', '--vocal', guidePath, '--lang', 'auto', '--out', outPath, '--json'],
         { onProgress: (event) => this.notifyProgress(trackId, 'transcribe', event.pct, event.msg) }
       )
     })
@@ -282,6 +275,14 @@ export class LyricsService {
 
   private trackDir(trackId: string): string {
     return join(this.options.tracksDir, trackId)
+  }
+
+  /** vocal_only → vocal.wav, full_mix → guide.wav. AR를 보컬 단독으로 취급하지 않는다 */
+  private guideAudioPath(track: Track): string {
+    const name = guideAudioFileName(track.guideKind)
+    if (name === null)
+      throw new Error('가이드 보컬이 없어 자동 가사 정렬·받아쓰기를 사용할 수 없습니다')
+    return join(this.trackDir(track.id), name)
   }
 
   private log(line: string): void {

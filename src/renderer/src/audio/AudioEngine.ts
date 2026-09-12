@@ -18,15 +18,16 @@ export interface AudioLevels {
 }
 
 export interface AudioEngine {
-  /** 파일 경로를 받는다. 버퍼를 넘기지 않는다 (네이티브 엔진 호환). */
-  load(tracks: { inst: string; vocal: string }): Promise<void>
+  /** 디스크 경로. `guide`는 vocal.wav(vocal_only) 또는 guide.wav(full_mix). 보컬 전용이라고 가정하지 않는다. */
+  load(tracks: { inst: string; guide: string | null }): Promise<void>
   play(): void
   pause(): void
   stop(): void // pause + seek(0)
   seek(seconds: number): void
   setLoop(range: LoopRange | null): void
 
-  setGain(track: 'inst' | 'vocal', db: number): void // -inf 허용 (mute)
+  /** vocal = 가이드 채널(vocal_only 보컬 / full_mix AR). -inf 허용 (mute) */
+  setGain(track: 'inst' | 'vocal', db: number): void
   setPitch(semitones: number): void // -6..+6
 
   /** 엔진이 push하는 유일한 시간 소스. 렌더러는 이 값 + 경과시간으로 보간한다. */

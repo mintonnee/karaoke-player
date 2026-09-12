@@ -3,6 +3,8 @@ import { hangulIncludes, hangulLooseIncludes } from '../../shared/hangul'
 import { ANALYSIS_VERSION, BPM_MAX, BPM_MIN, MUSIC_KEY_RE } from '../../shared/types'
 import type {
   AnalysisSource,
+  GuideKind,
+  ImportKind,
   LyricsSource,
   Track,
   TrackMetaInput,
@@ -10,7 +12,7 @@ import type {
 } from '../../shared/types'
 
 /** §4.3 tracks 스키마. 변경 시 user_version을 올리고 마이그레이션을 추가한다. */
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 interface TrackRow {
   id: string
@@ -32,6 +34,10 @@ interface TrackRow {
   analysis_source: AnalysisSource
   /** v4: 사용자 드래그 정렬 순서 (오름차순). 새 트랙은 맨 위(최솟값-1)로 들어간다 */
   sort_order: number
+  /** v5: separated | paired */
+  import_kind: ImportKind
+  /** v5: vocal_only | full_mix */
+  guide_kind: GuideKind
   created_at: string
   updated_at: string
 }
@@ -51,6 +57,8 @@ function toTrack(row: TrackRow): Track {
     bpmConf: row.bpm_conf,
     keyConf: row.key_conf,
     analysisSource: row.analysis_source,
+    importKind: row.import_kind,
+    guideKind: row.guide_kind,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }
@@ -63,6 +71,19 @@ export interface CreateTrackInput {
   album: string | null
   duration: number
   sourcePath: string
+  /** 기본 imported. 두 파일 가져오기는 파일 확정 후 ready로 한 번에 넣는다 */
+  status?: TrackStatus
+  /** 기본 separated */
+  importKind?: ImportKind
+  /** 기본 vocal_only */
+  guideKind?: GuideKind
+}
+
+/** separated + full_mix는 재생 계약이 없어 거부한다 */
+export function assertTrackKinds(importKind: ImportKind, guideKind: GuideKind): void {
+  if (importKind === 'separated' && guideKind !== 'vocal_only') {
+    throw new Error(`separated tracks cannot have guideKind ${guideKind}`)
+  }
 }
 
 /** 사이드카 analyze 결과 저장 입력 (AnalysisService → setAnalysis) */
@@ -146,19 +167,43 @@ export class LibraryStore {
         ids.forEach((row, i) => update.run(i, row.id))
       })()
     }
+    if (version < 5) {
+      // 스펙 004 §4.4: 가져오기/가이드 종류. 기존 행은 보컬 혼합(separated/vocal_only)
+      this.db.exec(`
+        ALTER TABLE tracks ADD COLUMN import_kind TEXT NOT NULL DEFAULT 'separated';
+        ALTER TABLE tracks ADD COLUMN guide_kind TEXT NOT NULL DEFAULT 'vocal_only';
+      `)
+    }
     this.db.pragma(`user_version = ${SCHEMA_VERSION}`)
   }
 
   createTrack(input: CreateTrackInput): Track {
+    const importKind = input.importKind ?? 'separated'
+    const guideKind = input.guideKind ?? 'vocal_only'
+    const status = input.status ?? 'imported'
+    assertTrackKinds(importKind, guideKind)
     const now = new Date().toISOString()
     // 새 트랙은 목록 맨 위로: 현재 최솟값 - 1
     this.db
       .prepare(
-        `INSERT INTO tracks (id, title, artist, album, duration, source_path, status, lyrics_source, sort_order, created_at, updated_at)
-         VALUES (@id, @title, @artist, @album, @duration, @sourcePath, 'imported', 'none',
+        `INSERT INTO tracks (id, title, artist, album, duration, source_path, status, lyrics_source,
+                             import_kind, guide_kind, sort_order, created_at, updated_at)
+         VALUES (@id, @title, @artist, @album, @duration, @sourcePath, @status, 'none',
+                 @importKind, @guideKind,
                  (SELECT COALESCE(MIN(sort_order), 0) - 1 FROM tracks), @now, @now)`
       )
-      .run({ ...input, now })
+      .run({
+        id: input.id,
+        title: input.title,
+        artist: input.artist,
+        album: input.album,
+        duration: input.duration,
+        sourcePath: input.sourcePath,
+        status,
+        importKind,
+        guideKind,
+        now
+      })
     return this.mustGetTrack(input.id)
   }
 

@@ -14,7 +14,7 @@
 **목표 (v1)**
 
 - 로컬 오디오 파일(MP3/WAV/FLAC/M4A) 임포트 → 2-stem 분리 (vocals / no_vocals)
-- 가져오기 팝업에서 일반 음원 1개(분리), MR + AR/보컬 가이드 2개(분리 없음), YouTube URL(분리)을 선택한다. 가이드 종류별 재생·입력·저장 계약은 `docs/specs/004-import-dialog.md`를 따른다 (2026-09-12 스펙 추가, 구현 미착수).
+- 가져오기 팝업에서 보컬 포함 음원(분리), MR + 선택적 가이드 보컬(기본은 보컬만 있는 파일, 가이드 없음은 MR 하나, 분리 없음), YouTube URL(분리)을 선택한다. 상세는 `docs/specs/004-import-dialog.md` (2026-09-13 구현에 맞춰 갱신).
 - 반주 재생, 가이드 보컬 볼륨 조절(기본 -20 dB, 뮤트 가능), 루프, 시크
 - 가사 표시 및 줄 단위 하이라이트 (LRCLIB 동기 가사 → 없으면 텍스트 + forced alignment)
 - 키 변경 (±6 반음), 템포는 v1 범위 밖
@@ -32,20 +32,20 @@
 
 ## 3. 기술 스택 (결정)
 
-| 영역            | 선택                                | 비고                                                    |
-| --------------- | ----------------------------------- | ------------------------------------------------------- |
-| 셸              | Electron + TypeScript               | electron-vite 템플릿                                    |
-| 렌더러          | React + Vite                        | 상태는 zustand, UI 라이브러리 없음                      |
-| 메인 프로세스   | TypeScript                          | 사이드카 프로세스 관리, 파일 시스템, DB                 |
-| 오디오 (v1)     | Web Audio API + AudioWorklet        | `AudioEngine` 인터페이스 뒤에 숨김                      |
-| 피치 시프트     | soundtouchjs (WASM/Worklet)         | Rubber Band WASM으로 교체 가능하게                      |
-| 분리            | Python 사이드카 + Demucs            | 모델 `htdemucs_ft`, `--two-stems=vocals`                |
-| 가사 정렬       | Python 사이드카 + torchaudio MMS_FA | 일본어는 pyopenjtalk로 가나 변환 후 정렬 (기본 설치)    |
-| 전사 (fallback) | faster-whisper                      | 가사 텍스트가 전혀 없을 때만                            |
-| 가사 소스       | LRCLIB API                          | https://lrclib.net/api                                  |
-| DB              | SQLite (better-sqlite3)             | 라이브러리 메타데이터                                   |
-| Python 관리     | uv                                  | `sidecar/pyproject.toml`                                |
-| 패키징          | electron-builder                    | Python 런타임 번들은 v1 후반 슬라이스                   |
+| 영역            | 선택                                | 비고                                                 |
+| --------------- | ----------------------------------- | ---------------------------------------------------- |
+| 셸              | Electron + TypeScript               | electron-vite 템플릿                                 |
+| 렌더러          | React + Vite                        | 상태는 zustand, UI 라이브러리 없음                   |
+| 메인 프로세스   | TypeScript                          | 사이드카 프로세스 관리, 파일 시스템, DB              |
+| 오디오 (v1)     | Web Audio API + AudioWorklet        | `AudioEngine` 인터페이스 뒤에 숨김                   |
+| 피치 시프트     | soundtouchjs (WASM/Worklet)         | Rubber Band WASM으로 교체 가능하게                   |
+| 분리            | Python 사이드카 + Demucs            | 모델 `htdemucs_ft`, `--two-stems=vocals`             |
+| 가사 정렬       | Python 사이드카 + torchaudio MMS_FA | 일본어는 pyopenjtalk로 가나 변환 후 정렬 (기본 설치) |
+| 전사 (fallback) | faster-whisper                      | 가사 텍스트가 전혀 없을 때만                         |
+| 가사 소스       | LRCLIB API                          | https://lrclib.net/api                               |
+| DB              | SQLite (better-sqlite3)             | 라이브러리 메타데이터                                |
+| Python 관리     | uv                                  | `sidecar/pyproject.toml`                             |
+| 패키징          | electron-builder                    | Python 런타임 번들은 v1 후반 슬라이스                |
 
 **GPU**: 개발 머신은 RTX 5090. torch는 CUDA 빌드 기본, `KARAOKE_DEVICE=cpu|cuda|mps`로 강제 가능.
 
@@ -77,19 +77,19 @@
 
 렌더러의 어떤 코드도 `AudioContext`를 직접 만지지 않는다. 오직 `WebAudioEngine` 내부에서만 사용한다.
 
-두 파일 가져오기의 AR 재생 계약은 `docs/specs/004-import-dialog.md` §4.5에 정의한다. 아래는 현재 인터페이스이며, 해당 기능 구현 시 가이드 입력 의미와 경로 계약을 함께 갱신한다.
+`none`은 MR 단독이며 가이드 파일과 재생 채널이 없다. 기존 AR 곡의 재생 계약은 `docs/specs/004-import-dialog.md` §4.5에 정의한다. Main은 `TrackFiles.guide` + `guideKind`로 경로를 고른다. `TrackFiles.vocal`은 I4가 `AudioEngine.load`를 `{ inst, guide }`로 바꿀 때까지의 호환 별칭이며 `guide`와 같은 경로다. 게인/레벨 채널명 `vocal`은 I4에서 가이드 의미에 맞게 조정한다.
 
 ```ts
 export interface AudioEngine {
-  /** 파일 경로를 받는다. 버퍼를 넘기지 않는다 (네이티브 엔진 호환). */
-  load(tracks: { inst: string; vocal: string }): Promise<void>
+  /** 디스크 경로. `guide`는 vocal.wav(vocal_only) 또는 guide.wav(full_mix). 보컬 전용이라고 가정하지 않는다. */
+  load(tracks: { inst: string; guide: string | null }): Promise<void>
   play(): void
   pause(): void
   stop(): void // pause + seek(0)
   seek(seconds: number): void
   setLoop(range: { start: number; end: number } | null): void
 
-  setGain(track: 'inst' | 'vocal', db: number): void // -inf 허용 (mute)
+  setGain(track: 'inst' | 'vocal', db: number): void // -inf 허용 (mute). I4에서 guide 채널명으로 맞춤
   setPitch(semitones: number): void // -6..+6
 
   /** 엔진이 push하는 유일한 시간 소스. 렌더러는 이 값 + 경과시간으로 보간한다. */
@@ -132,6 +132,7 @@ export interface AudioEngine {
 - `pronounce --lyrics <txt> --out <json>` → `{out: path, lines:[{text, hint}]}` (일본어 줄의 한글 통용 표기 발음. 가사 힌트와 검색 키 생성에 사용)
 - `cover --input <audio> --out <img>` → `{cover: path | null}` (mutagen으로 내장 앨범 아트 추출. 없으면 null)
 - `analyze --input <inst.wav>` → `{bpm, bpm_conf, key, key_conf, version}` (반주 스템에서 BPM·조성 추정. 상세는 `docs/specs/002-bpm-key-analysis.md` §4.1)
+- `prepare-pair --mr <path> [--guide <path>] --out <dir> --guide-kind vocal_only|full_mix|none` → `{inst: path, guide: path | null, duration}` (스템 분리 없이 두 파일을 44,100 Hz stereo PCM WAV로 통일. `--guide-kind`에 따라 `guide` 출력은 `vocal.wav` 또는 `guide.wav`. Demucs Separator/모델/GPU를 초기화하지 않는다. 길이 차이 허용치는 100 ms. 진행 stage: `probe` / `prepare`. 메인은 디코딩하지 않는다. 상세는 `docs/specs/004-import-dialog.md` §4.2–4.3)
 
 stderr는 로그로만 사용. 취소는 SIGTERM, 워커는 부분 산출물을 삭제한 뒤 종료.
 
@@ -141,17 +142,19 @@ stderr는 로그로만 사용. 취소는 SIGTERM, 워커는 부분 산출물을 
 <userData>/
 ├─ library.sqlite
 └─ tracks/<track_id>/
-   ├─ source.<ext>        # 원본 복사본
+   ├─ source.<ext>        # 원본 복사본 (separated·paired none) / 가이드 원본 (paired with guide)
+   ├─ source-inst.<ext>   # paired vocal_only/full_mix: MR 원본 복사본
    ├─ inst.wav
-   ├─ vocal.wav
+   ├─ vocal.wav           # separated·paired vocal_only
+   ├─ guide.wav           # paired full_mix (AR). AR을 vocal.wav로 저장하지 않는다
    ├─ lyrics.txt          # 원문 (사용자 입력 또는 LRCLIB plain)
    ├─ lyrics.lrc          # 최종 싱크 가사 (수동 보정 반영)
-   └─ meta.json           # 모델/버전/처리 시각
+   └─ meta.json           # separated: 모델/버전/처리 시각. paired: 역할·종류·입력 파일명·준비 버전·시각 (Demucs 모델 기록 없음)
 ```
 
 SQLite `tracks`: `id, title, artist, album, duration, source_path, status(imported|separating|ready|failed), lyrics_source(lrclib_synced|lrclib_plain_aligned|user_aligned|none), created_at, updated_at`
 
-스키마 v2에서 `search_keys`, v3에서 `bpm, music_key, bpm_conf, key_conf, analysis_version, analysis_source`가 추가됐다 (v3 상세는 `docs/specs/002-bpm-key-analysis.md` §4.2).
+스키마 v2에서 `search_keys`, v3에서 `bpm, music_key, bpm_conf, key_conf, analysis_version, analysis_source`가 추가됐다 (v3 상세는 `docs/specs/002-bpm-key-analysis.md` §4.2). v4에서 `sort_order`. v5에서 `import_kind(separated|paired)`, `guide_kind(vocal_only|full_mix|none)` — 기존 행은 `separated`/`vocal_only`. `separated`+`full_mix`/`none`은 거부한다. paired 곡의 `source_path`는 가이드가 있으면 가이드 원본, 없으면 MR 원본이며 재생에는 쓰지 않는다.
 
 ### 4.4 가사 파이프라인
 

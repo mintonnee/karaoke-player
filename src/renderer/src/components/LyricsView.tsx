@@ -23,6 +23,16 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toFixed(1).padStart(4, '0')}`
 }
 
+/** AR 가이드는 반주가 섞여 있어 정렬·전사 품질이 떨어질 수 있다. Demucs는 제공하지 않는다. */
+function ArLyricsWarn(): React.JSX.Element {
+  return (
+    <p className="lyrics-ar-warn">
+      AR 파일은 반주가 포함되어 있어 가사 정렬·전사의 정확도가 낮을 수 있습니다. 보컬 추출로
+      보완하지 않습니다.
+    </p>
+  )
+}
+
 function LyricsView(): React.JSX.Element | null {
   const track = usePlayerStore((s) => s.track)
   const position = usePlayerStore((s) => s.position)
@@ -107,12 +117,19 @@ function LyricsView(): React.JSX.Element | null {
 
   if (!track) return null
 
+  const arWarn = track.guideKind === 'full_mix'
+
   if (loading) {
     return <div className="lyrics lyrics-empty">가사 불러오는 중…</div>
   }
 
   if (lines.length === 0) {
-    return <LyricsSetup trackId={track.id} />
+    return (
+      <div className="lyrics-pane">
+        {arWarn && <ArLyricsWarn />}
+        <LyricsSetup trackId={track.id} noGuide={track.guideKind === 'none'} />
+      </div>
+    )
   }
 
   const progress = lineProgress(lines, index, position, duration)
@@ -120,6 +137,7 @@ function LyricsView(): React.JSX.Element | null {
   if (correcting) {
     return (
       <div className="lyrics-correct">
+        {arWarn && <ArLyricsWarn />}
         <div className="lyrics-correct-toolbar">
           <span>
             보정 모드 — 재생하면서 줄이 시작되는 순간에 <b>탭(Space)</b>을 누르세요. 즉시
@@ -153,6 +171,7 @@ function LyricsView(): React.JSX.Element | null {
 
   return (
     <div className="lyrics-pane">
+      {arWarn && <ArLyricsWarn />}
       <div ref={containerRef} className="lyrics">
         <div className={`lyrics-intro${waitingIntro ? ' active' : ''}`}>
           <span className="lyrics-intro-dot" />

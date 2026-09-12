@@ -35,7 +35,7 @@ interface TrackChannel {
 /** §4.1 AudioEngine의 v1 Web Audio 구현체. AudioContext는 이 파일 밖에서 사용 금지. */
 export class WebAudioEngine implements AudioEngine {
   private ctx: AudioContext | null = null
-  private channels: { inst: TrackChannel; vocal: TrackChannel } | null = null
+  private channels: { inst: TrackChannel; vocal: TrackChannel | null } | null = null
   private engineState: AudioEngineState = 'idle'
   private trackDuration = 0
 
@@ -77,7 +77,7 @@ export class WebAudioEngine implements AudioEngine {
     return this.engineState
   }
 
-  async load(tracks: { inst: string; vocal: string }): Promise<void> {
+  async load(tracks: { inst: string; guide: string | null }): Promise<void> {
     this.stopSources()
     this.stopTimer()
     this.releaseChannels()
@@ -86,14 +86,17 @@ export class WebAudioEngine implements AudioEngine {
 
     const ctx = this.ensureContext()
     try {
-      const [instBuffer, vocalBuffer] = await Promise.all([
+      const [instBuffer, guideBuffer] = await Promise.all([
         this.decodeFile(ctx, tracks.inst),
-        this.decodeFile(ctx, tracks.vocal),
+        tracks.guide === null ? null : this.decodeFile(ctx, tracks.guide),
         this.ensurePitchGraph(ctx)
       ])
+      // 이전 곡 게인이 새 버퍼에 붙지 않게 무음에서 시작해 applyGains가 올린다
+      this.gainsDb = { inst: Number.NEGATIVE_INFINITY, vocal: Number.NEGATIVE_INFINITY }
       this.channels = {
         inst: this.createChannel(ctx, instBuffer, this.gainsDb.inst),
-        vocal: this.createChannel(ctx, vocalBuffer, this.gainsDb.vocal)
+        vocal:
+          guideBuffer === null ? null : this.createChannel(ctx, guideBuffer, this.gainsDb.vocal)
       }
       this.trackDuration = instBuffer.duration
       this.offset = 0
@@ -156,11 +159,17 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   setGain(track: 'inst' | 'vocal', db: number): void {
+    const prev = this.gainsDb[track]
     this.gainsDb[track] = db
     const channel = this.channels?.[track]
     const ctx = this.ctx
     if (!channel || !ctx) return
-    channel.gain.gain.setTargetAtTime(dbToGain(db), ctx.currentTime, GAIN_RAMP_SEC)
+    const now = ctx.currentTime
+    // 무음→가청은 이전 소스 램프가 끝난 뒤에 올려 MR+AR 겹침을 피한다
+    const raisingFromSilence = prev === Number.NEGATIVE_INFINITY && db !== Number.NEGATIVE_INFINITY
+    const startAt = now + (raisingFromSilence ? GAIN_RAMP_SEC * 3 : 0)
+    channel.gain.gain.cancelAndHoldAtTime(now)
+    channel.gain.gain.setTargetAtTime(dbToGain(db), startAt, GAIN_RAMP_SEC)
   }
 
   setPitch(semitones: number): void {
@@ -265,8 +274,8 @@ export class WebAudioEngine implements AudioEngine {
   private releaseChannels(): void {
     if (!this.channels) return
     for (const key of ['inst', 'vocal'] as const) {
-      this.channels[key].gain.disconnect()
-      this.channels[key].analyser.disconnect()
+      this.channels[key]?.gain.disconnect()
+      this.channels[key]?.analyser.disconnect()
     }
     this.channels = null
   }
@@ -320,7 +329,8 @@ export class WebAudioEngine implements AudioEngine {
     for (const key of ['inst', 'vocal'] as const) {
       const gain = dbToGain(this.gainsDb[key])
       if (gain === 0) continue
-      const buffer = channels[key].buffer
+      const buffer = channels[key]?.buffer
+      if (!buffer) continue
       const cl = buffer.getChannelData(0)
       const cr = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : cl
       const from = Math.max(0, -startFrame)
@@ -350,6 +360,7 @@ export class WebAudioEngine implements AudioEngine {
 
     for (const key of ['inst', 'vocal'] as const) {
       const channel = channels[key]
+      if (!channel) continue
       const source = ctx.createBufferSource()
       source.buffer = channel.buffer
       if (this.loop) {
@@ -395,6 +406,7 @@ export class WebAudioEngine implements AudioEngine {
     if (!this.channels) return
     for (const key of ['inst', 'vocal'] as const) {
       const channel = this.channels[key]
+      if (!channel) continue
       const source = channel.source
       const envelope = channel.envelope
       if (!source) continue
@@ -464,7 +476,7 @@ export class WebAudioEngine implements AudioEngine {
     if (this.levelCallbacks.size === 0) return
     const levels: AudioLevels = {
       inst: this.readLevel(this.channels?.inst.analyser ?? null),
-      vocal: this.readLevel(this.channels?.vocal.analyser ?? null),
+      vocal: this.readLevel(this.channels?.vocal?.analyser ?? null),
       master: this.readLevel(this.masterAnalyser)
     }
     this.levelCallbacks.forEach((cb) => cb(levels))

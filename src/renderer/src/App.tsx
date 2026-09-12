@@ -10,7 +10,6 @@ import {
   MdEdit,
   MdErrorOutline,
   MdHelpOutline,
-  MdLink,
   MdNotificationsNone,
   MdSchedule,
   MdSettings
@@ -18,13 +17,13 @@ import {
 import BootstrapScreen from './components/BootstrapScreen'
 import CoverArt from './components/CoverArt'
 import ErrorCenter from './components/ErrorCenter'
+import ImportDialog from './components/ImportDialog'
 import KeyPanel from './components/KeyPanel'
 import LyricsView from './components/LyricsView'
 import MixerPanel from './components/MixerPanel'
 import SettingsModal from './components/SettingsModal'
 import ShortcutHelp from './components/ShortcutHelp'
 import Transport from './components/Transport'
-import UrlImportForm from './components/UrlImportForm'
 import { useErrorStore } from './stores/errorStore'
 import { useLibraryStore } from './stores/libraryStore'
 import { useLyricsStore } from './stores/lyricsStore'
@@ -295,12 +294,11 @@ function App(): React.JSX.Element {
     progress,
     rejections,
     importing,
+    urlImporting,
+    pairImporting,
     search,
-    urlImportAvailable,
     refresh,
     setSearch,
-    importFiles,
-    importViaDialog,
     loadCapabilities,
     deleteTrack,
     reorderTracks,
@@ -319,9 +317,11 @@ function App(): React.JSX.Element {
   const [showErrors, setShowErrors] = useState(false)
   const unseenErrors = useErrorStore((s) => s.entries.filter((e) => !e.seen).length)
   const markErrorsSeen = useErrorStore((s) => s.markAllSeen)
-  const [showUrlImport, setShowUrlImport] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [importDropPaths, setImportDropPaths] = useState<string[]>([])
   // null = 아직 조회 전. ready가 아니면 라이브러리 대신 부트스트랩 화면 (스펙 001 §4.1)
   const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null)
+  const importBusy = importing || urlImporting || pairImporting
 
   useEffect(() => {
     // 구독을 먼저 걸어 조회와 이벤트 사이의 상태 변화를 놓치지 않는다
@@ -344,7 +344,7 @@ function App(): React.JSX.Element {
     const clampDb = (db: number): number => Math.max(-60, Math.min(0, db))
 
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (showSettings) return
+      if (showSettings || showImport) return
       if (event.metaKey) return
       const target = event.target as HTMLElement
       if (
@@ -419,7 +419,7 @@ function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showSettings])
+  }, [showSettings, showImport])
 
   useEffect(() => {
     if (currentTrackId) void loadLyrics(currentTrackId)
@@ -431,10 +431,26 @@ function App(): React.JSX.Element {
     setDragOver(false)
     // 행 드래그가 목록 밖에 떨어진 경우: 파일 임포트로 오인하지 않는다
     if (event.dataTransfer.types.includes(ROW_DRAG_MIME)) return
+    if (importBusy || showImport) return
     const paths = Array.from(event.dataTransfer.files).map((file) =>
       window.api.getPathForFile(file)
     )
-    if (paths.length > 0) void importFiles(paths)
+    if (paths.length === 0) return
+    setImportDropPaths(paths)
+    setShowImport(true)
+  }
+
+  const openImport = (): void => {
+    if (importBusy || showImport) return
+    setImportDropPaths([])
+    setShowImport(true)
+  }
+
+  const closeImport = (): void => {
+    const state = useLibraryStore.getState()
+    if (state.importing || state.urlImporting || state.pairImporting) return
+    setShowImport(false)
+    setImportDropPaths([])
   }
 
   // 행 드래그 정렬 상태: 끌고 있는 행 id와 현재 드롭 후보(대상 행 id, 위/아래)
@@ -502,6 +518,7 @@ function App(): React.JSX.Element {
             // 행 정렬 드래그는 파일 드롭 하이라이트 대상이 아니다
             if (e.dataTransfer.types.includes(ROW_DRAG_MIME)) return
             e.preventDefault()
+            if (importBusy || showImport) return
             setDragOver(true)
           }}
           onDragLeave={() => setDragOver(false)}
@@ -510,25 +527,11 @@ function App(): React.JSX.Element {
           <div className="panel-header">
             <h2>노래 리스트</h2>
             <div className="panel-header-actions">
-              <button onClick={() => void importViaDialog()} disabled={importing}>
-                {importing ? '임포트 중…' : '+ 가져오기'}
+              <button type="button" onClick={openImport} disabled={importBusy || showImport}>
+                {importBusy ? '임포트 중…' : '+ 가져오기'}
               </button>
-              {/* yt-dlp 리소스가 없는 실행에서는 진입점 자체가 없다 (스펙 001 기준 6) */}
-              {urlImportAvailable && (
-                <button
-                  className="icon-btn"
-                  title="URL로 가져오기"
-                  onClick={() => setShowUrlImport((open) => !open)}
-                >
-                  <MdLink />
-                </button>
-              )}
             </div>
           </div>
-
-          {urlImportAvailable && showUrlImport && (
-            <UrlImportForm onClose={() => setShowUrlImport(false)} />
-          )}
 
           <input
             className="search"
@@ -634,6 +637,7 @@ function App(): React.JSX.Element {
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} />}
       {showErrors && <ErrorCenter onClose={() => setShowErrors(false)} />}
+      {showImport && <ImportDialog initialPaths={importDropPaths} onClose={closeImport} />}
     </div>
   )
 }

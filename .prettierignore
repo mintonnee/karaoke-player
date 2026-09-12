@@ -2,6 +2,7 @@ out
 dist
 pnpm-lock.yaml
 sidecar/.venv
+sidecar/.pytest_cache
 src/renderer/public/worklets
 LICENSE.md
 tsconfig.json

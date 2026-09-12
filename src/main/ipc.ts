@@ -1,27 +1,34 @@
-import { app, dialog, ipcMain, shell } from 'electron'
-import { existsSync } from 'fs'
+import { app, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { rm } from 'fs/promises'
-import { join } from 'path'
-import { DEMUCS_MODELS, IPC_CHANNELS } from '../shared/types'
+import { extname, join } from 'path'
+import { DEMUCS_MODELS, IPC_CHANNELS, sanitizeImportUserMeta } from '../shared/types'
 import type {
   AlignLang,
   AlignedLine,
   AppCapabilities,
   AppInfo,
   AppSettings,
+  AudioTagPreview,
   ImportFilesResponse,
+  ImportUserMeta,
+  PairImportRequest,
   Track,
   TrackFiles,
   TrackMetaInput
 } from '../shared/types'
+import { ImportRequestGate } from './library/ImportRequestGate'
+import { precheckImportUrl, URL_IMPORT_DISABLED_REASON } from './library/importUrlPrecheck'
 import type { ImportService } from './library/ImportService'
 import type { LibraryStore } from './library/LibraryStore'
 import type { SearchKeyService } from './library/SearchKeyService'
+import { requireReadyTrackFiles } from './library/trackFiles'
 import type { YtDlpService } from './library/YtDlpService'
 import type { LyricsService } from './lyrics/LyricsService'
 import type { SettingsStore } from './settings/SettingsStore'
 
-const AUDIO_FILE_FILTERS = [{ name: 'Audio', extensions: ['mp3', 'wav', 'flac', 'm4a'] }]
+export const AUDIO_FILE_FILTERS = [{ name: 'Audio', extensions: ['mp3', 'wav', 'flac', 'm4a'] }]
+const IMAGE_FILE_FILTERS = [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }]
+const COVER_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 
 export interface IpcDeps {
   store: LibraryStore
@@ -48,6 +55,8 @@ export function registerIpcHandlers({
   capabilities,
   ytDlpService
 }: IpcDeps): void {
+  const importGate = new ImportRequestGate()
+
   // 렌더러가 cover.jpg 등 트랙 파일의 media:// URL을 만들 때 쓴다
   ipcMain.handle(IPC_CHANNELS.tracksDir, (): string => tracksDir)
 
@@ -125,22 +134,15 @@ export function registerIpcHandlers({
   ipcMain.handle(IPC_CHANNELS.trackFiles, (_event, trackId: string): TrackFiles => {
     const track = store.getTrack(trackId)
     if (!track) throw new Error(`track not found: ${trackId}`)
-    if (track.status !== 'ready') throw new Error(`track not ready: ${trackId} (${track.status})`)
-
-    const files: TrackFiles = {
-      inst: join(tracksDir, trackId, 'inst.wav'),
-      vocal: join(tracksDir, trackId, 'vocal.wav')
-    }
-    if (!existsSync(files.inst) || !existsSync(files.vocal)) {
-      throw new Error(`separated stems missing for track ${trackId}`)
-    }
-    return files
+    return requireReadyTrackFiles(tracksDir, track)
   })
 
   ipcMain.handle(
     IPC_CHANNELS.importFiles,
-    (_event, filePaths: string[]): Promise<ImportFilesResponse> =>
-      importService.importFiles(filePaths)
+    (_event, filePaths: string[], userMeta?: ImportUserMeta): Promise<ImportFilesResponse> =>
+      importGate.run(() =>
+        importService.importFiles(filePaths, undefined, sanitizeImportUserMeta(userMeta))
+      )
   )
 
   ipcMain.handle(IPC_CHANNELS.importDialog, async (): Promise<ImportFilesResponse> => {
@@ -151,8 +153,53 @@ export function registerIpcHandlers({
     if (canceled || filePaths.length === 0) {
       return { imported: [], rejected: [] }
     }
-    return importService.importFiles(filePaths)
+    return importGate.run(() => importService.importFiles(filePaths))
   })
+
+  ipcMain.handle(IPC_CHANNELS.pickAudioFile, async (): Promise<string | null> => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: AUDIO_FILE_FILTERS
+    })
+    if (canceled || filePaths.length === 0) return null
+    return filePaths[0]
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pickImageFile, async (): Promise<string | null> => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: IMAGE_FILE_FILTERS
+    })
+    if (canceled || filePaths.length === 0) return null
+    return filePaths[0]
+  })
+
+  ipcMain.handle(IPC_CHANNELS.previewCover, (_event, filePath: string): string | null =>
+    previewCoverDataUrl(filePath)
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.probeAudioTags,
+    (_event, filePath: string): Promise<AudioTagPreview> => importService.probeTags(filePath)
+  )
+
+  // 등록 전 실패(검증·prepare·DB)는 rejected로만 돌리고 appError를 올리지 않는다.
+  // 팝업이 열린 채 입력을 보존하므로 오류 센터에 중복하지 않는다 (스펙 004 §4.2).
+  // 등록 후 부가 작업(가사·분석 등) 실패는 각 서비스가 appError를 보낸다.
+  ipcMain.handle(
+    IPC_CHANNELS.importPair,
+    (_event, req: PairImportRequest): Promise<ImportFilesResponse> => {
+      const user = sanitizeImportUserMeta(req)
+      return importGate.run(() =>
+        importService.importPair({
+          ...req,
+          title: user?.title,
+          artist: user?.artist,
+          coverPath: user?.coverPath
+        })
+      )
+    }
+  )
 
   // 스펙 001 §4.3: 렌더러는 이 플래그가 false면 URL 임포트 UI를 아예 그리지 않는다 (기준 6)
   ipcMain.handle(IPC_CHANNELS.capabilities, (): AppCapabilities => capabilities)
@@ -171,13 +218,27 @@ export function registerIpcHandlers({
     await shell.openExternal(url)
   })
 
-  ipcMain.handle(IPC_CHANNELS.importUrl, (_event, url: string): Promise<ImportFilesResponse> => {
-    if (!ytDlpService) {
-      return Promise.resolve({
-        imported: [],
-        rejected: [{ filePath: url, reason: '이 배포판에서는 URL 가져오기를 쓸 수 없습니다' }]
-      })
+  ipcMain.handle(
+    IPC_CHANNELS.importUrl,
+    (_event, url: string, userMeta?: ImportUserMeta): Promise<ImportFilesResponse> => {
+      const service = ytDlpService
+      const precheck = precheckImportUrl(url, Boolean(capabilities.urlImport && service))
+      if (precheck.action === 'reject') return Promise.resolve(precheck.response)
+      if (!service) {
+        return Promise.resolve({
+          imported: [],
+          rejected: [{ filePath: url, reason: URL_IMPORT_DISABLED_REASON }]
+        })
+      }
+      return importGate.run(() => service.importUrl(precheck.url, sanitizeImportUserMeta(userMeta)))
     }
-    return ytDlpService.importUrl(url)
-  })
+  )
+}
+
+function previewCoverDataUrl(filePath: string): string | null {
+  if (typeof filePath !== 'string' || filePath.trim() === '') return null
+  if (!COVER_EXT.has(extname(filePath).toLowerCase())) return null
+  const image = nativeImage.createFromPath(filePath)
+  if (image.isEmpty()) return null
+  return image.resize({ width: 128, height: 128 }).toDataURL()
 }

@@ -8,9 +8,11 @@ import { IPC_CHANNELS } from '../../shared/types'
 import type {
   ImportFilesResponse,
   ImportRejection,
+  ImportUserMeta,
   Track,
   UrlImportProgressEvent
 } from '../../shared/types'
+import { parseYoutubeVideoUrl } from '../../shared/youtubeUrl'
 import type { ImportMetaHint } from './ImportService'
 
 /** yt-dlp 출력 템플릿 (스펙 001 §4.3) */
@@ -55,7 +57,11 @@ export interface YtDlpServiceOptions {
   /** <userData>/tracks */
   tracksDir: string
   /** 기존 임포트 파이프라인 (ImportService.importFiles). hint는 태그에 없는 아티스트 보완용 */
-  importFiles: (filePaths: string[], hint?: ImportMetaHint) => Promise<ImportFilesResponse>
+  importFiles: (
+    filePaths: string[],
+    hint?: ImportMetaHint,
+    userMeta?: ImportUserMeta
+  ) => Promise<ImportFilesResponse>
   /** 렌더러 브로드캐스트 */
   notify: (channel: string, payload: unknown) => void
   /**
@@ -153,10 +159,10 @@ export class YtDlpService {
   constructor(private readonly options: YtDlpServiceOptions) {}
 
   /** 한 번에 하나씩 처리한다. 실패는 throw하지 않고 rejected로 돌려준다 */
-  importUrl(url: string): Promise<ImportFilesResponse> {
+  importUrl(url: string, userMeta?: ImportUserMeta): Promise<ImportFilesResponse> {
     const next = this.chain.then(
-      () => this.runOne(url),
-      () => this.runOne(url)
+      () => this.runOne(url, userMeta),
+      () => this.runOne(url, userMeta)
     )
     this.chain = next.then(
       () => undefined,
@@ -172,19 +178,21 @@ export class YtDlpService {
     this.running.clear()
   }
 
-  private async runOne(url: string): Promise<ImportFilesResponse> {
+  private async runOne(url: string, userMeta?: ImportUserMeta): Promise<ImportFilesResponse> {
     if (this.disposed) return reject(url, '앱이 종료 중입니다')
-    if (!/^https?:\/\//i.test(url.trim())) {
-      return reject(url, 'http(s) URL만 가져올 수 있습니다')
+    const parsed = parseYoutubeVideoUrl(url)
+    if (!parsed.ok) {
+      return reject(url, parsed.reason)
     }
+    const href = parsed.href
 
     const id = randomUUID()
     const scratch = join(this.options.scratchRoot, id)
     try {
       await mkdir(scratch, { recursive: true })
-      this.emit({ id, url, pct: 0, msg: '다운로드 준비 중' })
+      this.emit({ id, url: href, pct: 0, msg: '다운로드 준비 중' })
 
-      const outcome = await this.download(id, url, scratch)
+      const outcome = await this.download(id, href, scratch)
       if (outcome.code !== 0) {
         return reject(url, describeFailure(outcome))
       }
@@ -194,13 +202,17 @@ export class YtDlpService {
         return reject(url, describeFailure(outcome, '다운로드된 오디오 파일을 찾지 못했습니다'))
       }
 
-      this.emit({ id, url, pct: 100, msg: '라이브러리에 추가 중' })
-      const response = await this.options.importFiles([mediaPath], {
-        title: outcome.title ?? titleFromFilename(mediaPath),
-        artist: outcome.artist
-      })
+      this.emit({ id, url: href, pct: 100, msg: '라이브러리에 추가 중' })
+      const response = await this.options.importFiles(
+        [mediaPath],
+        {
+          title: outcome.title ?? titleFromFilename(mediaPath),
+          artist: outcome.artist
+        },
+        userMeta
+      )
       const track = response.imported[0]
-      if (track) await this.applyThumbnail(scratch, mediaPath, track)
+      if (track && !userMeta?.coverPath) await this.applyThumbnail(scratch, mediaPath, track)
 
       // 거부 사유의 filePath는 스크래치 경로 대신 사용자가 입력한 URL로 보여준다
       return {

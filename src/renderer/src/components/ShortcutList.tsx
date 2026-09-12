@@ -11,14 +11,19 @@ function ShortcutList(): React.JSX.Element {
       <li>
         <kbd>↑</kbd> <kbd>↓</kbd> 메인 음량 · <kbd>Ctrl</kbd>+<kbd>↑</kbd>
         <kbd>↓</kbd> 반주 음량 · <kbd>Alt</kbd>+<kbd>↑</kbd>
-        <kbd>↓</kbd> 보컬 음량
+        <kbd>↓</kbd> 보컬/AR 음량 (AR 곡은 선택된 소스만)
       </li>
       <li>
         <kbd>−</kbd> <kbd>=</kbd> 키 내림 / 올림
       </li>
       <li>
-        <kbd>M</kbd> 메인 뮤트 <kbd>V</kbd> 보컬 뮤트 <kbd>L</kbd> A-B 루프(A → B → 해제){' '}
-        <kbd>R</kbd> 처음으로
+        <kbd>M</kbd> 메인 뮤트
+      </li>
+      <li>
+        <kbd>V</kbd> 보컬 뮤트 (보컬 전용) / MR·AR 전환 (AR 곡)
+      </li>
+      <li>
+        <kbd>L</kbd> A-B 루프(A → B → 해제) <kbd>R</kbd> 처음으로
       </li>
       <li>
         <kbd>/</kbd> 이 도움말 표시 / 닫기

@@ -12,6 +12,7 @@ import { CoverService } from './library/CoverService'
 import { ImportService } from './library/ImportService'
 import { JobQueue } from './library/JobQueue'
 import { LibraryStore } from './library/LibraryStore'
+import { recoverIncompletePairImports } from './library/pairRecovery'
 import { SearchKeyService } from './library/SearchKeyService'
 import { YtDlpService, hasUrlImportBinaries } from './library/YtDlpService'
 import { getBundledBinary, getBundledSidecarDir } from './paths'
@@ -132,7 +133,7 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.mintonnee.karaoke-player')
 
@@ -151,6 +152,10 @@ app.whenReady().then(() => {
   if (stale > 0) console.error(`[library] marked ${stale} stale separating track(s) as failed`)
 
   const tracksDir = join(userData, 'tracks')
+  const cleanedPairs = await recoverIncompletePairImports(tracksDir, store)
+  if (cleanedPairs > 0) {
+    console.error(`[library] cleaned ${cleanedPairs} incomplete pair import dir(s)`)
+  }
   registerMediaProtocol(tracksDir)
 
   const notify = (channel: string, payload: unknown): void => {
@@ -211,7 +216,8 @@ app.whenReady().then(() => {
         denoPath,
         scratchRoot: join(userData, 'tmp', 'url-import'),
         tracksDir,
-        importFiles: (filePaths, hint) => importService.importFiles(filePaths, hint),
+        importFiles: (filePaths, hint, userMeta) =>
+          importService.importFiles(filePaths, hint, userMeta),
         notify,
         // 커버를 덮어쓴 뒤 updatedAt을 갱신해야 렌더러의 media:// 캐시 키가 바뀐다
         touchTrack: (track) =>

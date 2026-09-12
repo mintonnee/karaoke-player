@@ -55,6 +55,17 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument("--device", default=None)
     analyze_parser.add_argument("--json", action="store_true", default=True)
 
+    prepare_parser = sub.add_parser(
+        "prepare-pair", help="unify MR+guide to 44100 stereo wav without stem separation"
+    )
+    prepare_parser.add_argument("--mr", required=True)
+    prepare_parser.add_argument("--guide")
+    prepare_parser.add_argument("--out", required=True)
+    prepare_parser.add_argument(
+        "--guide-kind", required=True, choices=["vocal_only", "full_mix", "none"]
+    )
+    prepare_parser.add_argument("--json", action="store_true", default=True)
+
     return parser
 
 
@@ -106,6 +117,10 @@ def main() -> None:
             from .separate import DEFAULT_DEVICE as ANALYZE_DEFAULT_DEVICE
 
             emit_done(analyze(args.input, args.device or ANALYZE_DEFAULT_DEVICE))
+        elif args.command == "prepare-pair":
+            from .prepare_pair import prepare_pair
+
+            emit_done(prepare_pair(args.mr, args.guide, args.out, args.guide_kind))
     except WorkerError as e:
         emit_error(e.code, e.msg)
         sys.exit(1)

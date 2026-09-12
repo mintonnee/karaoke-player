@@ -11,6 +11,24 @@ export interface ProbeResult {
 /** §4.3 SQLite tracks 스키마와 1:1 대응 (camelCase 매핑) */
 export type TrackStatus = 'imported' | 'separating' | 'ready' | 'failed'
 
+/** 가져오기 경로. 일반 음원·YouTube는 separated, MR+가이드는 paired */
+export type ImportKind = 'separated' | 'paired'
+
+/** 가이드 파일 의미. vocal_only=보컬 전용, full_mix=AR(반주+보컬). separated+full_mix는 금지 */
+export type GuideKind = 'vocal_only' | 'full_mix' | 'none'
+
+/** 가이드 재생 파일명. AR은 vocal.wav로 저장하지 않는다 */
+export function guideAudioFileName(guideKind: GuideKind): 'vocal.wav' | 'guide.wav' | null {
+  if (guideKind === 'none') return null
+  return guideKind === 'full_mix' ? 'guide.wav' : 'vocal.wav'
+}
+
+/** 두 파일 길이 차이 허용치 (ms). sidecar와 Main probe가 같은 값을 쓴다 */
+export const PAIR_LENGTH_DELTA_MS = 100
+
+/** prepare-pair 산출 meta.json의 준비 버전 */
+export const PREPARE_PAIR_VERSION = 1
+
 export type LyricsSource = 'lrclib_synced' | 'lrclib_plain_aligned' | 'user_aligned' | 'none'
 
 /** BPM·키 값의 출처 (스펙 002 §4.2). user는 백필·재분석이 덮어쓰지 않는다 */
@@ -33,6 +51,10 @@ export interface Track {
   bpmConf: number | null
   keyConf: number | null
   analysisSource: AnalysisSource
+  /** v5: 가져오기 종류. 기존 행은 separated */
+  importKind: ImportKind
+  /** v5: 가이드 종류. 기존 행은 vocal_only */
+  guideKind: GuideKind
   createdAt: string
   updatedAt: string
 }
@@ -107,14 +129,48 @@ export interface TrackMetaInput {
   musicKey?: string | null
 }
 
+/** 두 파일 가져오기에서 오류가 난 입력 역할. I3가 슬롯 옆에 표시한다 */
+export type PairImportRole = 'mr' | 'guide' | 'pair'
+
 export interface ImportRejection {
   filePath: string
   reason: string
+  /** 두 파일 가져오기 실패 시 어느 슬롯/요청인지. 일반 파일·URL은 생략 */
+  role?: PairImportRole
 }
 
 export interface ImportFilesResponse {
   imported: Track[]
   rejected: ImportRejection[]
+}
+
+/** 가져오기 팝업이 파일 태그로 미리 채울 때 쓰는 미리보기 */
+export interface AudioTagPreview {
+  title: string | null
+  artist: string | null
+}
+
+/** 가져오기 팝업에서 사용자가 적은 곡 정보. 비우면 파일 태그·자동 추출을 쓴다 */
+export interface ImportUserMeta {
+  title?: string
+  artist?: string
+  /** 사용자가 고른 커버 이미지. 있으면 내장 아트·YouTube 썸네일보다 우선 */
+  coverPath?: string
+}
+
+/** IPC로 들어온 값을 trim하고 빈 필드는 뺀다 */
+export function sanitizeImportUserMeta(raw: unknown): ImportUserMeta | undefined {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const rec = raw as Record<string, unknown>
+  const title = typeof rec.title === 'string' ? rec.title.trim() : ''
+  const artist = typeof rec.artist === 'string' ? rec.artist.trim() : ''
+  const coverPath = typeof rec.coverPath === 'string' ? rec.coverPath.trim() : ''
+  if (title === '' && artist === '' && coverPath === '') return undefined
+  const meta: ImportUserMeta = {}
+  if (title !== '') meta.title = title
+  if (artist !== '') meta.artist = artist
+  if (coverPath !== '') meta.coverPath = coverPath
+  return meta
 }
 
 export interface ImportProgressEvent {
@@ -139,10 +195,45 @@ export interface UrlImportProgressEvent {
   msg?: string
 }
 
-/** 분리 산출물 절대 경로 (§4.3 tracks/<id>/) */
+/** MR + 가이드 한 곡 가져오기 요청 (스펙 004). 일반 importFiles를 두 번 호출하지 않는다 */
+export interface PairImportRequest {
+  mrPath: string
+  guidePath: string | null
+  guideKind: GuideKind
+  title?: string
+  artist?: string
+  coverPath?: string
+}
+
+/** 팝업 단계. 측정할 수 없으면 pct를 생략한다 (불확정 진행) */
+export type PairImportStage = 'queued' | 'probe' | 'prepare' | 'save'
+
+export interface PairImportProgressEvent {
+  jobId: string
+  stage: PairImportStage
+  pct?: number
+  msg?: string
+}
+
+/** sidecar prepare-pair done.result (스펙 000 §4.2) */
+export interface PreparePairResult {
+  inst: string
+  /** vocal.wav 또는 guide.wav (--guide-kind에 따름) */
+  guide: string | null
+  duration: number
+}
+
+/** 분리/준비 산출물 절대 경로 (§4.3 tracks/<id>/) */
 export interface TrackFiles {
   inst: string
-  vocal: string
+  /** vocal.wav (vocal_only) or guide.wav (full_mix). Not assumed to be vocals-only. */
+  guide: string | null
+  /**
+   * Compatibility alias equal to `guide`. Keep this so renderer typecheck still passes
+   * until I4 renames AudioEngine.load. Same path as `guide`.
+   */
+  vocal: string | null
+  guideKind: GuideKind
 }
 
 /**
@@ -185,6 +276,14 @@ export const MEDIA_PROTOCOL_SCHEME = 'media'
 export const IPC_CHANNELS = {
   importFiles: 'library:import-files',
   importDialog: 'library:import-dialog',
+  /** 네이티브 파일 선택만. 가져오기는 시작하지 않는다 */
+  pickAudioFile: 'library:pick-audio-file',
+  pickImageFile: 'library:pick-image-file',
+  previewCover: 'library:preview-cover',
+  /** 가져오기 팝업용. 파일을 등록하지 않고 태그만 읽는다 */
+  probeAudioTags: 'library:probe-audio-tags',
+  importPair: 'library:import-pair',
+  pairImportProgress: 'library:pair-import-progress',
   listTracks: 'library:list',
   trackFiles: 'library:track-files',
   deleteTrack: 'library:delete',

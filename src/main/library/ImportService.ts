@@ -27,13 +27,12 @@ import { SidecarError } from '../sidecar/SidecarManager'
 import type { SidecarManager } from '../sidecar/SidecarManager'
 import { JobQueue } from './JobQueue'
 import type { LibraryStore } from './LibraryStore'
+import { installUserCover } from './coverImage'
 import { PAIR_JOB_MARKER, PAIR_TMP_DIRNAME } from './pairRecovery'
 import type { PairJobRecord } from './pairRecovery'
 
 const PROBE_TIMEOUT_MS = 30_000
 const ALLOWED_AUDIO_EXT = new Set(['.mp3', '.wav', '.flac', '.m4a'])
-const ALLOWED_COVER_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp'])
-const MAX_COVER_BYTES = 20 * 1024 * 1024
 
 export interface ImportServiceOptions {
   store: LibraryStore
@@ -600,21 +599,6 @@ function assertPairDurationDelta(mrDuration: number, guideDuration: number, mrPa
 function resolveOutPath(reported: string, outDir: string): string {
   if (typeof reported !== 'string' || reported === '') return reported
   return isAbsolute(reported) ? reported : join(outDir, reported)
-}
-
-async function installUserCover(trackDir: string, imagePath: string): Promise<void> {
-  let info: Awaited<ReturnType<typeof stat>>
-  try {
-    info = await stat(imagePath)
-  } catch {
-    throw new Error('커버 파일을 찾을 수 없습니다')
-  }
-  if (!info.isFile()) throw new Error('커버가 일반 파일이 아닙니다')
-  if (!ALLOWED_COVER_EXT.has(extname(imagePath).toLowerCase())) {
-    throw new Error('커버는 JPG/PNG/WebP만 사용할 수 있습니다')
-  }
-  if (info.size > MAX_COVER_BYTES) throw new Error('커버 파일이 너무 큽니다')
-  await copyFile(imagePath, join(trackDir, 'cover.jpg'))
 }
 
 function nonEmpty(value: string | null | undefined): string | undefined {

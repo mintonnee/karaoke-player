@@ -280,6 +280,8 @@ export const IPC_CHANNELS = {
   pickAudioFile: 'library:pick-audio-file',
   pickImageFile: 'library:pick-image-file',
   previewCover: 'library:preview-cover',
+  /** 실패 사유를 포함한 커버 미리보기 (스펙 005). 기존 previewCover는 null만 반환 */
+  previewCoverDetailed: 'library:preview-cover-detailed',
   /** 가져오기 팝업용. 파일을 등록하지 않고 태그만 읽는다 */
   probeAudioTags: 'library:probe-audio-tags',
   importPair: 'library:import-pair',
@@ -288,6 +290,8 @@ export const IPC_CHANNELS = {
   trackFiles: 'library:track-files',
   deleteTrack: 'library:delete',
   updateTrackMeta: 'library:update-meta',
+  /** 메타 변경분과 커버 동작을 한 번에 저장 (스펙 005 §4.3) */
+  saveTrackEdit: 'library:save-track-edit',
   reorderTracks: 'library:reorder',
   lyricsGet: 'lyrics:get',
   lyricsRefetch: 'lyrics:refetch',

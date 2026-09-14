@@ -1,0 +1,271 @@
+/* 곡 수정 팝업 (스펙 005 §4.1). 높이는 내용에 맞추고 창이 작을 때만 본문을 스크롤한다 */
+.modal.track-edit-dialog {
+  width: min(720px, calc(100vw - 48px));
+  height: auto;
+  max-height: calc(100vh - 48px);
+  line-height: 1.4;
+}
+
+.track-edit-dialog .modal-header {
+  padding: 10px 14px;
+  flex-shrink: 0;
+}
+
+.modal-body.track-edit-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 14px;
+  padding: 14px;
+}
+
+.track-edit-content {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 20px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.track-edit-cover {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.track-edit-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px dashed var(--ev-c-gray-2);
+  background-color: var(--ev-c-black-mute);
+  color: var(--ev-c-text-3);
+  font-size: 64px;
+}
+
+.track-edit-preview img,
+.track-edit-preview .cover-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.track-edit-preview .cover-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: inherit;
+}
+
+.track-edit-cover.has-error .track-edit-preview {
+  border-color: #e66;
+  border-style: solid;
+}
+
+.track-edit-preview img {
+  object-fit: contain;
+  background-color: var(--ev-c-black-mute);
+}
+
+.track-edit-preview .cover-art img {
+  object-fit: contain;
+  background-color: var(--ev-c-black-mute);
+}
+
+.track-edit-cover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.track-edit-cover-actions button,
+.track-edit-secondary,
+.track-edit-submit {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--ev-c-gray-2);
+  background-color: var(--ev-c-black-soft);
+  color: var(--ev-c-text-1);
+  cursor: pointer;
+}
+
+.track-edit-cover-actions button:hover:not(:disabled),
+.track-edit-secondary:hover:not(:disabled),
+.track-edit-submit:hover:not(:disabled) {
+  border-color: var(--ev-c-gray-1);
+}
+
+.track-edit-cover-actions button:disabled,
+.track-edit-secondary:disabled,
+.track-edit-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.track-edit-fields {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ev-c-text-2);
+}
+
+.track-edit-fields > label {
+  color: var(--ev-c-text-2);
+}
+
+.track-edit-fields > input {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--ev-c-gray-2);
+  border-radius: 6px;
+  background-color: var(--ev-c-black-mute);
+  color: var(--ev-c-text-1);
+  font: inherit;
+}
+
+.track-edit-fields > input:disabled,
+.track-edit-field input:disabled {
+  opacity: 0.6;
+}
+
+.track-edit-fields > .track-edit-field-error {
+  grid-column: 2;
+}
+
+.track-edit-bpm-key {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.track-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.track-edit-field label {
+  font-size: 12px;
+  color: var(--ev-c-text-2);
+}
+
+.track-edit-field input {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--ev-c-gray-2);
+  border-radius: 6px;
+  background-color: var(--ev-c-black-mute);
+  color: var(--ev-c-text-1);
+  font: inherit;
+}
+
+.track-edit-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ev-c-text-3);
+}
+
+.track-edit-notice {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(74, 125, 189, 0.4);
+  border-radius: 6px;
+  background-color: rgba(74, 125, 189, 0.1);
+  color: var(--ev-c-text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.track-edit-notice-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  color: #6b9fd8;
+}
+
+.track-edit-notice-icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.modal-body .track-edit-notice p,
+.track-edit-notice p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.track-edit-notice strong {
+  margin-right: 4px;
+  color: #6b9fd8;
+  font-weight: 600;
+}
+
+.track-edit-field-error {
+  margin: 0;
+  font-size: 12px;
+  color: #e66;
+  word-break: break-word;
+}
+
+.track-edit-general-error {
+  flex-shrink: 0;
+}
+
+.track-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+
+.track-edit-submit {
+  padding: 6px 14px;
+  background-color: #4a7dbd;
+  border-color: #4a7dbd;
+  color: #fff;
+}
+
+.track-edit-submit:hover:not(:disabled) {
+  border-color: #6b9fd8;
+  background-color: #5a8dcd;
+}
+
+@media (max-width: 640px) {
+  .track-edit-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .track-edit-preview {
+    width: min(220px, 100%);
+    margin: 0 auto;
+  }
+
+  .track-edit-bpm-key {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

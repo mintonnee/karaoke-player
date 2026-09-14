@@ -14,13 +14,20 @@ interface CoverArtProps {
   /** 캐시 무효화 키. 트랙 갱신(updatedAt) 시 src가 바뀌어 이미지 로드를 재시도한다 */
   version: string
   className?: string
+  /** 저장된 커버 파일 존재 여부. 이미지 로드 성공/실패 때 호출 */
+  onAvailability?: (available: boolean) => void
 }
 
 /**
  * <tracksDir>/<id>/cover.jpg 를 media:// 로 표시한다.
  * 커버가 없거나(404) 아직 추출 전이면 ♪ 플레이스홀더가 그대로 보인다.
  */
-function CoverArt({ trackId, version, className }: CoverArtProps): React.JSX.Element {
+function CoverArt({
+  trackId,
+  version,
+  className,
+  onAvailability
+}: CoverArtProps): React.JSX.Element {
   const [tracksDir, setTracksDir] = useState(cachedTracksDir)
   const [failed, setFailed] = useState(false)
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
@@ -44,12 +51,15 @@ function CoverArt({ trackId, version, className }: CoverArtProps): React.JSX.Ele
   const onError = (): void => {
     setFailed(true)
     setFailedSrc(src)
+    onAvailability?.(false)
   }
 
   return (
     <div className={`cover-art${className ? ` ${className}` : ''}`} aria-hidden="true">
       <MdMusicNote />
-      {src !== null && !failed && <img src={src} alt="" onError={onError} />}
+      {src !== null && !failed && (
+        <img src={src} alt="" onError={onError} onLoad={() => onAvailability?.(true)} />
+      )}
     </div>
   )
 }

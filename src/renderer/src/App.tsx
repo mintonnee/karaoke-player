@@ -1,10 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import {
   MdAutorenew,
-  MdCheck,
   MdCheckCircle,
-  MdClose,
   MdDeleteOutline,
   MdDragIndicator,
   MdEdit,
@@ -23,6 +21,7 @@ import LyricsView from './components/LyricsView'
 import MixerPanel from './components/MixerPanel'
 import SettingsModal from './components/SettingsModal'
 import ShortcutHelp from './components/ShortcutHelp'
+import TrackEditDialog from './components/TrackEditDialog'
 import Transport from './components/Transport'
 import { useErrorStore } from './stores/errorStore'
 import { useLibraryStore } from './stores/libraryStore'
@@ -30,31 +29,12 @@ import { useLyricsStore } from './stores/lyricsStore'
 import { usePlayerStore } from './stores/playerStore'
 import { formatBpmDisplay } from '../../shared/analysisFormat'
 import { formatKeyDisplay } from '../../shared/musicKey'
-import { BPM_MAX, BPM_MIN, MUSIC_KEY_RE } from '../../shared/types'
-import type { BootstrapState, Track, TrackMetaInput } from '../../shared/types'
+import type { BootstrapState, Track } from '../../shared/types'
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${m}:${String(s).padStart(2, '0')}`
-}
-
-/**
- * 메인(LibraryStore.updateMeta)과 같은 규칙으로 미리 검사해 왕복 없이 오류를 보여준다.
- * 통과해도 메인이 최종 검증한다.
- */
-function validateMetaForm(form: TrackMetaInput): string | null {
-  const bpm = form.bpm
-  if (bpm !== null && bpm !== undefined) {
-    if (!Number.isFinite(bpm) || bpm < BPM_MIN || bpm > BPM_MAX) {
-      return `BPM은 ${BPM_MIN}–${BPM_MAX} 사이여야 합니다`
-    }
-  }
-  const key = form.musicKey?.trim() ?? ''
-  if (key !== '' && !MUSIC_KEY_RE.test(key)) {
-    return `키 형식이 올바르지 않습니다: ${key} (예: C, F#, Am, C#m)`
-  }
-  return null
 }
 
 const STATUS_LABEL: Record<Track['status'], string> = {
@@ -97,7 +77,7 @@ interface TrackRowProps {
   dropHint: 'before' | 'after' | null
   onLoad: () => void
   onDelete: () => void
-  onSaveMeta: (meta: TrackMetaInput) => Promise<void>
+  onEdit: (opener: HTMLButtonElement) => void
 }
 
 function TrackRow({
@@ -111,108 +91,11 @@ function TrackRow({
   dropHint,
   onLoad,
   onDelete,
-  onSaveMeta
+  onEdit
 }: TrackRowProps): React.JSX.Element {
-  const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState<TrackMetaInput>({
-    title: track.title,
-    artist: track.artist,
-    album: track.album,
-    bpm: track.bpm,
-    musicKey: track.musicKey
-  })
-  const [error, setError] = useState<string | null>(null)
   const playable = track.status === 'ready'
   const bpmText = formatBpmDisplay(track.bpm, track.bpmConf)
   const keyText = formatKeyDisplay(track.musicKey)
-
-  const startEdit = (): void => {
-    setForm({
-      title: track.title,
-      artist: track.artist,
-      album: track.album,
-      bpm: track.bpm,
-      musicKey: track.musicKey
-    })
-    setError(null)
-    setEditing(true)
-  }
-
-  const save = async (): Promise<void> => {
-    if (!form.title.trim()) return
-    const invalid = validateMetaForm(form)
-    if (invalid) {
-      setError(invalid)
-      return
-    }
-    try {
-      // 폼에서 편집했으므로 bpm·musicKey를 항상 함께 보낸다 (analysis_source='user')
-      await onSaveMeta({ ...form, musicKey: form.musicKey?.trim() || null })
-      setError(null)
-      setEditing(false)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
-  }
-
-  if (editing) {
-    return (
-      <li className="track-item editing">
-        <div className="track-edit-form">
-          <input
-            value={form.title}
-            placeholder="제목"
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-          />
-          <input
-            value={form.artist ?? ''}
-            placeholder="아티스트"
-            onChange={(e) => setForm({ ...form, artist: e.target.value || null })}
-          />
-          <input
-            value={form.album ?? ''}
-            placeholder="앨범"
-            onChange={(e) => setForm({ ...form, album: e.target.value || null })}
-          />
-          <input
-            className="meta-narrow"
-            type="number"
-            min={BPM_MIN}
-            max={BPM_MAX}
-            step={1}
-            value={form.bpm ?? ''}
-            placeholder="BPM"
-            title={`BPM (${BPM_MIN}–${BPM_MAX}, 비우면 값 없음)`}
-            onChange={(e) =>
-              setForm({ ...form, bpm: e.target.value === '' ? null : e.target.valueAsNumber })
-            }
-          />
-          <input
-            className="meta-narrow"
-            type="text"
-            value={form.musicKey ?? ''}
-            placeholder="C#m"
-            title="키 (예: C, F#, Am, C#m. 비우면 값 없음)"
-            onChange={(e) => setForm({ ...form, musicKey: e.target.value || null })}
-          />
-          {error && <p className="track-edit-error">{error}</p>}
-          <div className="track-edit-actions">
-            <button
-              className="icon-btn"
-              title="저장"
-              onClick={() => void save()}
-              disabled={!form.title.trim()}
-            >
-              <MdCheck />
-            </button>
-            <button className="icon-btn" title="취소" onClick={() => setEditing(false)}>
-              <MdClose />
-            </button>
-          </div>
-        </div>
-      </li>
-    )
-  }
 
   return (
     <li
@@ -272,7 +155,14 @@ function TrackRow({
             {STATUS_ICON[track.status]}
           </span>
         )}
-        <button className="icon-btn" title="편집" onClick={startEdit}>
+        <button
+          className="icon-btn"
+          title="편집"
+          onClick={(event) => {
+            event.stopPropagation()
+            onEdit(event.currentTarget)
+          }}
+        >
           <MdEdit />
         </button>
         <button
@@ -302,7 +192,6 @@ function App(): React.JSX.Element {
     loadCapabilities,
     deleteTrack,
     reorderTracks,
-    updateTrackMeta,
     dismissRejections
   } = useLibraryStore()
   const loadTrack = usePlayerStore((s) => s.loadTrack)
@@ -319,6 +208,10 @@ function App(): React.JSX.Element {
   const markErrorsSeen = useErrorStore((s) => s.markAllSeen)
   const [showImport, setShowImport] = useState(false)
   const [importDropPaths, setImportDropPaths] = useState<string[]>([])
+  const [editingTrack, setEditingTrack] = useState<Track | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const trackListRef = useRef<HTMLUListElement>(null)
+  const modalOpen = showSettings || showImport || editingTrack !== null
   // null = 아직 조회 전. ready가 아니면 라이브러리 대신 부트스트랩 화면 (스펙 001 §4.1)
   const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null)
   const importBusy = importing || urlImporting || pairImporting
@@ -344,7 +237,7 @@ function App(): React.JSX.Element {
     const clampDb = (db: number): number => Math.max(-60, Math.min(0, db))
 
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (showSettings || showImport) return
+      if (showSettings || showImport || editingTrack) return
       if (event.metaKey) return
       const target = event.target as HTMLElement
       if (
@@ -419,7 +312,7 @@ function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showSettings, showImport])
+  }, [showSettings, showImport, editingTrack])
 
   useEffect(() => {
     if (currentTrackId) void loadLyrics(currentTrackId)
@@ -431,7 +324,7 @@ function App(): React.JSX.Element {
     setDragOver(false)
     // 행 드래그가 목록 밖에 떨어진 경우: 파일 임포트로 오인하지 않는다
     if (event.dataTransfer.types.includes(ROW_DRAG_MIME)) return
-    if (importBusy || showImport) return
+    if (importBusy || modalOpen) return
     const paths = Array.from(event.dataTransfer.files).map((file) =>
       window.api.getPathForFile(file)
     )
@@ -441,9 +334,26 @@ function App(): React.JSX.Element {
   }
 
   const openImport = (): void => {
-    if (importBusy || showImport) return
+    if (importBusy || modalOpen) return
     setImportDropPaths([])
     setShowImport(true)
+  }
+
+  const openEdit = (track: Track): void => {
+    if (modalOpen) return
+    setEditingTrack(track)
+  }
+
+  const closeEdit = (): void => {
+    setEditingTrack(null)
+  }
+
+  const focusEditFallback = (): void => {
+    if (searchInputRef.current) {
+      searchInputRef.current.focus()
+      return
+    }
+    trackListRef.current?.focus()
   }
 
   const closeImport = (): void => {
@@ -518,7 +428,7 @@ function App(): React.JSX.Element {
             // 행 정렬 드래그는 파일 드롭 하이라이트 대상이 아니다
             if (e.dataTransfer.types.includes(ROW_DRAG_MIME)) return
             e.preventDefault()
-            if (importBusy || showImport) return
+            if (importBusy || modalOpen) return
             setDragOver(true)
           }}
           onDragLeave={() => setDragOver(false)}
@@ -527,13 +437,14 @@ function App(): React.JSX.Element {
           <div className="panel-header">
             <h2>노래 리스트</h2>
             <div className="panel-header-actions">
-              <button type="button" onClick={openImport} disabled={importBusy || showImport}>
+              <button type="button" onClick={openImport} disabled={importBusy || modalOpen}>
                 {importBusy ? '임포트 중…' : '+ 가져오기'}
               </button>
             </div>
           </div>
 
           <input
+            ref={searchInputRef}
             className="search"
             type="search"
             placeholder="제목/아티스트/앨범 검색"
@@ -552,7 +463,7 @@ function App(): React.JSX.Element {
             </div>
           )}
 
-          <ul className="track-list">
+          <ul className="track-list" ref={trackListRef} tabIndex={-1}>
             {tracks.map((track, i) => (
               <TrackRow
                 key={track.id}
@@ -572,7 +483,7 @@ function App(): React.JSX.Element {
                 }
                 onLoad={() => void loadTrack(track)}
                 onDelete={() => void onDelete(track)}
-                onSaveMeta={(meta) => updateTrackMeta(track.id, meta)}
+                onEdit={() => openEdit(track)}
               />
             ))}
             {tracks.length === 0 && (
@@ -615,7 +526,15 @@ function App(): React.JSX.Element {
               <span className="icon-btn-badge">{unseenErrors > 9 ? '9+' : unseenErrors}</span>
             )}
           </button>
-          <button className="icon-btn" title="설정" onClick={() => setShowSettings(true)}>
+          <button
+            className="icon-btn"
+            title="설정"
+            disabled={editingTrack !== null || showImport}
+            onClick={() => {
+              if (editingTrack || showImport) return
+              setShowSettings(true)
+            }}
+          >
             <MdSettings />
           </button>
           <button
@@ -638,6 +557,13 @@ function App(): React.JSX.Element {
       {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} />}
       {showErrors && <ErrorCenter onClose={() => setShowErrors(false)} />}
       {showImport && <ImportDialog initialPaths={importDropPaths} onClose={closeImport} />}
+      {editingTrack && (
+        <TrackEditDialog
+          track={editingTrack}
+          onClose={closeEdit}
+          fallbackFocus={focusEditFallback}
+        />
+      )}
     </div>
   )
 }

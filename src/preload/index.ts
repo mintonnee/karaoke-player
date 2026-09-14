@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { CoverPreviewResult, TrackEditSaveRequest } from '../shared/trackEdit'
 import { DEFAULT_GUIDE_VOCAL_DB, IPC_CHANNELS } from '../shared/types'
 import type {
   AlignLang,
@@ -41,6 +42,8 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.reorderTracks, ids),
   updateTrackMeta: (trackId: string, meta: TrackMetaInput): Promise<Track> =>
     ipcRenderer.invoke(IPC_CHANNELS.updateTrackMeta, trackId, meta),
+  saveTrackEdit: (req: TrackEditSaveRequest): Promise<Track> =>
+    ipcRenderer.invoke(IPC_CHANNELS.saveTrackEdit, req),
   getLyrics: (trackId: string): Promise<LyricsPayload> =>
     ipcRenderer.invoke(IPC_CHANNELS.lyricsGet, trackId),
   refetchLyrics: (trackId: string): Promise<LyricsPayload> =>
@@ -84,6 +87,8 @@ const api = {
   pickImageFile: (): Promise<string | null> => ipcRenderer.invoke(IPC_CHANNELS.pickImageFile),
   previewCover: (filePath: string): Promise<string | null> =>
     ipcRenderer.invoke(IPC_CHANNELS.previewCover, filePath),
+  previewCoverDetailed: (filePath: string): Promise<CoverPreviewResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.previewCoverDetailed, filePath),
   probeAudioTags: (filePath: string): Promise<AudioTagPreview> =>
     ipcRenderer.invoke(IPC_CHANNELS.probeAudioTags, filePath),
   importPair: (req: PairImportRequest): Promise<ImportFilesResponse> =>

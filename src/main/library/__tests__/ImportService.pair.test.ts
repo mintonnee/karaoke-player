@@ -17,6 +17,7 @@ import type {
   SidecarProgressEvent,
   SidecarRunOptions
 } from '../../sidecar/SidecarManager'
+import { PNG_1X1 } from './coverFixtures'
 import { ImportService } from '../ImportService'
 import { JobQueue } from '../JobQueue'
 import { LibraryStore } from '../LibraryStore'
@@ -265,10 +266,10 @@ describe('ImportService.importPair', () => {
 
   it('사용자 커버를 cover.jpg로 복사하고 추출은 건너뛴다', async () => {
     const coverPath = join(root, 'art.png')
-    await writeFile(coverPath, 'png-bytes')
+    await writeFile(coverPath, PNG_1X1)
     const response = await createService().importPair(req({ coverPath }))
     const track = response.imported[0]
-    expect(await readFile(join(tracksDir, track.id, 'cover.jpg'), 'utf-8')).toBe('png-bytes')
+    expect(await readFile(join(tracksDir, track.id, 'cover.jpg'))).toEqual(PNG_1X1)
     expect(extractCover).not.toHaveBeenCalled()
   })
 

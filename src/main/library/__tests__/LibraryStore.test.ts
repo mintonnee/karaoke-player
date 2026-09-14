@@ -481,4 +481,45 @@ describe('LibraryStore', () => {
       }
     })
   })
+
+  describe('applyMetaPatch', () => {
+    it('변경 필드만 합치고 생략한 분석 값은 유지한다', () => {
+      createTrack('t1', { artist: 'Eve', album: 'album' })
+      store.setAnalysis('t1', { bpm: 128, musicKey: 'C#m', bpmConf: 0.7, keyConf: 0.4, version: 1 })
+      const updated = store.applyMetaPatch('t1', { title: '  새 제목  ' })
+
+      expect(updated.title).toBe('새 제목')
+      expect(updated.artist).toBe('Eve')
+      expect(updated.album).toBe('album')
+      expect(updated.bpm).toBe(128)
+      expect(updated.musicKey).toBe('C#m')
+      expect(updated.bpmConf).toBe(0.7)
+      expect(updated.analysisSource).toBe('auto')
+    })
+
+    it('BPM만 고치면 user가 되고 키는 최신 값을 유지한다', () => {
+      createTrack('t1')
+      store.setAnalysis('t1', { bpm: 128, musicKey: 'C#m', bpmConf: 0.7, keyConf: 0.4, version: 1 })
+      const updated = store.applyMetaPatch('t1', { bpm: 96 })
+      expect(updated.bpm).toBe(96)
+      expect(updated.musicKey).toBe('C#m')
+      expect(updated.bpmConf).toBeNull()
+      expect(updated.keyConf).toBeNull()
+      expect(updated.analysisSource).toBe('user')
+    })
+
+    it('빈 패치도 updatedAt을 올리고 연속 호출은 캐시 키가 겹치지 않는다', () => {
+      createTrack('t1')
+      const first = store.applyMetaPatch('t1', {})
+      const second = store.applyMetaPatch('t1', {})
+      expect(second.updatedAt > first.updatedAt).toBe(true)
+      expect(second.updatedAt).not.toBe(first.updatedAt)
+    })
+
+    it('없는 곡은 거부하고 행을 만들지 않는다', () => {
+      expect(() => store.applyMetaPatch('missing', { title: 'x' })).toThrow('track not found')
+      expect(store.getTrack('missing')).toBeUndefined()
+      expect(store.listTracks()).toEqual([])
+    })
+  })
 })

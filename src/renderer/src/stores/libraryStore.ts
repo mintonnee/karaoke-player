@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { TrackEditSaveRequest } from '../../../shared/trackEdit'
 import type {
   ImportFilesResponse,
   ImportProgressEvent,
@@ -10,6 +11,7 @@ import type {
   TrackMetaInput,
   UrlImportProgressEvent
 } from '../../../shared/types'
+import { mergeUpdatedTrack } from '../trackEdit/form'
 
 interface LibraryState {
   tracks: Track[]
@@ -35,6 +37,7 @@ interface LibraryState {
   /** 드래그 정렬 저장. ids는 검색 필터 없는 전체 순서. 화면은 즉시 반영하고 저장은 뒤따른다 */
   reorderTracks: (ids: string[]) => Promise<void>
   updateTrackMeta: (trackId: string, meta: TrackMetaInput) => Promise<void>
+  saveTrackEdit: (req: TrackEditSaveRequest) => Promise<Track>
   dismissRejections: () => void
 }
 
@@ -53,7 +56,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
       if (track.status === 'ready' || track.status === 'failed') {
         delete progress[track.id]
       }
-      return { tracks: upsertTrack(state.tracks, track), progress }
+      return { tracks: mergeUpdatedTrack(state.tracks, track, state.search), progress }
     })
   })
   window.api.onImportProgress((event) => {
@@ -140,6 +143,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     updateTrackMeta: async (trackId, meta) => {
       const updated = await window.api.updateTrackMeta(trackId, meta)
       set((state) => ({ tracks: upsertTrack(state.tracks, updated) }))
+    },
+    saveTrackEdit: async (req) => {
+      const updated = await window.api.saveTrackEdit(req)
+      try {
+        await get().refresh()
+      } catch {
+        // 저장은 이미 반영됨. 목록 재조회 실패는 팝업을 붙잡지 않는다
+      }
+      return updated
     },
     dismissRejections: () => set({ rejections: [] })
   }

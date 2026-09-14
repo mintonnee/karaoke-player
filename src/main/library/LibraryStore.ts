@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3'
 import { hangulIncludes, hangulLooseIncludes } from '../../shared/hangul'
-import { ANALYSIS_VERSION, BPM_MAX, BPM_MIN, MUSIC_KEY_RE } from '../../shared/types'
+import { parseUserBpm, parseUserMusicKey } from '../../shared/trackEdit'
+import type { TrackMetaPatch } from '../../shared/trackEdit'
+import { ANALYSIS_VERSION } from '../../shared/types'
 import type {
   AnalysisSource,
   GuideKind,
@@ -96,23 +98,13 @@ export interface AnalysisInput {
   version: number
 }
 
-/** 사용자 입력 BPM 검증. null은 "값 없음"으로 허용 */
-function validateBpm(bpm: number | null): number | null {
-  if (bpm === null) return null
-  if (!Number.isFinite(bpm) || bpm < BPM_MIN || bpm > BPM_MAX) {
-    throw new Error(`bpm must be between ${BPM_MIN} and ${BPM_MAX}`)
-  }
-  return bpm
-}
-
-/** 사용자 입력 키 검증. 빈 문자열은 null로 정규화 */
-function validateMusicKey(key: string | null): string | null {
-  const trimmed = key?.trim() ?? ''
-  if (trimmed === '') return null
-  if (!MUSIC_KEY_RE.test(trimmed)) {
-    throw new Error(`invalid music key: ${trimmed} (expected e.g. C, F#, Am, C#m)`)
-  }
-  return trimmed
+/** 커버 캐시 키가 같은 시각에 충돌하지 않게 기존 값보다 큰 ISO 시각을 고른다 */
+function nextUpdatedAt(previous: string): string {
+  const now = new Date().toISOString()
+  if (now > previous) return now
+  const prevMs = Date.parse(previous)
+  if (Number.isFinite(prevMs)) return new Date(prevMs + 1).toISOString()
+  return `${previous}+`
 }
 
 export class LibraryStore {
@@ -300,8 +292,9 @@ export class LibraryStore {
     const current = hasAnalysis ? this.mustGetTrack(id) : null
     const analysis = current
       ? {
-          bpm: meta.bpm === undefined ? current.bpm : validateBpm(meta.bpm),
-          musicKey: meta.musicKey === undefined ? current.musicKey : validateMusicKey(meta.musicKey)
+          bpm: meta.bpm === undefined ? current.bpm : parseUserBpm(meta.bpm),
+          musicKey:
+            meta.musicKey === undefined ? current.musicKey : parseUserMusicKey(meta.musicKey)
         }
       : null
     const now = new Date().toISOString()
@@ -333,6 +326,49 @@ export class LibraryStore {
     return this.mustGetTrack(id)
   }
 
+  /**
+   * 변경된 메타 필드만 최신 행에 합친다. 빈 패치여도 updated_at은 올린다 (커버만 변경).
+   * 대상 행이 없으면 만들지 않는다.
+   */
+  applyMetaPatch(id: string, patch: TrackMetaPatch): Track {
+    const current = this.mustGetTrack(id)
+    const title = patch.title !== undefined ? patch.title.trim() : current.title
+    if (!title) throw new Error('title must not be empty')
+    const artist = patch.artist !== undefined ? patch.artist?.trim() || null : current.artist
+    const album = patch.album !== undefined ? patch.album?.trim() || null : current.album
+    const hasAnalysis = patch.bpm !== undefined || patch.musicKey !== undefined
+    const bpm = patch.bpm !== undefined ? parseUserBpm(patch.bpm) : current.bpm
+    const musicKey =
+      patch.musicKey !== undefined ? parseUserMusicKey(patch.musicKey) : current.musicKey
+    const now = nextUpdatedAt(current.updatedAt)
+    const params = { id, title, artist, album, now }
+    if (hasAnalysis) {
+      this.db
+        .prepare(
+          `UPDATE tracks
+           SET title = @title, artist = @artist, album = @album, updated_at = @now,
+               bpm = @bpm, music_key = @musicKey, bpm_conf = NULL, key_conf = NULL,
+               analysis_version = @version, analysis_source = 'user'
+           WHERE id = @id`
+        )
+        .run({ ...params, bpm, musicKey, version: ANALYSIS_VERSION })
+    } else {
+      this.db
+        .prepare(
+          `UPDATE tracks SET title = @title, artist = @artist, album = @album, updated_at = @now
+           WHERE id = @id`
+        )
+        .run(params)
+    }
+    return this.mustGetTrack(id)
+  }
+
+  mustGetTrack(id: string): Track {
+    const track = this.getTrack(id)
+    if (!track) throw new Error(`track not found: ${id}`)
+    return track
+  }
+
   /** DB 행만 삭제한다. 트랙 디렉토리 정리는 호출자(IPC 핸들러) 책임. */
   deleteTrack(id: string): boolean {
     return this.db.prepare('DELETE FROM tracks WHERE id = ?').run(id).changes > 0
@@ -362,11 +398,5 @@ export class LibraryStore {
 
   close(): void {
     this.db.close()
-  }
-
-  private mustGetTrack(id: string): Track {
-    const track = this.getTrack(id)
-    if (!track) throw new Error(`track not found: ${id}`)
-    return track
   }
 }

@@ -12,8 +12,10 @@ import { CoverService } from './library/CoverService'
 import { ImportService } from './library/ImportService'
 import { JobQueue } from './library/JobQueue'
 import { LibraryStore } from './library/LibraryStore'
+import { recoverIncompleteTrackEdits } from './library/coverRecovery'
 import { recoverIncompletePairImports } from './library/pairRecovery'
 import { SearchKeyService } from './library/SearchKeyService'
+import { TrackEditService } from './library/TrackEditService'
 import { YtDlpService, hasUrlImportBinaries } from './library/YtDlpService'
 import { getBundledBinary, getBundledSidecarDir } from './paths'
 import { SettingsStore } from './settings/SettingsStore'
@@ -156,6 +158,10 @@ app.whenReady().then(async () => {
   if (cleanedPairs > 0) {
     console.error(`[library] cleaned ${cleanedPairs} incomplete pair import dir(s)`)
   }
+  const cleanedEdits = await recoverIncompleteTrackEdits(tracksDir, store)
+  if (cleanedEdits > 0) {
+    console.error(`[library] recovered ${cleanedEdits} incomplete track edit(s)`)
+  }
   registerMediaProtocol(tracksDir)
 
   const notify = (channel: string, payload: unknown): void => {
@@ -185,6 +191,13 @@ app.whenReady().then(async () => {
   })
   const settingsStore = new SettingsStore(join(userData, 'settings.json'))
   const coverService = new CoverService({ store, sidecar, tracksDir })
+  const trackEditService = new TrackEditService({
+    store,
+    tracksDir,
+    coverService,
+    searchKeyService,
+    notify
+  })
   // BPM·키 분석은 분리와 같은 큐에서 직렬로 돈다 (스펙 002 §4.2)
   const analysisService = new AnalysisService({
     store,
@@ -238,7 +251,9 @@ app.whenReady().then(async () => {
     tracksDir,
     notify,
     capabilities: { urlImport },
-    ytDlpService
+    ytDlpService,
+    trackEditService,
+    coverService
   })
   // 부트스트랩 IPC. 서비스들은 lazy spawn이라 먼저 만들어도 되지만,
   // 시작 시 사이드카를 띄우는 backfill은 ready 이후에만 돈다.

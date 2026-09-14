@@ -1,6 +1,8 @@
 import { app, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { rm } from 'fs/promises'
-import { extname, join } from 'path'
+import { join } from 'path'
+import { ALLOWED_COVER_EXT } from '../shared/trackEdit'
+import type { CoverPreviewResult, TrackEditSaveRequest } from '../shared/trackEdit'
 import { DEMUCS_MODELS, IPC_CHANNELS, sanitizeImportUserMeta } from '../shared/types'
 import type {
   AlignLang,
@@ -16,19 +18,23 @@ import type {
   TrackFiles,
   TrackMetaInput
 } from '../shared/types'
+import { inspectCoverImage } from './library/coverImage'
+import type { CoverService } from './library/CoverService'
 import { ImportRequestGate } from './library/ImportRequestGate'
 import { precheckImportUrl, URL_IMPORT_DISABLED_REASON } from './library/importUrlPrecheck'
 import type { ImportService } from './library/ImportService'
 import type { LibraryStore } from './library/LibraryStore'
 import type { SearchKeyService } from './library/SearchKeyService'
+import type { TrackEditService } from './library/TrackEditService'
 import { requireReadyTrackFiles } from './library/trackFiles'
 import type { YtDlpService } from './library/YtDlpService'
 import type { LyricsService } from './lyrics/LyricsService'
 import type { SettingsStore } from './settings/SettingsStore'
 
 export const AUDIO_FILE_FILTERS = [{ name: 'Audio', extensions: ['mp3', 'wav', 'flac', 'm4a'] }]
-const IMAGE_FILE_FILTERS = [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }]
-const COVER_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp'])
+const IMAGE_FILE_FILTERS = [
+  { name: 'Images', extensions: ALLOWED_COVER_EXT.map((ext) => ext.slice(1)) }
+]
 
 export interface IpcDeps {
   store: LibraryStore
@@ -42,6 +48,8 @@ export interface IpcDeps {
   capabilities: AppCapabilities
   /** URL 임포트가 꺼진 실행(MSIX판·리소스 미배치)에서는 null */
   ytDlpService: YtDlpService | null
+  trackEditService: TrackEditService
+  coverService: CoverService
 }
 
 export function registerIpcHandlers({
@@ -53,7 +61,9 @@ export function registerIpcHandlers({
   tracksDir,
   notify,
   capabilities,
-  ytDlpService
+  ytDlpService,
+  trackEditService,
+  coverService
 }: IpcDeps): void {
   const importGate = new ImportRequestGate()
 
@@ -117,8 +127,11 @@ export function registerIpcHandlers({
     if (track.status === 'separating') {
       throw new Error('분리 작업 중인 트랙은 삭제할 수 없습니다')
     }
-    store.deleteTrack(trackId)
-    await rm(join(tracksDir, trackId), { recursive: true, force: true })
+    coverService.noteUserCoverChange(trackId)
+    await trackEditService.withTrackLock(trackId, async () => {
+      if (!store.deleteTrack(trackId)) return
+      await rm(join(tracksDir, trackId), { recursive: true, force: true })
+    })
   })
 
   ipcMain.handle(
@@ -129,6 +142,10 @@ export function registerIpcHandlers({
       notify(IPC_CHANNELS.trackUpdated, updated)
       return updated
     }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.saveTrackEdit, (_event, req: TrackEditSaveRequest): Promise<Track> =>
+    trackEditService.save(req)
   )
 
   ipcMain.handle(IPC_CHANNELS.trackFiles, (_event, trackId: string): TrackFiles => {
@@ -174,8 +191,13 @@ export function registerIpcHandlers({
     return filePaths[0]
   })
 
-  ipcMain.handle(IPC_CHANNELS.previewCover, (_event, filePath: string): string | null =>
+  ipcMain.handle(IPC_CHANNELS.previewCover, (_event, filePath: string): Promise<string | null> =>
     previewCoverDataUrl(filePath)
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.previewCoverDetailed,
+    (_event, filePath: string): Promise<CoverPreviewResult> => previewCoverDetailed(filePath)
   )
 
   ipcMain.handle(
@@ -235,10 +257,15 @@ export function registerIpcHandlers({
   )
 }
 
-function previewCoverDataUrl(filePath: string): string | null {
-  if (typeof filePath !== 'string' || filePath.trim() === '') return null
-  if (!COVER_EXT.has(extname(filePath).toLowerCase())) return null
+async function previewCoverDataUrl(filePath: string): Promise<string | null> {
+  const result = await previewCoverDetailed(filePath)
+  return result.ok ? result.dataUrl : null
+}
+
+async function previewCoverDetailed(filePath: string): Promise<CoverPreviewResult> {
+  const inspected = await inspectCoverImage(filePath)
+  if (!inspected.ok) return inspected
   const image = nativeImage.createFromPath(filePath)
-  if (image.isEmpty()) return null
-  return image.resize({ width: 128, height: 128 }).toDataURL()
+  if (image.isEmpty()) return { ok: false, message: '커버 이미지를 읽을 수 없습니다' }
+  return { ok: true, dataUrl: image.resize({ width: 128, height: 128 }).toDataURL() }
 }

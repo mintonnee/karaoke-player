@@ -2,6 +2,7 @@
 @import './mixer.css';
 @import './key-panel.css';
 @import './import-dialog.css';
+@import './track-edit-dialog.css';
 
 /* 2행 3열 grid (스펙 003 §4.1): 1행 노래 리스트·가사, 2행 트랜스포트(1–2열), 3열 사이드 컬럼(두 행) */
 .app {

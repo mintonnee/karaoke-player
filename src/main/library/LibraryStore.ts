@@ -15,7 +15,7 @@ import type {
 } from '../../shared/types'
 
 /** §4.3 tracks 스키마. 변경 시 user_version을 올리고 마이그레이션을 추가한다. */
-const SCHEMA_VERSION = 7
+const SCHEMA_VERSION = 8
 
 interface TrackRow {
   id: string
@@ -187,7 +187,30 @@ export class LibraryStore {
         this.db.pragma('user_version = 7')
       })()
     }
+    if (version < 8) {
+      this.db.transaction(() => {
+        this.db.exec(`ALTER TABLE tracks ADD COLUMN pitch_semitones INTEGER NOT NULL DEFAULT 0`)
+        this.db.pragma('user_version = 8')
+      })()
+    }
     this.db.pragma(`user_version = ${SCHEMA_VERSION}`)
+  }
+
+  getTrackPitch(id: string): number {
+    const row = this.db.prepare('SELECT pitch_semitones FROM tracks WHERE id = ?').get(id) as
+      { pitch_semitones: number } | undefined
+    if (!row) throw new Error(`track not found: ${id}`)
+    return row.pitch_semitones
+  }
+
+  setTrackPitch(id: string, semitones: number): void {
+    if (!Number.isInteger(semitones) || semitones < -6 || semitones > 6) {
+      throw new Error('pitch must be an integer between -6 and 6')
+    }
+    const result = this.db
+      .prepare('UPDATE tracks SET pitch_semitones = ? WHERE id = ?')
+      .run(semitones, id)
+    if (result.changes === 0) throw new Error(`track not found: ${id}`)
   }
 
   getTrackVolumes(id: string): TrackVolumes | null {

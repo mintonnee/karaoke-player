@@ -1,5 +1,7 @@
 # Karaoke Player 플레이어 레이아웃 재구성 스펙
 
+곡별 조정키 자동 저장·복원은 `006-track-pitch.md`를 따른다.
+
 - 작성일: 2026-09-02
 - 연관 스펙: `000-karaoke-app-spec-draft.md`, `002-bpm-key-analysis.md`
 - 대상: 000 §5 S2.2(Transport UI)·S6.2(키 변경 UI)의 화면 배치, 002 §4.3 트랜스포트 키 표시, 000 §4.1 `AudioEngine` 인터페이스(레벨 push 추가)

@@ -125,6 +125,12 @@ export function registerIpcHandlers({
   ipcMain.handle(IPC_CHANNELS.getTrackVolumes, (_event, trackId: string) =>
     store.getTrackVolumes(trackId)
   )
+  ipcMain.handle(IPC_CHANNELS.getTrackPitch, (_event, trackId: string) =>
+    store.getTrackPitch(trackId)
+  )
+  ipcMain.handle(IPC_CHANNELS.setTrackPitch, (_event, trackId: string, semitones: number) =>
+    store.setTrackPitch(trackId, semitones)
+  )
   ipcMain.handle(IPC_CHANNELS.setTrackVolumes, (_event, trackId: string, volumes: TrackVolumes) =>
     store.setTrackVolumes(trackId, volumes)
   )

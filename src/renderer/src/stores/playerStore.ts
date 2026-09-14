@@ -87,6 +87,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
   let lastEngineGains = { inst: SILENCE_DB, guide: SILENCE_DB }
   let loadRevision = 0
   const pendingSaves = new Map<string, Promise<void>>()
+  const pendingPitchSaves = new Map<string, Promise<void>>()
+
+  const savePitch = (track: Track, pitch: number): void => {
+    const pending = (pendingPitchSaves.get(track.id) ?? Promise.resolve())
+      .then(() => window.api.setTrackPitch(track.id, pitch))
+      .catch((error: unknown) => {
+        reportError('player', `"${track.title}" 조정키 저장 실패: ${String(error)}`, track.id)
+      })
+      .finally(() => {
+        if (pendingPitchSaves.get(track.id) === pending) pendingPitchSaves.delete(track.id)
+      })
+    pendingPitchSaves.set(track.id, pending)
+  }
 
   const saveVolumes = (): void => {
     const { track, masterDb, instDb, vocalDb, masterMuted, instMuted, vocalMuted } = get()
@@ -149,6 +162,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     loadTrack: async (track) => {
       const revision = ++loadRevision
       engine.stop()
+      engine.setPitch(0)
       lastEngineGains = { inst: SILENCE_DB, guide: SILENCE_DB }
       set({
         track,
@@ -157,6 +171,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         loopMarkA: null,
         engineState: 'loading',
         position: 0,
+        pitch: 0,
         masterDb: 0,
         masterMuted: false,
         ...initialMixerState(track.guideKind, window.api.guideVocalDefaultDb)
@@ -167,6 +182,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         const volumes = await window.api.getTrackVolumes(track.id)
         if (revision !== loadRevision) return
         if (volumes) set(volumes)
+        await pendingPitchSaves.get(track.id)
+        if (revision !== loadRevision) return
+        const pitch = await window.api.getTrackPitch(track.id)
+        if (revision !== loadRevision) return
+        set({ pitch })
+        engine.setPitch(pitch)
         const files = await window.api.trackFiles(track.id)
         if (revision !== loadRevision) return
         await engine.load({ inst: files.inst, guide: files.guide })
@@ -279,9 +300,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       if (range) setLoop(range)
     },
     setPitch: (semitones) => {
+      const { track, engineState } = get()
+      if (
+        !track ||
+        engineState === 'idle' ||
+        engineState === 'loading' ||
+        !Number.isFinite(semitones)
+      )
+        return
       const clamped = Math.max(-6, Math.min(6, Math.round(semitones)))
       set({ pitch: clamped })
       engine.setPitch(clamped)
+      savePitch(track, clamped)
     },
     subscribeLevels: (cb) => engine.onLevels(cb)
   }

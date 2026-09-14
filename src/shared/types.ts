@@ -299,6 +299,8 @@ export const IPC_CHANNELS = {
   listTracks: 'library:list',
   trackFiles: 'library:track-files',
   getTrackVolumes: 'library:get-volumes',
+  getTrackPitch: 'library:get-pitch',
+  setTrackPitch: 'library:set-pitch',
   setTrackVolumes: 'library:set-volumes',
   deleteTrack: 'library:delete',
   updateTrackMeta: 'library:update-meta',

@@ -35,6 +35,10 @@ function subscribe<T>(channel: string, callback: (payload: T) => void): () => vo
 const api = {
   getTrackVolumes: (trackId: string): Promise<TrackVolumes | null> =>
     ipcRenderer.invoke(IPC_CHANNELS.getTrackVolumes, trackId),
+  getTrackPitch: (trackId: string): Promise<number> =>
+    ipcRenderer.invoke(IPC_CHANNELS.getTrackPitch, trackId),
+  setTrackPitch: (trackId: string, semitones: number): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.setTrackPitch, trackId, semitones),
   setTrackVolumes: (trackId: string, volumes: TrackVolumes): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.setTrackVolumes, trackId, volumes),
   listTracks: (query?: string): Promise<Track[]> =>

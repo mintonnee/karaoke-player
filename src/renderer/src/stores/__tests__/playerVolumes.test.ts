@@ -9,6 +9,7 @@ const { engine, reportError } = vi.hoisted(() => ({
     load: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
     setGain: vi.fn(),
+    setPitch: vi.fn(),
     onPosition: vi.fn(),
     onEnded: vi.fn()
   },
@@ -52,8 +53,11 @@ const track = (id: string, guideKind: Track['guideKind'] = 'vocal_only'): Track 
 })
 let store: (typeof import('../playerStore'))['usePlayerStore']
 let saved: Map<string, TrackVolumes>
+let pitches: Map<string, number>
 const api = {
   guideVocalDefaultDb: -20,
+  getTrackPitch: vi.fn<(id: string) => Promise<number>>(),
+  setTrackPitch: vi.fn<(id: string, pitch: number) => Promise<void>>(),
   onTrackUpdated: vi.fn(),
   trackFiles: vi.fn().mockResolvedValue({ inst: 'inst.wav', guide: 'vocal.wav' }),
   getTrackVolumes: vi.fn<(id: string) => Promise<TrackVolumes | null>>(),
@@ -64,6 +68,11 @@ beforeEach(async () => {
   vi.resetModules()
   vi.clearAllMocks()
   saved = new Map()
+  pitches = new Map()
+  api.getTrackPitch.mockImplementation(async (id) => pitches.get(id) ?? 0)
+  api.setTrackPitch.mockImplementation(async (id, pitch) => {
+    pitches.set(id, pitch)
+  })
   api.getTrackVolumes.mockImplementation(async (id) => saved.get(id) ?? null)
   api.setTrackVolumes.mockImplementation(async (id, volumes) => {
     saved.set(id, volumes)
@@ -196,4 +205,90 @@ it('채널 뮤트와 해제를 곡별로 저장하고 페이더 변경 후에도
   await store.getState().loadTrack(track('a'))
   expect(store.getState().vocalMuted).toBe(false)
   expect(engine.setGain).toHaveBeenCalledWith('vocal', -24)
+})
+
+it('곡별 조정키를 자동 저장·복원하고 원키 리셋도 저장한다', async () => {
+  const a = track('a')
+  await store.getState().loadTrack(a)
+  store.getState().setPitch(2)
+  expect(engine.setPitch).toHaveBeenLastCalledWith(2)
+  await store.getState().loadTrack(track('b'))
+  expect(store.getState().pitch).toBe(0)
+  expect(engine.setPitch).toHaveBeenLastCalledWith(0)
+  store.getState().setPitch(-3)
+  await store.getState().loadTrack(a)
+  expect(store.getState().pitch).toBe(2)
+  expect(engine.setPitch).toHaveBeenLastCalledWith(2)
+  store.getState().setPitch(0)
+  await store.getState().loadTrack(a)
+  expect(store.getState().pitch).toBe(0)
+  expect(pitches.get('b')).toBe(-3)
+})
+
+it('연속 키 조정은 직렬 저장하며 재로드는 마지막 저장을 기다린다', async () => {
+  await store.getState().loadTrack(track('a'))
+  const pending = deferred<void>()
+  api.setTrackPitch.mockImplementationOnce(async (id, pitch) => {
+    await pending.promise
+    pitches.set(id, pitch)
+  })
+  store.getState().setPitch(1)
+  store.getState().setPitch(3)
+  await vi.waitFor(() => expect(api.setTrackPitch).toHaveBeenCalledTimes(1))
+  const loading = store.getState().loadTrack(track('a'))
+  pending.resolve(undefined)
+  await loading
+  expect(pitches.get('a')).toBe(3)
+  expect(store.getState().pitch).toBe(3)
+  expect(engine.setPitch).toHaveBeenLastCalledWith(3)
+})
+
+it.each([false, true])('늦은 키 조회는 곡 전환·unload 후 무시한다: %s', async (unload) => {
+  const pending = deferred<number>()
+  api.getTrackPitch.mockImplementationOnce(() => pending.promise)
+  const loading = store.getState().loadTrack(track('a'))
+  await vi.waitFor(() => expect(api.getTrackPitch).toHaveBeenCalledWith('a'))
+  if (unload) store.getState().unload()
+  else await store.getState().loadTrack(track('b'))
+  pending.resolve(5)
+  await loading
+  expect(store.getState().track?.id).toBe(unload ? undefined : 'b')
+  expect(store.getState().pitch).toBe(0)
+  expect(engine.setPitch).not.toHaveBeenCalledWith(5)
+})
+
+it('키 저장 실패는 재생 값을 유지하고 다음 저장을 막지 않는다', async () => {
+  await store.getState().loadTrack(track('a'))
+  api.setTrackPitch.mockRejectedValueOnce(new Error('disk full'))
+  store.getState().setPitch(2)
+  await vi.waitFor(() =>
+    expect(reportError).toHaveBeenCalledWith(
+      'player',
+      expect.stringContaining('조정키 저장 실패'),
+      'a'
+    )
+  )
+  expect(store.getState().pitch).toBe(2)
+  store.getState().setPitch(3)
+  await store.getState().loadTrack(track('a'))
+  expect(store.getState().pitch).toBe(3)
+})
+
+it('곡 없음·로드 중·비정상 조정은 무시하고 범위를 제한한다', async () => {
+  store.getState().setPitch(2)
+  const loading = store.getState().loadTrack(track('a'))
+  store.getState().setPitch(2)
+  await loading
+  store.getState().setPitch(NaN)
+  store.getState().setPitch(Infinity)
+  expect(api.setTrackPitch).not.toHaveBeenCalled()
+  for (const [input, expected] of [
+    [10, 6],
+    [-10, -6],
+    [1.6, 2]
+  ]) {
+    store.getState().setPitch(input)
+    await store.getState().loadTrack(track('a'))
+    expect(store.getState().pitch).toBe(expected)
+  }
 })

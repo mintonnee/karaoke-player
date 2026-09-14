@@ -108,6 +108,40 @@ describe('LibraryStore', () => {
     expect(store.getTrack('t1')).toEqual(track)
   })
 
+  it('조정키는 곡별로 DB 재개방 후 유지하며 메타·볼륨과 독립적이다', () => {
+    const a = createTrack('pitch-a')
+    createTrack('pitch-b')
+    expect(store.getTrackPitch(a.id)).toBe(0)
+    store.setTrackPitch(a.id, 6)
+    store.setTrackPitch('pitch-b', -6)
+    store.close()
+    store = new LibraryStore(join(dir, 'library.sqlite'))
+    expect(store.getTrackPitch(a.id)).toBe(6)
+    expect(store.getTrackPitch('pitch-b')).toBe(-6)
+    expect(store.getTrack(a.id)).toEqual(a)
+    expect(store.getTrackVolumes(a.id)).toBeNull()
+    store.setTrackPitch(a.id, 0)
+    expect(store.getTrackPitch(a.id)).toBe(0)
+    for (const value of [NaN, Infinity, -7, 7, 1.5, '2', null]) {
+      expect(() => store.setTrackPitch(a.id, value as number)).toThrow('pitch must')
+      expect(store.getTrackPitch(a.id)).toBe(0)
+    }
+    expect(() => store.getTrackPitch('missing')).toThrow('track not found')
+    expect(() => store.setTrackPitch('missing', 0)).toThrow('track not found')
+  })
+
+  it('v7 곡은 조정키 0으로 마이그레이션한다', () => {
+    const a = createTrack('pitch-old')
+    store.close()
+    const raw = new Database(join(dir, 'library.sqlite'))
+    raw.exec('ALTER TABLE tracks DROP COLUMN pitch_semitones')
+    raw.pragma('user_version = 7')
+    raw.close()
+    store = new LibraryStore(join(dir, 'library.sqlite'))
+    expect(store.getTrackPitch(a.id)).toBe(0)
+    expect(store.getTrack(a.id)).toEqual(a)
+  })
+
   it('곡별 볼륨은 DB 재연결 후에도 유지되고 메타데이터는 변경하지 않는다', () => {
     const a = createTrack('a')
     createTrack('b')
@@ -371,7 +405,7 @@ describe('LibraryStore', () => {
 
       store = new LibraryStore(dbPath)
       const raw = new Database(dbPath, { readonly: true })
-      expect(raw.pragma('user_version', { simple: true })).toBe(7)
+      expect(raw.pragma('user_version', { simple: true })).toBe(8)
       const row = raw.prepare('SELECT sort_order FROM tracks WHERE id = ?').get('old') as {
         sort_order: number
       }
@@ -392,7 +426,7 @@ describe('LibraryStore', () => {
 
       store = new LibraryStore(dbPath)
       const raw = new Database(dbPath, { readonly: true })
-      expect(raw.pragma('user_version', { simple: true })).toBe(7)
+      expect(raw.pragma('user_version', { simple: true })).toBe(8)
       raw.close()
 
       const old = store.getTrack('old')!
@@ -429,7 +463,7 @@ describe('LibraryStore', () => {
 
       store = new LibraryStore(dbPath)
       const raw = new Database(dbPath, { readonly: true })
-      expect(raw.pragma('user_version', { simple: true })).toBe(7)
+      expect(raw.pragma('user_version', { simple: true })).toBe(8)
       const row = raw
         .prepare('SELECT import_kind, guide_kind, title, status FROM tracks WHERE id = ?')
         .get('old') as {

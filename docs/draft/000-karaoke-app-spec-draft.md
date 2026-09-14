@@ -156,6 +156,8 @@ stderr는 로그로만 사용. 취소는 SIGTERM, 워커는 부분 산출물을 
 
 SQLite `tracks`: `id, title, artist, album, duration, source_path, status(imported|separating|ready|failed), lyrics_source(lrclib_synced|lrclib_plain_aligned|user_aligned|none), created_at, updated_at`
 
+DB 스키마 버전 호환성 검사, 마이그레이션 원자성, 사전 백업·실패 복구 계약은 [`007-db-schema-safety.md`](../specs/007-db-schema-safety.md)를 따른다 (설계 완료, 구현 미착수).
+
 스키마 v2에서 `search_keys`, v3에서 `bpm, music_key, bpm_conf, key_conf, analysis_version, analysis_source`가 추가됐다 (v3 상세는 `docs/specs/002-bpm-key-analysis.md` §4.2). v4에서 `sort_order`. v5에서 `import_kind(separated|paired)`, `guide_kind(vocal_only|full_mix|none)` — 기존 행은 `separated`/`vocal_only`. `separated`+`full_mix`/`none`은 거부한다. paired 곡의 `source_path`는 가이드가 있으면 가이드 원본, 없으면 MR 원본이며 재생에는 쓰지 않는다.
 
 ### 4.4 가사 파이프라인

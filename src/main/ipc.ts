@@ -15,6 +15,7 @@ import type {
   ImportUserMeta,
   PairImportRequest,
   Track,
+  TrackVolumes,
   TrackFiles,
   TrackMetaInput
 } from '../shared/types'
@@ -120,6 +121,13 @@ export function registerIpcHandlers({
   ipcMain.handle(IPC_CHANNELS.reorderTracks, (_event, ids: string[]): void => {
     store.reorderTracks(ids)
   })
+
+  ipcMain.handle(IPC_CHANNELS.getTrackVolumes, (_event, trackId: string) =>
+    store.getTrackVolumes(trackId)
+  )
+  ipcMain.handle(IPC_CHANNELS.setTrackVolumes, (_event, trackId: string, volumes: TrackVolumes) =>
+    store.setTrackVolumes(trackId, volumes)
+  )
 
   ipcMain.handle(IPC_CHANNELS.deleteTrack, async (_event, trackId: string): Promise<void> => {
     const track = store.getTrack(trackId)

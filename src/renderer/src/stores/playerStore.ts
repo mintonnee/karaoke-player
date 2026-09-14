@@ -70,8 +70,12 @@ interface PlayerState {
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => {
-  engine.onPosition((seconds) => set({ position: seconds, engineState: engine.state }))
-  engine.onEnded(() => set({ engineState: engine.state }))
+  engine.onPosition((seconds) => {
+    if (get().engineState !== 'loading') set({ position: seconds, engineState: engine.state })
+  })
+  engine.onEnded(() => {
+    if (get().engineState !== 'loading') set({ engineState: engine.state })
+  })
   // 메타 편집이 현재 로드된 트랙이면 Transport 표시도 갱신
   window.api.onTrackUpdated((updated) => {
     const current = get().track
@@ -81,6 +85,28 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
   const syncEngine = (): void => set({ engineState: engine.state })
 
   let lastEngineGains = { inst: SILENCE_DB, guide: SILENCE_DB }
+  let loadRevision = 0
+  const pendingSaves = new Map<string, Promise<void>>()
+
+  const saveVolumes = (): void => {
+    const { track, masterDb, instDb, vocalDb, masterMuted, instMuted, vocalMuted } = get()
+    if (!track) return
+    const pending = window.api
+      .setTrackVolumes(track.id, { masterDb, instDb, vocalDb, masterMuted, instMuted, vocalMuted })
+      .catch((error: unknown) => {
+        reportError('player', `"${track.title}" 볼륨 저장 실패: ${String(error)}`, track.id)
+      })
+      .finally(() => {
+        if (pendingSaves.get(track.id) === pending) pendingSaves.delete(track.id)
+      })
+    pendingSaves.set(track.id, pending)
+  }
+
+  const canAdjustVolume = (db: number): boolean =>
+    Number.isFinite(db) &&
+    get().track !== null &&
+    get().engineState !== 'idle' &&
+    get().engineState !== 'loading'
 
   const applyGains = (): void => {
     const { track, mixSource, instDb, vocalDb, masterDb, instMuted, vocalMuted, masterMuted } =
@@ -121,6 +147,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     loadError: null,
 
     loadTrack: async (track) => {
+      const revision = ++loadRevision
+      engine.stop()
       lastEngineGains = { inst: SILENCE_DB, guide: SILENCE_DB }
       set({
         track,
@@ -129,14 +157,24 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         loopMarkA: null,
         engineState: 'loading',
         position: 0,
+        masterDb: 0,
+        masterMuted: false,
         ...initialMixerState(track.guideKind, window.api.guideVocalDefaultDb)
       })
       try {
+        await pendingSaves.get(track.id)
+        if (revision !== loadRevision) return
+        const volumes = await window.api.getTrackVolumes(track.id)
+        if (revision !== loadRevision) return
+        if (volumes) set(volumes)
         const files = await window.api.trackFiles(track.id)
+        if (revision !== loadRevision) return
         await engine.load({ inst: files.inst, guide: files.guide })
+        if (revision !== loadRevision) return
         applyGains()
         set({ duration: engine.duration, engineState: engine.state })
       } catch (error) {
+        if (revision !== loadRevision) return
         const message = error instanceof Error ? error.message : String(error)
         reportError('player', `"${track.title}" 재생 로드 실패: ${message}`, track.id)
         set({
@@ -148,6 +186,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       }
     },
     unload: () => {
+      ++loadRevision
       engine.stop()
       set({
         track: null,
@@ -175,30 +214,40 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       set({ position: seconds, engineState: engine.state })
     },
     setInstDb: (db) => {
+      if (!canAdjustVolume(db)) return
       const { track, mixSource } = get()
       if (!channelDbWritable(track?.guideKind ?? null, mixSource, 'inst')) return
-      set({ instDb: db })
+      set({ instDb: Math.max(-60, Math.min(0, Math.round(db))) })
       applyGains()
+      saveVolumes()
     },
     setVocalDb: (db) => {
+      if (!canAdjustVolume(db)) return
       const { track, mixSource } = get()
       if (!channelDbWritable(track?.guideKind ?? null, mixSource, 'guide')) return
-      set({ vocalDb: db })
+      set({ vocalDb: Math.max(-60, Math.min(0, Math.round(db))) })
       applyGains()
+      saveVolumes()
     },
     setMasterDb: (db) => {
+      if (!canAdjustVolume(db)) return
       set({ masterDb: Math.max(-60, Math.min(0, Math.round(db))) })
       applyGains()
+      saveVolumes()
     },
     toggleInstMute: () => {
+      if (!canAdjustVolume(0)) return
       if (get().track?.guideKind === 'full_mix') return
       set((state) => ({ instMuted: !state.instMuted }))
       applyGains()
+      saveVolumes()
     },
     toggleVocalMute: () => {
+      if (!canAdjustVolume(0)) return
       const { track, mixSource, vocalMuted } = get()
       set(reduceVocalKey({ guideKind: track?.guideKind ?? null, mixSource, vocalMuted }))
       applyGains()
+      if (get().vocalMuted !== vocalMuted) saveVolumes()
     },
     setMixSource: (source) => {
       if (get().track?.guideKind !== 'full_mix') return
@@ -207,8 +256,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       applyGains()
     },
     toggleMasterMute: () => {
+      if (!canAdjustVolume(0)) return
       set((state) => ({ masterMuted: !state.masterMuted }))
       applyGains()
+      saveVolumes()
     },
     setLoop: (range) => {
       set({ loop: range, loopMarkA: null })

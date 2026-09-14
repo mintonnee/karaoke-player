@@ -17,6 +17,16 @@ export type ImportKind = 'separated' | 'paired'
 /** 가이드 파일 의미. vocal_only=보컬 전용, full_mix=AR(반주+보컬). separated+full_mix는 금지 */
 export type GuideKind = 'vocal_only' | 'full_mix' | 'none'
 
+/** 곡별로 저장하는 믹서 페이더 값 (-60..0 dB)과 뮤트. 소스 선택은 제외한다. */
+export interface TrackVolumes {
+  masterDb: number
+  instDb: number
+  vocalDb: number
+  masterMuted: boolean
+  instMuted: boolean
+  vocalMuted: boolean
+}
+
 /** 가이드 재생 파일명. AR은 vocal.wav로 저장하지 않는다 */
 export function guideAudioFileName(guideKind: GuideKind): 'vocal.wav' | 'guide.wav' | null {
   if (guideKind === 'none') return null
@@ -288,6 +298,8 @@ export const IPC_CHANNELS = {
   pairImportProgress: 'library:pair-import-progress',
   listTracks: 'library:list',
   trackFiles: 'library:track-files',
+  getTrackVolumes: 'library:get-volumes',
+  setTrackVolumes: 'library:set-volumes',
   deleteTrack: 'library:delete',
   updateTrackMeta: 'library:update-meta',
   /** 메타 변경분과 커버 동작을 한 번에 저장 (스펙 005 §4.3) */

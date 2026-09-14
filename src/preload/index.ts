@@ -19,6 +19,7 @@ import type {
   PairImportProgressEvent,
   PairImportRequest,
   Track,
+  TrackVolumes,
   TrackFiles,
   TrackMetaInput,
   UrlImportProgressEvent
@@ -32,6 +33,10 @@ function subscribe<T>(channel: string, callback: (payload: T) => void): () => vo
 
 // Custom APIs for renderer
 const api = {
+  getTrackVolumes: (trackId: string): Promise<TrackVolumes | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.getTrackVolumes, trackId),
+  setTrackVolumes: (trackId: string, volumes: TrackVolumes): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.setTrackVolumes, trackId, volumes),
   listTracks: (query?: string): Promise<Track[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.listTracks, query),
   trackFiles: (trackId: string): Promise<TrackFiles> =>

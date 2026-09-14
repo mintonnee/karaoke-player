@@ -9,12 +9,13 @@ import type {
   ImportKind,
   LyricsSource,
   Track,
+  TrackVolumes,
   TrackMetaInput,
   TrackStatus
 } from '../../shared/types'
 
 /** §4.3 tracks 스키마. 변경 시 user_version을 올리고 마이그레이션을 추가한다. */
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 7
 
 interface TrackRow {
   id: string
@@ -166,7 +167,81 @@ export class LibraryStore {
         ALTER TABLE tracks ADD COLUMN guide_kind TEXT NOT NULL DEFAULT 'vocal_only';
       `)
     }
+    if (version < 6) {
+      this.db.transaction(() => {
+        this.db.exec(`
+          ALTER TABLE tracks ADD COLUMN master_db REAL;
+          ALTER TABLE tracks ADD COLUMN inst_db REAL;
+          ALTER TABLE tracks ADD COLUMN vocal_db REAL;
+        `)
+        this.db.pragma('user_version = 6')
+      })()
+    }
+    if (version < 7) {
+      this.db.transaction(() => {
+        this.db.exec(`
+          ALTER TABLE tracks ADD COLUMN master_muted INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE tracks ADD COLUMN inst_muted INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE tracks ADD COLUMN vocal_muted INTEGER NOT NULL DEFAULT 0;
+        `)
+        this.db.pragma('user_version = 7')
+      })()
+    }
     this.db.pragma(`user_version = ${SCHEMA_VERSION}`)
+  }
+
+  getTrackVolumes(id: string): TrackVolumes | null {
+    const row = this.db
+      .prepare(
+        `SELECT master_db AS masterDb, inst_db AS instDb, vocal_db AS vocalDb,
+                master_muted AS masterMuted, inst_muted AS instMuted, vocal_muted AS vocalMuted
+         FROM tracks WHERE id = ?`
+      )
+      .get(id) as { [K in keyof TrackVolumes]: number | null } | undefined
+    if (!row) throw new Error(`track not found: ${id}`)
+    const { masterDb, instDb, vocalDb } = row
+    if (masterDb === null || instDb === null || vocalDb === null) return null
+    return {
+      masterDb,
+      instDb,
+      vocalDb,
+      masterMuted: row.masterMuted === 1,
+      instMuted: row.instMuted === 1,
+      vocalMuted: row.vocalMuted === 1
+    }
+  }
+
+  setTrackVolumes(id: string, volumes: TrackVolumes): void {
+    if (
+      !volumes ||
+      !['masterDb', 'instDb', 'vocalDb'].every((key) => {
+        const value = volumes[key as keyof TrackVolumes]
+        return typeof value === 'number' && Number.isFinite(value) && value >= -60 && value <= 0
+      })
+    )
+      throw new Error('volume must be a finite number between -60 and 0 dB')
+    if (
+      !['masterMuted', 'instMuted', 'vocalMuted'].every(
+        (key) => typeof volumes[key as keyof TrackVolumes] === 'boolean'
+      )
+    )
+      throw new Error('mute must be a boolean')
+    const { masterDb, instDb, vocalDb } = volumes
+    const result = this.db
+      .prepare(
+        `UPDATE tracks SET master_db = @masterDb, inst_db = @instDb, vocal_db = @vocalDb,
+          master_muted = @masterMuted, inst_muted = @instMuted, vocal_muted = @vocalMuted WHERE id = @id`
+      )
+      .run({
+        id,
+        masterDb,
+        instDb,
+        vocalDb,
+        masterMuted: Number(volumes.masterMuted),
+        instMuted: Number(volumes.instMuted),
+        vocalMuted: Number(volumes.vocalMuted)
+      })
+    if (result.changes === 0) throw new Error(`track not found: ${id}`)
   }
 
   createTrack(input: CreateTrackInput): Track {

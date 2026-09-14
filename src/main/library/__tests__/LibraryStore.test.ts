@@ -1,3 +1,4 @@
+const unmuted = { masterMuted: false, instMuted: false, vocalMuted: false }
 import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
@@ -105,6 +106,123 @@ describe('LibraryStore', () => {
     expect(track.title).toBe('title-t1')
     expect(track.createdAt).toBe(track.updatedAt)
     expect(store.getTrack('t1')).toEqual(track)
+  })
+
+  it('곡별 볼륨은 DB 재연결 후에도 유지되고 메타데이터는 변경하지 않는다', () => {
+    const a = createTrack('a')
+    createTrack('b')
+    expect(store.getTrackVolumes('a')).toBeNull()
+    store.setTrackVolumes('a', { ...unmuted, masterDb: -4, instDb: -8, vocalDb: -15 })
+    store.setTrackVolumes('b', { ...unmuted, masterDb: 0, instDb: -60, vocalDb: -20 })
+    store.setTrackVolumes('a', {
+      masterMuted: true,
+      instMuted: true,
+      vocalMuted: true,
+      masterDb: -3,
+      instDb: -7,
+      vocalDb: -14
+    })
+    store.close()
+    store = new LibraryStore(join(dir, 'library.sqlite'))
+    expect(store.getTrackVolumes('a')).toEqual({
+      masterMuted: true,
+      instMuted: true,
+      vocalMuted: true,
+      masterDb: -3,
+      instDb: -7,
+      vocalDb: -14
+    })
+    expect(store.getTrackVolumes('b')).toEqual({
+      ...unmuted,
+      masterDb: 0,
+      instDb: -60,
+      vocalDb: -20
+    })
+    expect(store.mustGetTrack('a')).toEqual(a)
+    store.deleteTrack('a')
+    createTrack('a')
+    expect(store.getTrackVolumes('a')).toBeNull()
+  })
+
+  it.each([NaN, Infinity, -Infinity, -61, 1, '-5', null, undefined])(
+    '비정상 볼륨 %s를 거부하고 저장값을 보존한다',
+    (value) => {
+      createTrack('a')
+      const original = { ...unmuted, masterDb: -3, instDb: -7, vocalDb: -14 }
+      store.setTrackVolumes('a', original)
+      for (const key of ['masterDb', 'instDb', 'vocalDb']) {
+        expect(() => store.setTrackVolumes('a', { ...original, [key]: value })).toThrow(
+          'volume must'
+        )
+        expect(store.getTrackVolumes('a')).toEqual(original)
+      }
+    }
+  )
+
+  it.each([0, 1, 'false', null, undefined])('비정상 뮤트 %s를 거부한다', (value) => {
+    createTrack('a')
+    const original = { ...unmuted, masterDb: -3, instDb: -7, vocalDb: -14 }
+    store.setTrackVolumes('a', original)
+    for (const key of ['masterMuted', 'instMuted', 'vocalMuted']) {
+      expect(() => store.setTrackVolumes('a', { ...original, [key]: value })).toThrow('mute must')
+      expect(store.getTrackVolumes('a')).toEqual(original)
+    }
+  })
+
+  it('v6 볼륨 저장값을 보존하면서 뮤트는 해제 상태로 마이그레이션한다', () => {
+    store.close()
+    const dbPath = join(dir, 'v6.sqlite')
+    createV4Database(dbPath)
+    const raw = new Database(dbPath)
+    raw.exec(`
+      ALTER TABLE tracks ADD COLUMN import_kind TEXT NOT NULL DEFAULT 'separated';
+      ALTER TABLE tracks ADD COLUMN guide_kind TEXT NOT NULL DEFAULT 'vocal_only';
+      ALTER TABLE tracks ADD COLUMN master_db REAL;
+      ALTER TABLE tracks ADD COLUMN inst_db REAL;
+      ALTER TABLE tracks ADD COLUMN vocal_db REAL;
+      UPDATE tracks SET master_db = -3, inst_db = -7, vocal_db = -14;
+    `)
+    raw.pragma('user_version = 6')
+    raw.close()
+    store = new LibraryStore(dbPath)
+    expect(store.getTrackVolumes('old')).toEqual({
+      ...unmuted,
+      masterDb: -3,
+      instDb: -7,
+      vocalDb: -14
+    })
+  })
+
+  it('없는 곡의 볼륨 읽기와 저장은 실패하며 삭제된 곡을 재생성하지 않는다', () => {
+    expect(() => store.getTrackVolumes('missing')).toThrow('track not found')
+    expect(() =>
+      store.setTrackVolumes('missing', { ...unmuted, masterDb: 0, instDb: 0, vocalDb: 0 })
+    ).toThrow('track not found')
+    expect(store.listTracks()).toEqual([])
+  })
+
+  it('v5 DB 마이그레이션은 기존 곡을 보존하고 볼륨을 미설정으로 둔다', () => {
+    store.close()
+    const dbPath = join(dir, 'v5.sqlite')
+    createV4Database(dbPath)
+    const raw = new Database(dbPath)
+    raw.exec(
+      "ALTER TABLE tracks ADD COLUMN import_kind TEXT NOT NULL DEFAULT 'separated'; ALTER TABLE tracks ADD COLUMN guide_kind TEXT NOT NULL DEFAULT 'vocal_only';"
+    )
+    raw.pragma('user_version = 5')
+    raw.close()
+    store = new LibraryStore(dbPath)
+    expect(store.mustGetTrack('old')).toMatchObject({ title: '옛 트랙', status: 'ready' })
+    expect(store.getTrackVolumes('old')).toBeNull()
+    store.setTrackVolumes('old', { ...unmuted, masterDb: -1, instDb: -2, vocalDb: -3 })
+    store.close()
+    store = new LibraryStore(dbPath)
+    expect(store.getTrackVolumes('old')).toEqual({
+      ...unmuted,
+      masterDb: -1,
+      instDb: -2,
+      vocalDb: -3
+    })
   })
 
   it('separated + full_mix 조합은 거부하고 행을 만들지 않는다', () => {
@@ -253,7 +371,7 @@ describe('LibraryStore', () => {
 
       store = new LibraryStore(dbPath)
       const raw = new Database(dbPath, { readonly: true })
-      expect(raw.pragma('user_version', { simple: true })).toBe(5)
+      expect(raw.pragma('user_version', { simple: true })).toBe(7)
       const row = raw.prepare('SELECT sort_order FROM tracks WHERE id = ?').get('old') as {
         sort_order: number
       }
@@ -274,7 +392,7 @@ describe('LibraryStore', () => {
 
       store = new LibraryStore(dbPath)
       const raw = new Database(dbPath, { readonly: true })
-      expect(raw.pragma('user_version', { simple: true })).toBe(5)
+      expect(raw.pragma('user_version', { simple: true })).toBe(7)
       raw.close()
 
       const old = store.getTrack('old')!
@@ -304,14 +422,14 @@ describe('LibraryStore', () => {
   })
 
   describe('스키마 v5 마이그레이션 (가져오기 종류)', () => {
-    it('v4 DB를 열면 v5로 올라가고 기존 행은 separated/vocal_only이며 데이터가 보존된다', () => {
+    it('v4 DB를 열면 최신 버전으로 올라가고 기존 행은 separated/vocal_only이며 데이터가 보존된다', () => {
       store.close()
       const dbPath = join(dir, 'v4-to-v5.sqlite')
       createV4Database(dbPath)
 
       store = new LibraryStore(dbPath)
       const raw = new Database(dbPath, { readonly: true })
-      expect(raw.pragma('user_version', { simple: true })).toBe(5)
+      expect(raw.pragma('user_version', { simple: true })).toBe(7)
       const row = raw
         .prepare('SELECT import_kind, guide_kind, title, status FROM tracks WHERE id = ?')
         .get('old') as {

@@ -75,6 +75,8 @@
 
 ### 4.1 AudioEngine 인터페이스 (결정 — 변경 시 반드시 문서 갱신)
 
+연속 로드는 마지막 요청만 버퍼와 상태를 확정한다. 이전 요청의 늦은 성공·실패는 최신 상태를 변경하지 않는다. 로드 중 `stop()` 또는 `dispose()`는 진행 중 요청을 무효화한다.
+
 렌더러의 어떤 코드도 `AudioContext`를 직접 만지지 않는다. 오직 `WebAudioEngine` 내부에서만 사용한다.
 
 `none`은 MR 단독이며 가이드 파일과 재생 채널이 없다. 기존 AR 곡의 재생 계약은 `docs/specs/004-import-dialog.md` §4.5에 정의한다. Main은 `TrackFiles.guide` + `guideKind`로 경로를 고른다. `TrackFiles.vocal`은 I4가 `AudioEngine.load`를 `{ inst, guide }`로 바꿀 때까지의 호환 별칭이며 `guide`와 같은 경로다. 게인/레벨 채널명 `vocal`은 I4에서 가이드 의미에 맞게 조정한다.
@@ -85,7 +87,7 @@ export interface AudioEngine {
   load(tracks: { inst: string; guide: string | null }): Promise<void>
   play(): void
   pause(): void
-  stop(): void // pause + seek(0)
+  stop(): void // 로드 중이면 취소하고 idle, 그 외에는 pause + seek(0)
   seek(seconds: number): void
   setLoop(range: { start: number; end: number } | null): void
 

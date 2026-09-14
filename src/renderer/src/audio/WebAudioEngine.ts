@@ -68,6 +68,7 @@ export class WebAudioEngine implements AudioEngine {
   private timer: ReturnType<typeof setInterval> | null = null
   /** stop/seek로 소스를 교체할 때 이전 소스의 onended를 무효화한다 */
   private generation = 0
+  private loadGeneration = 0
 
   get duration(): number {
     return this.trackDuration
@@ -78,6 +79,7 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   async load(tracks: { inst: string; guide: string | null }): Promise<void> {
+    const loadGeneration = ++this.loadGeneration
     this.stopSources()
     this.stopTimer()
     this.releaseChannels()
@@ -91,6 +93,7 @@ export class WebAudioEngine implements AudioEngine {
         tracks.guide === null ? null : this.decodeFile(ctx, tracks.guide),
         this.ensurePitchGraph(ctx)
       ])
+      if (loadGeneration !== this.loadGeneration) return
       // 이전 곡 게인이 새 버퍼에 붙지 않게 무음에서 시작해 applyGains가 올린다
       this.gainsDb = { inst: Number.NEGATIVE_INFINITY, vocal: Number.NEGATIVE_INFINITY }
       this.channels = {
@@ -104,6 +107,7 @@ export class WebAudioEngine implements AudioEngine {
       this.engineState = 'ready'
       this.pushPosition(0)
     } catch (error) {
+      if (loadGeneration !== this.loadGeneration) return
       this.engineState = 'idle'
       this.channels = null
       this.trackDuration = 0
@@ -127,6 +131,11 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   stop(): void {
+    ++this.loadGeneration
+    if (this.engineState === 'loading') {
+      this.engineState = 'idle'
+      this.trackDuration = 0
+    }
     if (!this.channels) return
     this.stopSources()
     this.stopTimer()
@@ -193,6 +202,7 @@ export class WebAudioEngine implements AudioEngine {
   }
 
   dispose(): void {
+    ++this.loadGeneration
     this.stopSources()
     this.stopTimer()
     this.pushSilentLevels()
@@ -222,6 +232,7 @@ export class WebAudioEngine implements AudioEngine {
     if (!this.pitchGraphReady) {
       this.pitchGraphReady = (async () => {
         await ctx.audioWorklet.addModule(PITCH_WORKLET_URL)
+        if (this.ctx !== ctx) return // dispose 뒤 완료된 이전 컨텍스트의 그래프를 만들지 않는다
         this.pitchNode = new AudioWorkletNode(ctx, 'soundtouch-processor', {
           channelCount: 2,
           outputChannelCount: [2]

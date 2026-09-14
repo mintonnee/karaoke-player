@@ -43,7 +43,7 @@
 1. `pnpm build:zip`이 `dist/`에 zip을 생성하고, 압축 안에 `resources/bin/uv.exe`, `resources/bin/yt-dlp.exe`, `resources/bin/deno.exe`, `resources/sidecar/`(pyproject.toml, uv.lock, src/)가 있으며 `.venv`/`__pycache__`는 없다.
 2. `pnpm build:msix`가 `dist/`에 appx 패키지를 생성하고, 패키지 안에 `yt-dlp.exe`가 없다 (그 외 리소스 구성은 기준 1과 동일).
 3. venv가 없는 상태(첫 실행 또는 `<userData>/sidecar` 삭제 후)에서 패키징된 앱을 실행하면 부트스트랩 UI가 단계/진행 상태를 표시하고, 완료 후 로컬 파일 임포트 → 분리 → 재생이 동작한다.
-4. 부트스트랩 완료 후 앱을 재시작하면 부트스트랩 UI 없이 즉시 라이브러리 화면이 뜬다 (venv 재사용, 준비 판정은 uv.lock 해시 마커).
+4. 부트스트랩 완료 후 앱을 재시작하면 부트스트랩 UI 없이 즉시 라이브러리 화면이 뜬다 (venv 재사용, 준비 판정은 프로젝트 해시 마커).
 5. zip판에서 YouTube URL을 입력하면 다운로드 진행률이 표시되고, 완료 시 트랙이 라이브러리에 추가되며 기존 파이프라인(분리 → 가사)이 자동 시작된다. 트랙 커버로 YouTube 썸네일이 표시된다.
 6. yt-dlp 리소스가 없는 실행(MSIX판 또는 dev에서 리소스 미배치)에서는 URL 임포트 UI가 렌더링되지 않는다.
 7. 부트스트랩 실패(네트워크 차단으로 재현) 시 오류 메시지와 재시도 버튼이 표시되고 앱이 크래시하지 않는다. 재시도로 이어서 진행할 수 있다.
@@ -70,7 +70,7 @@
 
 - 번들 리소스: `resources/sidecar/`(pyproject.toml, uv.lock, `src/karaoke_worker/`), `resources/bin/uv.exe`. 리소스 준비는 빌드 전 스크립트가 레포 `sidecar/`에서 `.venv` 등을 제외하고 복사한다.
 - 첫 실행 시 sidecar 프로젝트를 `<userData>/sidecar`로 복사하고 `uv sync --project <userData>/sidecar`를 실행한다. `UV_CACHE_DIR`·`UV_PYTHON_INSTALL_DIR`도 사용자 쓰기 가능 경로로 고정한다 (MSIX 읽기 전용 제약).
-- 준비 판정: sync 성공 시 `<userData>/sidecar/.ready`에 uv.lock 해시를 기록한다. 앱 업데이트로 lock이 바뀌면 해시 불일치로 재sync한다.
+- 준비 판정: sync 성공 시 `<userData>/sidecar/.ready`에 `src/`·`pyproject.toml`·`uv.lock`의 경로와 내용으로 계산한 해시를 기록한다. 소스 추가·변경·삭제 또는 설정·lock 변경 시 재복사·재sync하며 `.venv`와 다운로드 캐시는 보존한다. 기존 lock 전용 마커도 한 번 갱신한다. 캐시·pyc 등 복사 제외 항목은 해시에 포함하지 않는다.
 - `SidecarManager` 생성 분기: `app.isPackaged`이면 번들 `uv.exe` + `<userData>/sidecar`, dev이면 기존 `createUvSidecarManager(레포 sidecar)`.
 - 진행 UI: 부트스트랩 중에는 라이브러리 대신 전용 화면을 표시한다. uv 출력의 정밀 파싱은 요구하지 않는다 — 단계 텍스트 + 불확정 진행 표시로 충분하다. **성공 기준(3·4·7)이 우선이고 구현 방식은 자유다.**
 - 모델 다운로드(Demucs/whisper)는 부트스트랩 범위 밖 — 기존처럼 첫 separate/transcribe 실행 시 각 라이브러리가 내려받는다.
@@ -109,7 +109,7 @@
 
 ### 4.5 구현 기록 (2026-09-02, 멀티 에이전트 실행 결과)
 
-- **부트스트랩 (P1)**: 준비 판정은 `<userData>/sidecar/.ready`의 sha256(번들 `uv.lock`) 일치 **AND** `.venv` 존재. sync는 `uv sync --project <dir> --frozen`(번들 lock 그대로 설치), 워커 실행은 `uv run --project <dir> --no-sync karaoke_worker`(매 실행 네트워크·lock 검사 없음). env는 `UV_CACHE_DIR`·`UV_PYTHON_INSTALL_DIR`에 더해 `UV_MANAGED_PYTHON=1`(시스템 Python 무시)·`UV_NO_PROGRESS=1`. 재복사 시 `.venv`는 남겨 이어받기. 마커는 sync 성공 경로에서만 기록. 상태 IPC: `bootstrap:get`/`bootstrap:retry`/`bootstrap:state`, 렌더러는 ready 전까지 `BootstrapScreen`만 렌더.
+- **부트스트랩 (P1)**: 준비 판정은 `<userData>/sidecar/.ready`의 번들 프로젝트 해시 일치 **AND** `.venv` 존재. sync는 `uv sync --project <dir> --frozen`(번들 lock 그대로 설치), 워커 실행은 `uv run --project <dir> --no-sync karaoke_worker`(매 실행 네트워크·lock 검사 없음). env는 `UV_CACHE_DIR`·`UV_PYTHON_INSTALL_DIR`에 더해 `UV_MANAGED_PYTHON=1`(시스템 Python 무시)·`UV_NO_PROGRESS=1`. 재복사 시 `.venv`는 남겨 이어받기. 마커는 sync 성공 경로에서만 기록. 상태 IPC: `bootstrap:get`/`bootstrap:retry`/`bootstrap:state`, 렌더러는 ready 전까지 `BootstrapScreen`만 렌더.
 - **빌드 (P2)**: 공통 `electron-builder.yml` + `extends: 'file:...'`로 상속하는 `electron-builder.{zip,msix}.mjs`. appx identity는 `APPX_IDENTITY_NAME`/`APPX_PUBLISHER`/`APPX_PUBLISHER_DISPLAY_NAME`/`APPX_APPLICATION_ID` env로 주입, 미설정 시 placeholder. `files`에서 `sidecar/**`(레포 .venv 수 GB)·`resources/bin/**`·`resources/sidecar/**` 제외. 고정 바이너리: uv 0.12.9, yt-dlp 2026.08.19, deno 2.9.6 (`scripts/prepare-resources.mjs` 상수). deno는 MSIX에도 포함(제외 대상은 yt-dlp뿐, 활성화 조건이 "둘 다"라 URL UI는 켜지지 않음). `sidecar/.python-version`도 스테이징. `publish`·nsis 섹션 제거.
 - **URL 임포트 (P3)**: yt-dlp 인자 `--encoding utf-8 -f bestaudio[ext=m4a] --no-playlist --write-thumbnail --no-mtime --newline --progress --print after_move:filepath --print "after_move:__artist__=%(artist,channel,uploader|)s" --print "after_move:__title__=%(title|)s" --js-runtimes deno:<binDir>deno.exe -o <scratch>%(title)s [%(id)s].%(ext)s <url>`. `--js-runtimes`는 백슬래시 절대 경로여야 인식됨(라이브 확인). 진행률은 `[download]  NN.N%` 파싱 → `library:url-import-progress`. 기능 플래그는 `app:capabilities` IPC. 커버 복사 후 `updatedAt`을 굴려(`store.updateMeta` 재호출) 렌더러 `CoverArt` 캐시 키를 바꾼다. URL은 `^https?://`만 허용(argv 주입 차단).
 - **정체성·고지 (P4)**: 아이콘은 `uv run --with pillow python scripts/generate-icons.py`로 재생성(ico 7사이즈, appx 타일 6종 — 310×310은 electron-builder 규약상 `LargeTile.png`). `asarUnpack: resources/**` 제거(`?asset` import는 asar 내부 경로를 그대로 참조하고 Linux 분기에서만 쓰임). `scripts/licenses/`에 uv(MIT+Apache-2.0)·deno(MIT)·yt-dlp(Unlicense) 전문 추가.

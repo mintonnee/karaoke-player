@@ -10,6 +10,7 @@ import {
   SidecarBootstrap,
   buildUvEnv,
   copySidecarProject,
+  computeProjectHash,
   isSidecarReady,
   shouldCopySidecarPath
 } from '../SidecarBootstrap'
@@ -114,7 +115,7 @@ describe('isSidecarReady', () => {
 
   it('마커 일치 + .venv 존재 → true', async () => {
     await mkdir(join(target, '.venv'), { recursive: true })
-    await writeFile(join(target, READY_MARKER_FILE), `${LOCK_HASH}\n`)
+    await writeFile(join(target, READY_MARKER_FILE), `${await computeProjectHash(bundled)}\n`)
     expect(await isSidecarReady(bundled, target)).toBe(true)
   })
 
@@ -126,12 +127,44 @@ describe('isSidecarReady', () => {
 
   it('마커 일치해도 .venv가 없으면 false', async () => {
     await mkdir(target, { recursive: true })
-    await writeFile(join(target, READY_MARKER_FILE), `${LOCK_HASH}\n`)
+    await writeFile(join(target, READY_MARKER_FILE), `${await computeProjectHash(bundled)}\n`)
     expect(await isSidecarReady(bundled, target)).toBe(false)
   })
 })
 
 describe('SidecarBootstrap', () => {
+  it.each(['src/karaoke_worker/cli.py', 'pyproject.toml'])(
+    'lock이 같아도 %s 변경 시 기존 venv를 보존하고 재복사한다',
+    async (file) => {
+      await copySidecarProject(bundled, target)
+      await mkdir(join(target, '.venv'), { recursive: true })
+      await writeFile(join(target, '.venv', 'keep'), 'cached')
+      await writeFile(join(target, READY_MARKER_FILE), await computeProjectHash(bundled))
+      await writeFile(join(bundled, file), 'updated')
+      const { bootstrap, statuses } = createBootstrap('ok')
+      expect((await bootstrap.start()).status).toBe('ready')
+      expect(statuses).toContain('copying')
+      expect(await readFile(join(target, file), 'utf-8')).toBe('updated')
+      expect(await readFile(join(target, '.venv', 'keep'), 'utf-8')).toBe('cached')
+    }
+  )
+
+  it('기존 lock 전용 마커는 한 번 재동기화한다', async () => {
+    await mkdir(join(target, '.venv'), { recursive: true })
+    await writeFile(join(target, READY_MARKER_FILE), LOCK_HASH)
+    const { bootstrap, statuses } = createBootstrap('ok')
+    expect((await bootstrap.start()).status).toBe('ready')
+    expect(statuses).toContain('syncing')
+  })
+
+  it('소스 삭제는 해시를 바꾸지만 제외 캐시는 영향을 주지 않는다', async () => {
+    const initial = await computeProjectHash(bundled)
+    await writeFile(join(bundled, 'src', 'karaoke_worker', '__pycache__', 'new.pyc'), 'cache')
+    expect(await computeProjectHash(bundled)).toBe(initial)
+    await rm(join(bundled, 'src', 'karaoke_worker', 'cli.py'))
+    expect(await computeProjectHash(bundled)).not.toBe(initial)
+  })
+
   it('첫 실행: 복사 → sync → ready, 마커에 lock 해시를 기록한다', async () => {
     const { bootstrap, statuses } = createBootstrap('ok')
     // fake uv는 .venv를 만들지 않으므로 마커 검증만 본다
@@ -141,14 +174,16 @@ describe('SidecarBootstrap', () => {
     expect(statuses).toEqual(['checking', 'copying', 'syncing', 'ready'])
     expect(existsSync(join(target, 'src', 'karaoke_worker', 'cli.py'))).toBe(true)
     expect(existsSync(join(target, 'src', 'karaoke_worker', '__pycache__'))).toBe(false)
-    expect((await readFile(join(target, READY_MARKER_FILE), 'utf-8')).trim()).toBe(LOCK_HASH)
+    expect((await readFile(join(target, READY_MARKER_FILE), 'utf-8')).trim()).toBe(
+      await computeProjectHash(bundled)
+    )
     expect(state.log.some((line) => line.includes('Installed 42 packages'))).toBe(true)
     await expect(bootstrap.whenReady()).resolves.toBeUndefined()
   })
 
   it('마커가 일치하면 sync를 건너뛰고 즉시 ready', async () => {
     await mkdir(join(target, '.venv'), { recursive: true })
-    await writeFile(join(target, READY_MARKER_FILE), `${LOCK_HASH}\n`)
+    await writeFile(join(target, READY_MARKER_FILE), `${await computeProjectHash(bundled)}\n`)
     // uv가 실패하는 모드라도 호출되지 않으므로 ready여야 한다
     const { bootstrap, statuses } = createBootstrap('fail')
     const state = await bootstrap.start()
@@ -170,7 +205,9 @@ describe('SidecarBootstrap', () => {
     expect(statuses).toEqual(['checking', 'copying', 'syncing', 'ready'])
     expect(existsSync(join(target, 'src', 'stale.py'))).toBe(false)
     expect(existsSync(join(target, '.venv'))).toBe(true)
-    expect((await readFile(join(target, READY_MARKER_FILE), 'utf-8')).trim()).toBe(LOCK_HASH)
+    expect((await readFile(join(target, READY_MARKER_FILE), 'utf-8')).trim()).toBe(
+      await computeProjectHash(bundled)
+    )
   })
 
   it('sync 실패 → error, 마커를 남기지 않는다', async () => {
@@ -208,7 +245,9 @@ describe('SidecarBootstrap', () => {
       'syncing',
       'ready'
     ])
-    expect((await readFile(join(target, READY_MARKER_FILE), 'utf-8')).trim()).toBe(LOCK_HASH)
+    expect((await readFile(join(target, READY_MARKER_FILE), 'utf-8')).trim()).toBe(
+      await computeProjectHash(bundled)
+    )
     await bootstrap.whenReady()
     expect(ready).toBe(true)
   })

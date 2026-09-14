@@ -22,7 +22,7 @@ export interface AudioEngine {
   load(tracks: { inst: string; guide: string | null }): Promise<void>
   play(): void
   pause(): void
-  stop(): void // pause + seek(0)
+  stop(): void // 로드 중이면 취소하고 idle, 그 외에는 pause + seek(0)
   seek(seconds: number): void
   setLoop(range: LoopRange | null): void
 

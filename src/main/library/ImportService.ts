@@ -167,20 +167,31 @@ export class ImportService {
 
     const id = randomUUID()
     const trackDir = this.trackDir(id)
-    await mkdir(trackDir, { recursive: true })
-    await copyFile(filePath, join(trackDir, `source${extname(filePath)}`))
-
-    const track = this.options.store.createTrack({
-      id,
-      title:
-        pickMetaField(userMeta?.title, probe.title, hint?.title) ??
-        basename(filePath, extname(filePath)),
-      artist: pickMetaField(userMeta?.artist, probe.artist, hint?.artist) ?? null,
-      album: probe.album ?? null,
-      duration: probe.duration,
-      sourcePath: filePath
-    })
-    if (userMeta?.coverPath) await installUserCover(trackDir, userMeta.coverPath)
+    let track: Track
+    try {
+      await mkdir(trackDir, { recursive: true })
+      await copyFile(filePath, join(trackDir, `source${extname(filePath)}`))
+      if (userMeta?.coverPath) await installUserCover(trackDir, userMeta.coverPath)
+      // 필수 파일 준비 후 등록을 확정한다. 그전에는 알림과 후속 작업을 시작하지 않는다.
+      track = this.options.store.createTrack({
+        id,
+        title:
+          pickMetaField(userMeta?.title, probe.title, hint?.title) ??
+          basename(filePath, extname(filePath)),
+        artist: pickMetaField(userMeta?.artist, probe.artist, hint?.artist) ?? null,
+        album: probe.album ?? null,
+        duration: probe.duration,
+        sourcePath: filePath
+      })
+    } catch (error) {
+      // INSERT 이후 결과 조회가 실패한 경우까지 보상한다.
+      try {
+        this.options.store.deleteTrack(id)
+      } finally {
+        await rm(trackDir, { recursive: true, force: true })
+      }
+      throw error
+    }
     this.notifyTrack(track)
     void this.options.fetchLyrics?.(track)
     this.options.refreshSearchKeys?.(track)

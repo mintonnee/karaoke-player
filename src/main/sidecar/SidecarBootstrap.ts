@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import { createHash } from 'crypto'
-import { cp, mkdir, readFile, rm, stat, writeFile } from 'fs/promises'
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'fs/promises'
 import { join, relative } from 'path'
 import type { BootstrapState } from '../../shared/types'
 
@@ -88,6 +88,22 @@ export async function computeLockHash(lockPath: string): Promise<string> {
   return createHash('sha256').update(content).digest('hex')
 }
 
+/** 소스만 바뀐 릴리스도 갱신한다. 경로와 파일 해시를 정렬해 플랫폼과 순서에 독립적이다. */
+export async function computeProjectHash(projectDir: string): Promise<string> {
+  const entries: Array<[string, string]> = []
+  const visit = async (rel: string): Promise<void> => {
+    if (!shouldCopySidecarPath(rel)) return
+    const path = join(projectDir, rel)
+    if ((await stat(path)).isDirectory()) {
+      for (const name of (await readdir(path)).sort()) await visit(`${rel}/${name}`)
+    } else {
+      entries.push([rel, await computeLockHash(path)])
+    }
+  }
+  for (const name of ['pyproject.toml', 'uv.lock', 'src']) await visit(name)
+  return createHash('sha256').update(JSON.stringify(entries)).digest('hex')
+}
+
 export async function readReadyMarker(targetSidecarDir: string): Promise<string | null> {
   try {
     const raw = await readFile(join(targetSidecarDir, READY_MARKER_FILE), 'utf-8')
@@ -108,7 +124,7 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /**
- * 준비 판정: 마커의 해시가 번들 uv.lock 해시와 같고 .venv가 존재해야 ready.
+ * 준비 판정: 마커의 해시가 번들 프로젝트 해시와 같고 .venv가 존재해야 ready.
  * (마커만 남고 .venv가 지워진 경우도 재sync 대상)
  */
 export async function isSidecarReady(
@@ -117,8 +133,8 @@ export async function isSidecarReady(
 ): Promise<boolean> {
   const marker = await readReadyMarker(targetSidecarDir)
   if (marker === null) return false
-  const lockHash = await computeLockHash(join(bundledSidecarDir, 'uv.lock'))
-  if (marker !== lockHash) return false
+  const projectHash = await computeProjectHash(bundledSidecarDir)
+  if (marker !== projectHash) return false
   return exists(join(targetSidecarDir, '.venv'))
 }
 
@@ -218,7 +234,7 @@ export class SidecarBootstrap implements BootstrapController {
       if (await isSidecarReady(bundledSidecarDir, targetSidecarDir)) {
         return this.markReady()
       }
-      const lockHash = await computeLockHash(join(bundledSidecarDir, 'uv.lock'))
+      const projectHash = await computeProjectHash(bundledSidecarDir)
 
       this.setState({ status: 'copying', message: '사이드카 복사 중' })
       await copySidecarProject(bundledSidecarDir, targetSidecarDir)
@@ -230,7 +246,7 @@ export class SidecarBootstrap implements BootstrapController {
       await this.runUvSync()
 
       // 실패 시에는 여기 도달하지 않으므로 마커는 성공 경로에서만 남는다
-      await writeFile(join(targetSidecarDir, READY_MARKER_FILE), `${lockHash}\n`, 'utf-8')
+      await writeFile(join(targetSidecarDir, READY_MARKER_FILE), `${projectHash}\n`, 'utf-8')
       return this.markReady()
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

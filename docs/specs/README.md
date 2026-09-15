@@ -12,9 +12,9 @@ Karaoke Player의 기능 스펙 문서 모음. 새 스펙은 아래 템플릿 �
 | 003  | [`003-player-layout.md`](003-player-layout.md)                                     | 000 S2.2·S6.2 UI 배치 — 믹서(레벨 미터)·키 패널 사이드 컬럼         | 구현 완료 (기준 7·8 자동 검증, 1–6·9 사용자 수동 확인 완료)                            |
 | 004  | [`004-import-dialog.md`](004-import-dialog.md)                                     | 000 S1.3·001 §4.3 — 가져오기 팝업, 보컬 포함 음원·MR/가이드·YouTube | 구현 완료 (자동 검증 통과, UI·청취·라이브 YouTube 수동 확인 대기)                      |
 | 005  | [`005-track-edit-dialog.md`](005-track-edit-dialog.md)                             | 000 S3.2 — 곡 수정 팝업·앨범 커버 변경                              | 구현 완료 (자동 검증 통과, UI·재시작 수동 확인 대기)                                   |
-| 006 | [`006-track-pitch.md`](006-track-pitch.md) | 003 §4.3 — 곡별 조정키 자동 저장·복원 | 구현 완료 (자동 검증 통과, 사용자 작동 확인 완료) |
-| 007 | [`007-db-schema-safety.md`](007-db-schema-safety.md) | 000 §4.3·S3 — DB 스키마 버전 보호·백업·복구 | 설계 완료 (구현 미착수) |
-| 008 | [`008-runtime-dependency-lock.md`](008-runtime-dependency-lock.md) | 001 §4.1–4.3 — Python·모델·외부 실행 파일 lock | 설계 완료 (구현 미착수) |
+| 006  | [`006-track-pitch.md`](006-track-pitch.md)                                         | 003 §4.3 — 곡별 조정키 자동 저장·복원                               | 구현 완료 (자동 검증 통과, 사용자 작동 확인 완료)                                      |
+| 007  | [`007-db-schema-safety.md`](007-db-schema-safety.md)                               | 000 §4.3·S3 — DB 스키마 버전 보호·백업·복구                         | 구현 완료 (자동 검증 통과, 패키징 앱 수동 확인 대기)                                   |
+| 008  | [`008-runtime-dependency-lock.md`](008-runtime-dependency-lock.md)                 | 001 §4.1–4.3 — Python·모델·외부 실행 파일 lock                      | 설계 완료 (구현 미착수)                                                                |
 
 ## 템플릿
 

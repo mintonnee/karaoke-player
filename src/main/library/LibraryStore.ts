@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3'
+import type Database from 'better-sqlite3'
 import { hangulIncludes, hangulLooseIncludes } from '../../shared/hangul'
 import { parseUserBpm, parseUserMusicKey } from '../../shared/trackEdit'
 import type { TrackMetaPatch } from '../../shared/trackEdit'
@@ -13,9 +13,27 @@ import type {
   TrackMetaInput,
   TrackStatus
 } from '../../shared/types'
+import { openLibraryDatabase } from './db/open'
+import type { LibraryStoreOptions } from './db/options'
 
-/** §4.3 tracks 스키마. 변경 시 user_version을 올리고 마이그레이션을 추가한다. */
-const SCHEMA_VERSION = 8
+export {
+  DEFAULT_BUSY_TIMEOUT_MS,
+  DEFAULT_LIBRARY_APP_VERSION,
+  LIBRARY_DB_ERROR_CODES,
+  LibraryDbError,
+  SCHEMA_VERSION,
+  defaultLibraryBackupDir,
+  isLibraryDbError,
+  restoreLibraryBackup
+} from './db'
+export type {
+  LibraryBackupFault,
+  LibraryDbErrorCode,
+  LibraryDbErrorInit,
+  LibraryMigrateFault,
+  LibraryStoreDebugOptions,
+  LibraryStoreOptions
+} from './db'
 
 interface TrackRow {
   id: string
@@ -111,89 +129,8 @@ function nextUpdatedAt(previous: string): string {
 export class LibraryStore {
   private readonly db: Database.Database
 
-  constructor(dbPath: string) {
-    this.db = new Database(dbPath)
-    this.db.pragma('journal_mode = WAL')
-    this.migrate()
-  }
-
-  private migrate(): void {
-    const version = this.db.pragma('user_version', { simple: true }) as number
-    if (version < 1) {
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS tracks (
-          id            TEXT PRIMARY KEY,
-          title         TEXT NOT NULL,
-          artist        TEXT,
-          album         TEXT,
-          duration      REAL NOT NULL,
-          source_path   TEXT NOT NULL,
-          status        TEXT NOT NULL,
-          lyrics_source TEXT NOT NULL DEFAULT 'none',
-          created_at    TEXT NOT NULL,
-          updated_at    TEXT NOT NULL
-        )
-      `)
-    }
-    if (version < 2) {
-      this.db.exec(`ALTER TABLE tracks ADD COLUMN search_keys TEXT NOT NULL DEFAULT ''`)
-    }
-    if (version < 3) {
-      // 스펙 002 §4.2: BPM·키 분석 컬럼. 기존 행은 미분석(none/0)으로 시작해 백필 대상이 된다
-      this.db.exec(`
-        ALTER TABLE tracks ADD COLUMN bpm              REAL;
-        ALTER TABLE tracks ADD COLUMN music_key        TEXT;
-        ALTER TABLE tracks ADD COLUMN bpm_conf         REAL;
-        ALTER TABLE tracks ADD COLUMN key_conf         REAL;
-        ALTER TABLE tracks ADD COLUMN analysis_version INTEGER NOT NULL DEFAULT 0;
-        ALTER TABLE tracks ADD COLUMN analysis_source  TEXT NOT NULL DEFAULT 'none';
-      `)
-    }
-    if (version < 4) {
-      // 드래그 정렬 순서. 기존 행은 지금까지의 표시 순서(최신 순)를 그대로 번호 매긴다
-      this.db.exec(`ALTER TABLE tracks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
-      const ids = this.db
-        .prepare('SELECT id FROM tracks ORDER BY created_at DESC, id')
-        .all() as Array<{ id: string }>
-      const update = this.db.prepare('UPDATE tracks SET sort_order = ? WHERE id = ?')
-      this.db.transaction(() => {
-        ids.forEach((row, i) => update.run(i, row.id))
-      })()
-    }
-    if (version < 5) {
-      // 스펙 004 §4.4: 가져오기/가이드 종류. 기존 행은 보컬 혼합(separated/vocal_only)
-      this.db.exec(`
-        ALTER TABLE tracks ADD COLUMN import_kind TEXT NOT NULL DEFAULT 'separated';
-        ALTER TABLE tracks ADD COLUMN guide_kind TEXT NOT NULL DEFAULT 'vocal_only';
-      `)
-    }
-    if (version < 6) {
-      this.db.transaction(() => {
-        this.db.exec(`
-          ALTER TABLE tracks ADD COLUMN master_db REAL;
-          ALTER TABLE tracks ADD COLUMN inst_db REAL;
-          ALTER TABLE tracks ADD COLUMN vocal_db REAL;
-        `)
-        this.db.pragma('user_version = 6')
-      })()
-    }
-    if (version < 7) {
-      this.db.transaction(() => {
-        this.db.exec(`
-          ALTER TABLE tracks ADD COLUMN master_muted INTEGER NOT NULL DEFAULT 0;
-          ALTER TABLE tracks ADD COLUMN inst_muted INTEGER NOT NULL DEFAULT 0;
-          ALTER TABLE tracks ADD COLUMN vocal_muted INTEGER NOT NULL DEFAULT 0;
-        `)
-        this.db.pragma('user_version = 7')
-      })()
-    }
-    if (version < 8) {
-      this.db.transaction(() => {
-        this.db.exec(`ALTER TABLE tracks ADD COLUMN pitch_semitones INTEGER NOT NULL DEFAULT 0`)
-        this.db.pragma('user_version = 8')
-      })()
-    }
-    this.db.pragma(`user_version = ${SCHEMA_VERSION}`)
+  constructor(dbPath: string, options?: LibraryStoreOptions) {
+    this.db = openLibraryDatabase(dbPath, options)
   }
 
   getTrackPitch(id: string): number {

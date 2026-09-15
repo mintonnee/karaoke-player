@@ -3,7 +3,7 @@
 - 작성일: 2026-09-15
 - 연관 스펙: `../draft/000-karaoke-app-spec-draft.md`, `006-track-pitch.md`
 - 대상: 000 §4.3 데이터 레이아웃·S3 라이브러리의 버전 보호와 업그레이드 복구
-- 상태: 설계 완료, 구현 미착수
+- 상태: 구현 완료 (자동 검증 통과, 패키징 앱 수동 확인 대기)
 
 이 문서는 000의 SQLite 라이브러리 저장에서 스키마 버전 검사, 마이그레이션 원자성, 백업과 실패 안내를 분리해 다룬다. CI·릴리즈·자동 업데이트는 후속 범위다.
 
@@ -76,15 +76,15 @@ Main의 시작 실패 경로에서 native dialog 등 렌더러 DB 의존성이 �
 
 미래 버전 안내는 발견 버전·앱 지원 버전과 더 최신 앱이 필요함을 표시한다. 다른 실패는 원본을 보존했다는 사실이 확인된 범위에서만 안내하고, 데이터/완료 백업 폴더 열기와 종료를 제공한다. 자동 삭제·초기화·자동 복원 버튼은 두지 않는다. 시작 실패 후 서비스 등록, sidecar 실행, `failStaleSeparating`, 임포트 복구를 진행하지 않는다.
 
-복구 문서는 다음을 포함한다: 모든 앱 종료 → 원본 DB와 WAL/SHM 보존 → 선택 백업의 버전·무결성을 별도 경로에서 검사 → 백업에 맞는 앱으로 별도 복사본 확인 → 사용자가 복원을 결정한 경우에만 원본 교체. 기존 WAL/SHM을 복원한 DB에 붙이지 않는다. DB 백업은 `tracks/`를 포함하지 않으며 백업 이후 파일 변경과의 일치, 전체 라이브러리 복원을 보장하지 않는다고 명시한다.
+복구 문서는 다음을 포함한다: 모든 앱 종료 → 원본 DB와 WAL/SHM 보존 → 선택 백업의 버전·무결성을 별도 경로에서 검사 → 백업에 맞는 앱으로 별도 복사본 확인 → 사용자가 복원을 결정한 경우에만 원본 교체. 기존 WAL/SHM을 복원한 DB에 붙이지 않는다. DB 백업은 `tracks/`를 포함하지 않으며 백업 이후 파일 변경과의 일치, 전체 라이브러리 복원을 보장하지 않는다고 명시한다. 절차 본문은 [`docs/db-recovery.md`](../db-recovery.md)다.
 
 ### 4.4 구현 슬라이스
 
-| 슬라이스 | 산출물                                              | 소유(수정 가능) 경로                                                                                                                                      | 수정 금지 경로                       | 선행 조건             | 상태   |
-| -------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------- | ------ |
-| D1       | 버전 검사·전체 migration transaction·backup·fixture | `src/main/library/LibraryStore.ts`, 신규 `src/main/library/db/`, `src/main/library/__tests__/LibraryStore.test.ts`, 신규 `src/main/library/__tests__/db/` | Main 진입점·렌더러·sidecar·루트 설정 | 없음                  | 미착수 |
-| D2       | 시작 순서·단일 인스턴스·실패 dialog·통합 검증       | `src/main/index.ts`, 신규 `src/main/startup/`, 신규 `src/main/__tests__/startup/`                                                                         | D1 소유 경로·루트 설정               | D1 오류/준비 API 확정 | 미착수 |
-| D3       | 복구 문서·검증 결과·스펙 상태                       | `docs/specs/007-db-schema-safety.md`, 신규 `docs/db-recovery.md`, `docs/specs/README.md`                                                                  | 기능 코드                            | D1·D2                 | 미착수 |
+| 슬라이스 | 산출물                                              | 소유(수정 가능) 경로                                                                                                                                      | 수정 금지 경로                       | 선행 조건             | 상태 |
+| -------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------- | ---- |
+| D1       | 버전 검사·전체 migration transaction·backup·fixture | `src/main/library/LibraryStore.ts`, 신규 `src/main/library/db/`, `src/main/library/__tests__/LibraryStore.test.ts`, 신규 `src/main/library/__tests__/db/` | Main 진입점·렌더러·sidecar·루트 설정 | 없음                  | 완료 |
+| D2       | 시작 순서·단일 인스턴스·실패 dialog·통합 검증       | `src/main/index.ts`, 신규 `src/main/startup/`, 신규 `src/main/__tests__/startup/`                                                                         | D1 소유 경로·루트 설정               | D1 오류/준비 API 확정 | 완료 |
+| D3       | 복구 문서·검증 결과·스펙 상태                       | `docs/specs/007-db-schema-safety.md`, 신규 `docs/db-recovery.md`, `docs/specs/README.md`                                                                  | 기능 코드                            | D1·D2                 | 완료 |
 
 D1은 기준 1–5·7–8 중 DB 계층, D2는 기준 1·6–7 및 시작 부작용 차단, D3은 기준 8 복구 절차·전체 증거로 판정한다. 직접 순차 구현을 기본으로 하며, 멀티 에이전트 실행 요청 시 `orchestrate-slices`를 사용한다. 종료 전 §5 명령과 exit code를 보고한다. 훅 우회(`--no-verify`, `LEFTHOOK=0`) 금지, git 상태 변경(commit/stage)은 사용자 또는 명시적으로 승인받은 감독자만 수행한다. 완료 슬라이스는 임의 재작업하지 않는다.
 
@@ -103,4 +103,23 @@ pnpm typecheck
 - fixture는 실제 사용자 DB가 아닌 합성 DB를 쓴다. 미래 버전 거부는 스키마·행·버전·journal mode 비교와 후속 서비스 미호출로 검증한다.
 - WAL fixture는 writer 연결을 유지해 checkpoint 이전 커밋이 있는 상태로 백업 검사를 한다. 종료 실험은 자식 프로세스에 결정적 중단 지점을 두고 수행한다.
 - 수동: 패키징 앱에서 미래 버전·디스크/백업 권한 실패 안내와 종료, 기존 곡이 있는 구버전 복사본의 업그레이드·재시작·재생을 확인한다. 실제 사용자 DB로 고장 주입하지 않는다.
-- 검증 결과: 문서 작성 단계다. 구현·자동 테스트·실제 앱 복구 검증은 미실행이다.
+- 복구 절차 문서: [`docs/db-recovery.md`](../db-recovery.md)
+
+### 검증 결과 (2026-09-15)
+
+| 기준                          | 결과                                                                                      |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| 1 미래 버전 거부              | 자동 통과. `schemaSafety.test.ts` (DB), `runAppStartup.test.ts` (시작 부작용 차단)        |
+| 2 신규 v8·v1–v7 이전          | 자동 통과. `schemaSafety.test.ts`, 기존 `LibraryStore.test.ts` 마이그레이션               |
+| 3 백업·WAL 포함               | 자동 통과. `backup.test.ts`                                                               |
+| 4 원자적 마이그레이션         | 자동 통과. `migrateAtomic.test.ts`                                                        |
+| 5 프로세스 종료/재개방        | 자동 통과. `crash.test.ts`                                                                |
+| 6 native 안내·종료            | 자동 통과. `dialog.test.ts`, `runAppStartup.test.ts`. 패키징 앱 대화상자 수동 확인은 대기 |
+| 7 단일 인스턴스·DB 잠금       | 자동 통과. `concurrency.test.ts` (DB), `runAppStartup.test.ts` (앱 잠금)                  |
+| 8 invalid 거부·별도 경로 복원 | 자동 통과. `schemaSafety.test.ts`, `backup.test.ts`. 절차는 `docs/db-recovery.md`         |
+
+- `pnpm test`: 41파일, 388테스트, exit 0
+- `pnpm exec tsc --noEmit -p tsconfig.node.json --composite false` 및 `tsconfig.web.json`: exit 0
+- `pnpm exec eslint .`: exit 0
+- `pnpm exec prettier --check .`: exit 0 (문서 표 정렬 후)
+- 패키징 앱의 미래 버전·권한 실패 안내와 구버전 복사본 업그레이드·재생은 수동 확인 대기. 실제 사용자 DB로 고장 주입하지 않았다.

@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, net, protocol } from 'electron'
+import { app, dialog, shell, BrowserWindow, ipcMain, net, protocol } from 'electron'
 import { existsSync } from 'fs'
 import { join, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
@@ -23,6 +23,8 @@ import { LyricsService } from './lyrics/LyricsService'
 import { SidecarBootstrap, buildUvEnv, createReadyBootstrap } from './sidecar/SidecarBootstrap'
 import type { BootstrapController } from './sidecar/SidecarBootstrap'
 import { SidecarManager, createUvSidecarManager } from './sidecar/SidecarManager'
+import { ensureSingleInstance, runAppStartup } from './startup'
+import type { LibraryReadyContext } from './startup'
 
 // AudioEngine이 fetch로 스템 파일을 읽는 통로 (§4.1). app ready 전에 등록해야 한다.
 // dev 렌더러는 http://localhost origin이라 교차 출처 fetch가 되므로 CORS 응답까지 필요하다.
@@ -132,36 +134,16 @@ function createWindow(): void {
   }
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.whenReady().then(async () => {
-  // Set app user model id for windows
-  electronApp.setAppUserModelId('com.mintonnee.karaoke-player')
+function focusExistingMainWindow(): void {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.focus()
+}
 
-  // Default open or close DevTools by F12 in development
-  // and ignore CommandOrControl + R in production.
-  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
-  })
-
-  const userData = app.getPath('userData')
+function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapController {
+  const { store, userData, tracksDir } = ctx
   const { sidecar, bootstrap } = createSidecar(userData)
-
-  const store = new LibraryStore(join(userData, 'library.sqlite'))
-  const stale = store.failStaleSeparating()
-  if (stale > 0) console.error(`[library] marked ${stale} stale separating track(s) as failed`)
-
-  const tracksDir = join(userData, 'tracks')
-  const cleanedPairs = await recoverIncompletePairImports(tracksDir, store)
-  if (cleanedPairs > 0) {
-    console.error(`[library] cleaned ${cleanedPairs} incomplete pair import dir(s)`)
-  }
-  const cleanedEdits = await recoverIncompleteTrackEdits(tracksDir, store)
-  if (cleanedEdits > 0) {
-    console.error(`[library] recovered ${cleanedEdits} incomplete track edit(s)`)
-  }
   registerMediaProtocol(tracksDir)
 
   const notify = (channel: string, payload: unknown): void => {
@@ -266,21 +248,72 @@ app.whenReady().then(async () => {
     coverService.backfill()
     analysisService.backfill()
   })
-  void bootstrap.start()
   app.on('will-quit', () => {
     bootstrap.dispose()
     ytDlpService?.dispose()
     store.close()
   })
+  return bootstrap
+}
 
-  createWindow()
+async function startPrimaryInstance(): Promise<void> {
+  // Set app user model id for windows
+  electronApp.setAppUserModelId('com.mintonnee.karaoke-player')
 
-  app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  // Default open or close DevTools by F12 in development
+  // and ignore CommandOrControl + R in production.
+  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
+  app.on('browser-window-created', (_, window) => {
+    optimizer.watchWindowShortcuts(window)
   })
-})
+
+  let bootstrap: BootstrapController | undefined
+  await runAppStartup({
+    app,
+    dialog,
+    shell,
+    LibraryStore,
+    skipSingleInstanceCheck: true,
+    failStaleSeparating: (store) => {
+      const stale = store.failStaleSeparating()
+      if (stale > 0) console.error(`[library] marked ${stale} stale separating track(s) as failed`)
+      return stale
+    },
+    recoverIncompletePairImports: async (tracksDir, store) => {
+      const cleanedPairs = await recoverIncompletePairImports(tracksDir, store)
+      if (cleanedPairs > 0) {
+        console.error(`[library] cleaned ${cleanedPairs} incomplete pair import dir(s)`)
+      }
+      return cleanedPairs
+    },
+    recoverIncompleteTrackEdits: async (tracksDir, store) => {
+      const cleanedEdits = await recoverIncompleteTrackEdits(tracksDir, store)
+      if (cleanedEdits > 0) {
+        console.error(`[library] recovered ${cleanedEdits} incomplete track edit(s)`)
+      }
+      return cleanedEdits
+    },
+    registerIpc: (ctx) => {
+      bootstrap = wireReadyLibrary(ctx)
+    },
+    startSidecar: () => {
+      void bootstrap?.start()
+    },
+    createWindow: () => {
+      createWindow()
+      app.on('activate', function () {
+        // On macOS it's common to re-create a window in the app when the
+        // dock icon is clicked and there are no other windows open.
+        if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      })
+    }
+  })
+}
+
+// 단일 인스턴스 잠금은 DB 준비보다 먼저. 두 번째 프로세스는 라이브러리를 열지 않는다.
+if (ensureSingleInstance(app, focusExistingMainWindow)) {
+  app.whenReady().then(() => startPrimaryInstance())
+}
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits

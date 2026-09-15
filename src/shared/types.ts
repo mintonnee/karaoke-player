@@ -247,10 +247,22 @@ export interface TrackFiles {
 }
 
 /**
- * 사이드카 부트스트랩 상태 (스펙 001 §4.1). 패키징된 앱의 첫 실행에서
- * 번들 sidecar/ 복사 → uv sync 를 거친다. dev·준비 완료 상태는 즉시 ready.
+ * 사이드카 부트스트랩 상태 (스펙 001 §4.1, 008 §4.5).
+ * copying/syncing은 L2 하위 호환. UI는 stage(download/verify/env-prep/model-prep)를 우선한다.
  */
-export type BootstrapStatus = 'checking' | 'copying' | 'syncing' | 'ready' | 'error'
+export type BootstrapStatus =
+  | 'checking'
+  | 'copying'
+  | 'syncing'
+  | 'download'
+  | 'verify'
+  | 'env-prep'
+  | 'model-prep'
+  | 'ready'
+  | 'error'
+
+/** 실패 UI가 구분하는 준비 단계 (스펙 008 기준 10) */
+export type BootstrapPrepStage = 'download' | 'verify' | 'env-prep' | 'model-prep'
 
 export interface BootstrapState {
   status: BootstrapStatus
@@ -260,6 +272,12 @@ export interface BootstrapState {
   error: string | null
   /** uv stderr 최근 몇 줄 */
   log: string[]
+  /** 다운로드·검증·환경 구성·모델 준비. 없으면 status에서 유도 */
+  stage?: BootstrapPrepStage | null
+  /** 실패한 논리 ID (uv, 모델 id 등) */
+  logicalId?: string | null
+  /** 재시도 가능. 오류에서 기본 true */
+  retryable?: boolean
 }
 
 /** 앱 설정 (<userData>/settings.json). 설정창에서 변경한다 */
@@ -276,6 +294,30 @@ export const DEMUCS_MODELS = [
   { id: 'mdx_extra', label: 'mdx_extra — MDX 대회 모델' },
   { id: 'mdx_extra_q', label: 'mdx_extra_q — MDX 양자화 (경량)' }
 ] as const
+
+export type DemucsModelId = (typeof DEMUCS_MODELS)[number]['id']
+
+export function isRegisteredDemucsModel(id: string): id is DemucsModelId {
+  return DEMUCS_MODELS.some((model) => model.id === id)
+}
+
+/** sidecar worker 명령 → 등록된 모델 ID (스펙 008 §4.5). separate는 설정값 */
+export const WORKER_MODEL_IDS = {
+  transcribe: 'large-v3-turbo',
+  align: 'mms-fa',
+  analyze: 'beat-this-final0'
+} as const
+
+export type WorkerCommand = 'separate' | 'transcribe' | 'align' | 'analyze' | string
+
+/** worker args[0]에 대응하는 모델 ID. 모델이 필요 없으면 null */
+export function modelIdForWorker(command: string, demucsModel: string): string | null {
+  if (command === 'separate') return demucsModel
+  if (command === 'transcribe') return WORKER_MODEL_IDS.transcribe
+  if (command === 'align') return WORKER_MODEL_IDS.align
+  if (command === 'analyze') return WORKER_MODEL_IDS.analyze
+  return null
+}
 
 /** §6 KARAOKE_GUIDE_VOCAL_DB 기본값 */
 export const DEFAULT_GUIDE_VOCAL_DB = -20

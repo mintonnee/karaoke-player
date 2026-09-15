@@ -1,0 +1,17 @@
+{
+  "id": "missing-hash",
+  "description": "sha256 absent or empty must fail before run/packaging",
+  "entry": {
+    "id": "htdemucs",
+    "kind": "file",
+    "version": "955717e8-8726e21a",
+    "platform": "win32-x64",
+    "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th",
+    "size": 84141911,
+    "sha256": "",
+    "dest": "models/demucs/955717e8-8726e21a.th",
+    "source": "dl.fbaipublicfiles.com/demucs",
+    "license": "MIT"
+  },
+  "expected": { "accept": false, "reasonCode": "MISSING_HASH" }
+}

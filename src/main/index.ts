@@ -1,11 +1,18 @@
 import { app, dialog, shell, BrowserWindow, ipcMain, net, protocol } from 'electron'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { join, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { IPC_CHANNELS, MEDIA_PROTOCOL_SCHEME } from '../shared/types'
-import type { BootstrapState } from '../shared/types'
+import { isRuntimeActionAllowed } from '../shared/bootstrap'
+import {
+  IPC_CHANNELS,
+  MEDIA_PROTOCOL_SCHEME,
+  isRegisteredDemucsModel,
+  modelIdForWorker,
+  type BootstrapPrepStage,
+  type BootstrapState
+} from '../shared/types'
 import { registerIpcHandlers } from './ipc'
 import { AnalysisService } from './library/AnalysisService'
 import { CoverService } from './library/CoverService'
@@ -16,13 +23,29 @@ import { recoverIncompleteTrackEdits } from './library/coverRecovery'
 import { recoverIncompletePairImports } from './library/pairRecovery'
 import { SearchKeyService } from './library/SearchKeyService'
 import { TrackEditService } from './library/TrackEditService'
-import { YtDlpService, hasUrlImportBinaries } from './library/YtDlpService'
+import { YtDlpService, urlImportAvailability } from './library/YtDlpService'
 import { getBundledBinary, getBundledSidecarDir } from './paths'
+import {
+  ensureArtifact,
+  findArtifact,
+  resolveSelectedRuntime,
+  runtimeCacheRoot,
+  verifyExistingFile,
+  type Artifact,
+  type LockFile,
+  type RuntimeLockSet,
+  type RuntimeManifest
+} from './runtime'
 import { SettingsStore } from './settings/SettingsStore'
 import { LyricsService } from './lyrics/LyricsService'
 import { SidecarBootstrap, buildUvEnv, createReadyBootstrap } from './sidecar/SidecarBootstrap'
 import type { BootstrapController } from './sidecar/SidecarBootstrap'
-import { SidecarManager, createUvSidecarManager } from './sidecar/SidecarManager'
+import {
+  SidecarManager,
+  createUvSidecarManager,
+  buildRuntimeSidecarOptions,
+  type SidecarRunOptions
+} from './sidecar/SidecarManager'
 import { ensureSingleInstance, runAppStartup } from './startup'
 import type { LibraryReadyContext } from './startup'
 
@@ -63,40 +86,349 @@ function registerMediaProtocol(tracksDir: string): void {
   })
 }
 
+function readJsonFile<T>(path: string): T {
+  return JSON.parse(readFileSync(path, 'utf8')) as T
+}
+
+function loadLockSet(locksDir: string): RuntimeLockSet {
+  return {
+    tools: readJsonFile(join(locksDir, 'tools.lock.json')),
+    python: readJsonFile(join(locksDir, 'python.lock.json')),
+    wheels: readJsonFile(join(locksDir, 'wheels.lock.json')),
+    models: readJsonFile(join(locksDir, 'models.lock.json'))
+  }
+}
+
+function exeHashSpec(
+  lock: LockFile,
+  id: string,
+  exeName: string
+): { sha256: string; size: number; id: string } {
+  const art = findArtifact(lock, id)
+  if (art.kind === 'archive') {
+    const member = art.archive?.files.find((file) => {
+      const dest = (file.dest ?? file.path).replaceAll('\\', '/')
+      return file.path.endsWith(exeName) || dest.endsWith(exeName)
+    })
+    if (!member) throw new Error(`lock archive missing ${exeName} for ${id}`)
+    return { sha256: member.sha256, size: member.size, id }
+  }
+  return { sha256: art.sha256, size: art.size, id }
+}
+
+function artifactsForModel(models: LockFile, modelId: string): Artifact[] {
+  const bindings = models.models ?? []
+  const byId = new Map(models.artifacts.map((artifact) => [artifact.id, artifact]))
+  const seen = new Set<string>()
+  const out: Artifact[] = []
+  const visit = (id: string): void => {
+    if (seen.has(id)) return
+    seen.add(id)
+    const binding = bindings.find((item) => item.id === id)
+    if (binding) {
+      for (const artifactId of binding.artifactIds) visit(artifactId)
+      for (const dep of binding.dependsOn) visit(dep)
+      return
+    }
+    const artifact = byId.get(id)
+    if (!artifact) throw new Error(`unregistered model/artifact id: ${id}`)
+    out.push(artifact)
+  }
+  visit(modelId)
+  return out
+}
+
+function enrichBootstrapState(state: BootstrapState): BootstrapState {
+  const stage: BootstrapPrepStage | null =
+    state.stage ??
+    (state.status === 'copying'
+      ? 'download'
+      : state.status === 'syncing'
+        ? 'env-prep'
+        : state.status === 'download' ||
+            state.status === 'verify' ||
+            state.status === 'env-prep' ||
+            state.status === 'model-prep'
+          ? state.status
+          : null)
+  return {
+    ...state,
+    stage,
+    logicalId: state.logicalId ?? null,
+    retryable: state.retryable ?? state.status === 'error'
+  }
+}
+
+function createBlockedBootstrap(state: BootstrapState): BootstrapController {
+  return {
+    getState: () => state,
+    onChange: () => () => {},
+    start: () => Promise.resolve(state),
+    retry: () => Promise.resolve(state),
+    whenReady: () => new Promise(() => {}),
+    dispose: () => {}
+  }
+}
+
+class OverlayBootstrap implements BootstrapController {
+  private overlay: Partial<BootstrapState> | null = null
+  private readonly listeners = new Set<(state: BootstrapState) => void>()
+  private readonly unsubInner: () => void
+
+  constructor(private readonly inner: BootstrapController) {
+    this.unsubInner = inner.onChange(() => this.emit())
+  }
+
+  getState(): BootstrapState {
+    const base = enrichBootstrapState(this.inner.getState())
+    return this.overlay ? enrichBootstrapState({ ...base, ...this.overlay }) : base
+  }
+
+  onChange(listener: (state: BootstrapState) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  start(): Promise<BootstrapState> {
+    return this.inner.start()
+  }
+
+  retry(): Promise<BootstrapState> {
+    return this.inner.retry()
+  }
+
+  whenReady(): Promise<void> {
+    return this.inner.whenReady()
+  }
+
+  dispose(): void {
+    this.unsubInner()
+    this.inner.dispose()
+  }
+
+  setOverlay(patch: Partial<BootstrapState> | null): void {
+    this.overlay = patch
+    this.emit()
+  }
+
+  private emit(): void {
+    const state = this.getState()
+    for (const listener of this.listeners) listener(state)
+  }
+}
+
+function applyModelEnv(opts: {
+  lockPath: string | null
+  modelsDir: string
+  demucsModel: string
+}): void {
+  if (opts.lockPath) process.env.KARAOKE_MODELS_LOCK = opts.lockPath
+  process.env.KARAOKE_MODELS_DIR = opts.modelsDir
+  process.env.KARAOKE_WHISPER_MODEL = 'large-v3-turbo'
+  if (isRegisteredDemucsModel(opts.demucsModel)) {
+    process.env.KARAOKE_DEMUCS_MODEL = opts.demucsModel
+  }
+}
+
 /**
- * 사이드카 실행 경로 분기 (스펙 001 §4.1).
- * - 패키징: 번들 uv.exe로 <userData>/sidecar 를 실행. 환경 구성은 SidecarBootstrap이 보장하므로
- *   매 워커 실행은 `--no-sync`로 네트워크·lock 검사 없이 venv만 쓴다.
- * - dev: 레포의 sidecar/ 를 PATH의 uv로 실행하고 부트스트랩은 건너뛴다 (기준 8).
+ * 사이드카 실행 경로 분기 (스펙 001 §4.1, 008 §4.5).
+ * - 패키징: 번들 manifest+lock으로 환경을 준비한 뒤 검증된 venv python 으로 worker 실행.
+ * - dev: 레포 sidecar/ 를 PATH의 uv로 실행하고 부트스트랩은 건너뛴다 (001 기준 8).
  */
-function createSidecar(userData: string): {
+function createSidecar(
+  userData: string,
+  getDemucsModel: () => string
+): {
   sidecar: SidecarManager
-  bootstrap: BootstrapController
+  bootstrap: OverlayBootstrap
+  attachPackagedRuntime: () => Promise<void>
+  toolsLock: LockFile | null
+  modelsLock: LockFile | null
+  modelsDir: string
+  cacheRoot: string
 } {
+  const modelsDir = runtimeCacheRoot(userData)
+  const cacheRoot = modelsDir
+  const repoModelsLock = join(app.getAppPath(), 'build', 'locks', 'models.lock.json')
+  const onLog = (line: string): void => console.error(`[bootstrap] ${line}`)
+  const holder: { current: SidecarManager | null } = { current: null }
+
   if (!app.isPackaged) {
+    const lockPath = existsSync(repoModelsLock) ? repoModelsLock : null
+    applyModelEnv({ lockPath, modelsDir, demucsModel: getDemucsModel() })
+    holder.current = createUvSidecarManager(join(app.getAppPath(), 'sidecar'))
+    const modelsLock = lockPath ? readJsonFile<LockFile>(lockPath) : null
+    const toolsLockPath = join(app.getAppPath(), 'build', 'locks', 'tools.lock.json')
+    const toolsLock = existsSync(toolsLockPath) ? readJsonFile<LockFile>(toolsLockPath) : null
+    const bootstrap = new OverlayBootstrap(createReadyBootstrap())
     return {
-      sidecar: createUvSidecarManager(join(app.getAppPath(), 'sidecar')),
-      bootstrap: createReadyBootstrap()
+      sidecar: wrapSidecarRun(holder, {
+        bootstrap,
+        getDemucsModel,
+        modelsLock,
+        modelsDir,
+        cacheRoot
+      }),
+      bootstrap,
+      attachPackagedRuntime: async () => undefined,
+      toolsLock,
+      modelsLock,
+      modelsDir,
+      cacheRoot
     }
   }
+
   const uvCommand = getBundledBinary('uv')
   const targetSidecarDir = join(userData, 'sidecar')
-  const env = buildUvEnv(userData)
-  const onLog = (line: string): void => console.error(`[bootstrap] ${line}`)
-  return {
-    sidecar: new SidecarManager({
-      command: uvCommand,
-      baseArgs: ['run', '--project', targetSidecarDir, '--no-sync', 'karaoke_worker'],
-      env
-    }),
-    bootstrap: new SidecarBootstrap({
-      bundledSidecarDir: getBundledSidecarDir(),
-      targetSidecarDir,
-      uvCommand,
+  const uvEnv = buildUvEnv(userData)
+  const manifestPath = join(process.resourcesPath, 'runtime-manifest.json')
+  const locksDir = join(process.resourcesPath, 'locks')
+  let manifest: RuntimeManifest | null = null
+  let locks: RuntimeLockSet | null = null
+  try {
+    manifest = readJsonFile<RuntimeManifest>(manifestPath)
+    locks = loadLockSet(locksDir)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`[bootstrap] failed to load runtime manifest: ${message}`)
+  }
+  const modelsLock = locks?.models ?? null
+  const toolsLock = locks?.tools ?? null
+  const lockPath = existsSync(join(locksDir, 'models.lock.json'))
+    ? join(locksDir, 'models.lock.json')
+    : null
+  applyModelEnv({ lockPath, modelsDir, demucsModel: getDemucsModel() })
+
+  if (toolsLock) {
+    try {
+      verifyExistingFile(uvCommand, exeHashSpec(toolsLock, 'uv', 'uv.exe'))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[bootstrap] uv verify failed: ${message}`)
+    }
+  } else if (!existsSync(uvCommand)) {
+    console.error(`[bootstrap] missing required uv.exe: ${uvCommand}`)
+  }
+
+  const inner: BootstrapController =
+    manifest && locks
+      ? new SidecarBootstrap({
+          bundledSidecarDir: getBundledSidecarDir(),
+          targetSidecarDir,
+          uvCommand,
+          env: uvEnv,
+          onLog,
+          userDataDir: userData,
+          manifest,
+          locks
+        })
+      : createBlockedBootstrap({
+          status: 'error',
+          message: '사이드카 환경 구성 실패',
+          error: 'bundled runtime-manifest.json 또는 lock이 없습니다',
+          stage: 'verify',
+          logicalId: 'runtime-manifest',
+          retryable: true,
+          log: []
+        })
+  const bootstrap = new OverlayBootstrap(inner)
+
+  const attachPackagedRuntime = async (): Promise<void> => {
+    if (!manifest || holder.current) return
+    const runtimeDir = await resolveSelectedRuntime(userData, manifest)
+    const launch = buildRuntimeSidecarOptions(runtimeDir, { manifest })
+    const env: NodeJS.ProcessEnv = {
+      ...launch.env,
+      KARAOKE_MODELS_LOCK: lockPath ?? '',
+      KARAOKE_MODELS_DIR: modelsDir,
+      KARAOKE_WHISPER_MODEL: 'large-v3-turbo'
+    }
+    delete env.KARAOKE_DEMUCS_MODEL
+    holder.current = new SidecarManager({
+      command: launch.command,
+      baseArgs: launch.baseArgs,
       env,
-      onLog
+      onLog: (line) => console.error(`[sidecar] ${line}`)
     })
   }
+
+  return {
+    sidecar: wrapSidecarRun(holder, {
+      bootstrap,
+      getDemucsModel,
+      modelsLock,
+      modelsDir,
+      cacheRoot,
+      attach: attachPackagedRuntime
+    }),
+    bootstrap,
+    attachPackagedRuntime,
+    toolsLock,
+    modelsLock,
+    modelsDir,
+    cacheRoot
+  }
+}
+
+function wrapSidecarRun(
+  holder: { current: SidecarManager | null },
+  opts: {
+    bootstrap: OverlayBootstrap
+    getDemucsModel: () => string
+    modelsLock: LockFile | null
+    modelsDir: string
+    cacheRoot: string
+    attach?: () => Promise<void>
+  }
+): SidecarManager {
+  let modelPrepDepth = 0
+  const run = async (workerArgs: string[], runOptions?: SidecarRunOptions): Promise<unknown> => {
+    const state = opts.bootstrap.getState()
+    if (!isRuntimeActionAllowed(state)) {
+      throw new Error(
+        `${state.error ?? state.message} (id=${state.logicalId ?? 'runtime'}, stage=${state.stage ?? state.status}, retryable=${state.retryable !== false})`
+      )
+    }
+    if (!holder.current && opts.attach) await opts.attach()
+    const manager = holder.current
+    if (!manager) throw new Error('runtime python is not attached')
+    const command = workerArgs[0] ?? ''
+    const demucsModel = opts.getDemucsModel()
+    if (command === 'separate' && !isRegisteredDemucsModel(demucsModel)) {
+      throw new Error(`unknown demucs model: ${demucsModel}`)
+    }
+    const modelId = modelIdForWorker(command, demucsModel)
+    if (modelId && opts.modelsLock) {
+      modelPrepDepth += 1
+      opts.bootstrap.setOverlay({
+        status: 'model-prep',
+        stage: 'model-prep',
+        message: `모델 준비 중 (${modelId})`,
+        logicalId: modelId,
+        retryable: true,
+        error: null
+      })
+      try {
+        process.env.KARAOKE_DEMUCS_MODEL = demucsModel
+        const artifacts = artifactsForModel(opts.modelsLock, modelId)
+        for (const artifact of artifacts) {
+          await ensureArtifact({
+            artifact,
+            destRoot: opts.modelsDir,
+            cacheRoot: opts.cacheRoot
+          })
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`${message} (id=${modelId}, stage=model-prep, retryable=true)`)
+      } finally {
+        modelPrepDepth -= 1
+        if (modelPrepDepth === 0) opts.bootstrap.setOverlay(null)
+      }
+    }
+    return manager.run(workerArgs, runOptions)
+  }
+  return { run } as unknown as SidecarManager
 }
 
 function createWindow(): void {
@@ -143,7 +475,11 @@ function focusExistingMainWindow(): void {
 
 function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapController {
   const { store, userData, tracksDir } = ctx
-  const { sidecar, bootstrap } = createSidecar(userData)
+  const settingsStore = new SettingsStore(join(userData, 'settings.json'))
+  const { sidecar, bootstrap, attachPackagedRuntime, toolsLock } = createSidecar(
+    userData,
+    () => settingsStore.get().demucsModel
+  )
   registerMediaProtocol(tracksDir)
 
   const notify = (channel: string, payload: unknown): void => {
@@ -171,7 +507,6 @@ function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapCont
     sidecar,
     workDir: join(userData, 'tmp')
   })
-  const settingsStore = new SettingsStore(join(userData, 'settings.json'))
   const coverService = new CoverService({ store, sidecar, tracksDir })
   const trackEditService = new TrackEditService({
     store,
@@ -204,13 +539,48 @@ function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapCont
   // URL 임포트는 zip판에만 동봉되는 yt-dlp.exe·deno.exe 존재로 켜고 끈다 (스펙 001 §4.3, 기준 6)
   const ytDlpPath = getBundledBinary('yt-dlp')
   const denoPath = getBundledBinary('deno')
-  const urlImport = hasUrlImportBinaries(ytDlpPath, denoPath)
+  const appx = process.windowsStore === true
+  const availability = urlImportAvailability({
+    ytDlpExists: existsSync(ytDlpPath),
+    denoExists: existsSync(denoPath),
+    appx
+  })
+  let urlImport = availability.urlImport
+  let ytDlpHash: { sha256: string; size: number; id: string } | undefined
+  let denoHash: { sha256: string; size: number; id: string } | undefined
+  if (toolsLock && urlImport) {
+    try {
+      ytDlpHash = exeHashSpec(toolsLock, 'yt-dlp', 'yt-dlp.exe')
+      denoHash = exeHashSpec(toolsLock, 'deno', 'deno.exe')
+      verifyExistingFile(ytDlpPath, ytDlpHash)
+      verifyExistingFile(denoPath, denoHash)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[url-import] binary verify failed: ${message}`)
+      urlImport = false
+      notify(IPC_CHANNELS.appError, {
+        source: 'url-import',
+        message,
+        at: new Date().toISOString()
+      })
+    }
+  } else if (app.isPackaged && toolsLock && existsSync(denoPath)) {
+    try {
+      verifyExistingFile(denoPath, exeHashSpec(toolsLock, 'deno', 'deno.exe'))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[bootstrap] deno verify failed: ${message}`)
+    }
+  }
   const ytDlpService = urlImport
     ? new YtDlpService({
         command: ytDlpPath,
         denoPath,
         scratchRoot: join(userData, 'tmp', 'url-import'),
         tracksDir,
+        ytDlpHash,
+        denoHash,
+        verifyCommand: ytDlpHash || denoHash ? verifyExistingFile : undefined,
         importFiles: (filePaths, hint, userMeta) =>
           importService.importFiles(filePaths, hint, userMeta),
         notify,
@@ -235,14 +605,16 @@ function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapCont
     capabilities: { urlImport },
     ytDlpService,
     trackEditService,
-    coverService
+    coverService,
+    getBootstrapState: () => bootstrap.getState()
   })
   // 부트스트랩 IPC. 서비스들은 lazy spawn이라 먼저 만들어도 되지만,
   // 시작 시 사이드카를 띄우는 backfill은 ready 이후에만 돈다.
   ipcMain.handle(IPC_CHANNELS.bootstrapGet, (): BootstrapState => bootstrap.getState())
   ipcMain.handle(IPC_CHANNELS.bootstrapRetry, (): Promise<BootstrapState> => bootstrap.retry())
   bootstrap.onChange((state) => notify(IPC_CHANNELS.bootstrapState, state))
-  void bootstrap.whenReady().then(() => {
+  void bootstrap.whenReady().then(async () => {
+    await attachPackagedRuntime()
     // 기존 트랙의 일본어 메타 발음 키·앨범 커버·BPM·키 분석을 백그라운드로 채운다
     searchKeyService.backfill()
     coverService.backfill()

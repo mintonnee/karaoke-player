@@ -1,0 +1,17 @@
+{
+  "id": "valid-file",
+  "description": "HTTPS GitHub file with lowercase sha256, size, dest, license",
+  "entry": {
+    "id": "yt-dlp",
+    "kind": "file",
+    "version": "2026.08.19",
+    "platform": "win32-x64",
+    "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe",
+    "size": 4,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "dest": "resources/bin/yt-dlp.exe",
+    "source": "github.com/yt-dlp/yt-dlp",
+    "license": "Unlicense"
+  },
+  "expected": { "accept": true }
+}

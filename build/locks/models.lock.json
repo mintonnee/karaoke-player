@@ -1,0 +1,398 @@
+{
+  "schemaVersion": 1,
+  "kind": "models",
+  "platform": "win32-x64",
+  "artifacts": [
+    {
+      "id": "whisper-large-v3-turbo-config",
+      "kind": "file",
+      "version": "large-v3-turbo",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "platform": "win32-x64",
+      "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/config.json",
+      "size": 2263,
+      "sha256": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e",
+      "dest": "models/whisper-large-v3-turbo/config.json",
+      "source": "huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "license": "MIT"
+    },
+    {
+      "id": "whisper-large-v3-turbo-preprocessor",
+      "kind": "file",
+      "version": "large-v3-turbo",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "platform": "win32-x64",
+      "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/preprocessor_config.json",
+      "size": 340,
+      "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+      "dest": "models/whisper-large-v3-turbo/preprocessor_config.json",
+      "source": "huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "license": "MIT"
+    },
+    {
+      "id": "whisper-large-v3-turbo-tokenizer",
+      "kind": "file",
+      "version": "large-v3-turbo",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "platform": "win32-x64",
+      "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/tokenizer.json",
+      "size": 2710337,
+      "sha256": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd",
+      "dest": "models/whisper-large-v3-turbo/tokenizer.json",
+      "source": "huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "license": "MIT"
+    },
+    {
+      "id": "whisper-large-v3-turbo-vocabulary",
+      "kind": "file",
+      "version": "large-v3-turbo",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "platform": "win32-x64",
+      "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/vocabulary.json",
+      "size": 1068114,
+      "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1",
+      "dest": "models/whisper-large-v3-turbo/vocabulary.json",
+      "source": "huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "license": "MIT"
+    },
+    {
+      "id": "whisper-large-v3-turbo-model",
+      "kind": "file",
+      "version": "large-v3-turbo",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "platform": "win32-x64",
+      "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/model.bin",
+      "size": 1617884929,
+      "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+      "dest": "models/whisper-large-v3-turbo/model.bin",
+      "source": "huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "license": "MIT"
+    },
+    {
+      "id": "htdemucs",
+      "kind": "file",
+      "version": "955717e8-8726e21a",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th",
+      "size": 84141911,
+      "sha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
+      "dest": "models/demucs/955717e8-8726e21a.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "htdemucs_ft.0",
+      "kind": "file",
+      "version": "f7e0c4bc-ba3fe64a",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/f7e0c4bc-ba3fe64a.th",
+      "size": 84141271,
+      "sha256": "ba3fe64ae8ef66ac9a4857222ce48efbdc5eb3ad375cb79dd13debee5aaa4066",
+      "dest": "models/demucs/f7e0c4bc-ba3fe64a.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "htdemucs_ft.1",
+      "kind": "file",
+      "version": "d12395a8-e57c48e6",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/d12395a8-e57c48e6.th",
+      "size": 84141271,
+      "sha256": "e57c48e6b0e38af4f7118d7bd08c49f0a0c0edf7d09143bdd902ea0d237303e6",
+      "dest": "models/demucs/d12395a8-e57c48e6.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "htdemucs_ft.2",
+      "kind": "file",
+      "version": "92cfc3b6-ef3bcb9c",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/92cfc3b6-ef3bcb9c.th",
+      "size": 84141271,
+      "sha256": "ef3bcb9c8b40d14ae5d51b6db2587339cc12c6b77c0be151ce6d69002e087bf2",
+      "dest": "models/demucs/92cfc3b6-ef3bcb9c.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "htdemucs_ft.3",
+      "kind": "file",
+      "version": "04573f0d-f3cf25b2",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/04573f0d-f3cf25b2.th",
+      "size": 84141271,
+      "sha256": "f3cf25b222c4eed7cd49dd8b2c9597d50c18bd154090f7b919cfa5f93cf22c49",
+      "dest": "models/demucs/04573f0d-f3cf25b2.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "hdemucs_mmi",
+      "kind": "file",
+      "version": "75fc33f5-1941ce65",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/75fc33f5-1941ce65.th",
+      "size": 167407275,
+      "sha256": "1941ce654b11df4132b9f4eae408556b4c83fad6fe26b4bc0dbcb36b975befb3",
+      "dest": "models/demucs/75fc33f5-1941ce65.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "mdx_extra.0",
+      "kind": "file",
+      "version": "e51eebcc-c1b80bdd",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/mdx_final/e51eebcc-c1b80bdd.th",
+      "size": 167399275,
+      "sha256": "c1b80bdd6de58274abf359e66822a76f49ce2b9f086fc5dc917ac14598e6bebf",
+      "dest": "models/demucs/e51eebcc-c1b80bdd.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "mdx_extra.1",
+      "kind": "file",
+      "version": "a1d90b5c-ae9d2452",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/mdx_final/a1d90b5c-ae9d2452.th",
+      "size": 167391595,
+      "sha256": "ae9d245283bf24b552913ee233a1101dcd0aeaed59b1c0a2da0e1f6eda15101b",
+      "dest": "models/demucs/a1d90b5c-ae9d2452.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "mdx_extra.2",
+      "kind": "file",
+      "version": "5d2d6c55-db83574e",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/mdx_final/5d2d6c55-db83574e.th",
+      "size": 167391595,
+      "sha256": "db83574e05b2308f76e2764819da673f2d16d437b9e619f5fcb72f275fc0e24f",
+      "dest": "models/demucs/5d2d6c55-db83574e.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "mdx_extra.3",
+      "kind": "file",
+      "version": "cfa93e08-61801ae1",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/mdx_final/cfa93e08-61801ae1.th",
+      "size": 167399275,
+      "sha256": "61801ae1567d606c97a9c3469e943ae306d0a873eeb60d623ae7cfc7042b3f68",
+      "dest": "models/demucs/cfa93e08-61801ae1.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "mdx_extra_q.0",
+      "kind": "file",
+      "version": "83fc094f-4a16d450",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/mdx_final/83fc094f-4a16d450.th",
+      "size": 50756993,
+      "sha256": "4a16d450fd8c9277494e23865cadaa4a3e64141c45411d84243b8c95ea4b7cae",
+      "dest": "models/demucs/83fc094f-4a16d450.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "mdx_extra_q.1",
+      "kind": "file",
+      "version": "464b36d7-e5a9386e",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/mdx_final/464b36d7-e5a9386e.th",
+      "size": 38893153,
+      "sha256": "e5a9386ecbf6f30bb2bdc7ae162f471d87f3b5bffba1a8cb2cebe4403280967e",
+      "dest": "models/demucs/464b36d7-e5a9386e.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "mdx_extra_q.2",
+      "kind": "file",
+      "version": "14fc6a69-a89dd0ee",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/mdx_final/14fc6a69-a89dd0ee.th",
+      "size": 38491885,
+      "sha256": "a89dd0eeb547221dcfd6c0a47baa768ce0bce548eaf86b9a404d6b1088b5d22f",
+      "dest": "models/demucs/14fc6a69-a89dd0ee.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "mdx_extra_q.3",
+      "kind": "file",
+      "version": "7fd6ef75-a905dd85",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/demucs/mdx_final/7fd6ef75-a905dd85.th",
+      "size": 39436529,
+      "sha256": "a905dd8548f7389f1a3686c24c09d7bee61b716e3372e778e2acec88333ecdf4",
+      "dest": "models/demucs/7fd6ef75-a905dd85.th",
+      "source": "dl.fbaipublicfiles.com/demucs",
+      "license": "MIT"
+    },
+    {
+      "id": "mms-fa-model",
+      "kind": "file",
+      "version": "mms-fa",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://dl.fbaipublicfiles.com/mms/torchaudio/ctc_alignment_mling_uroman/model.pt",
+      "size": 1262047414,
+      "sha256": "20ef12963ab4924bef49ac4fc7f58ad5da2ee43b2c11bc8c853c9b90ecdbc680",
+      "dest": "models/mms-fa/model.pt",
+      "source": "dl.fbaipublicfiles.com/mms",
+      "license": "CC-BY-NC-4.0"
+    },
+    {
+      "id": "beat-this-final0",
+      "kind": "file",
+      "version": "final0",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://cloud.cp.jku.at/public.php/dav/files/7ik4RrBKTS273gp/final0.ckpt",
+      "size": 81058141,
+      "sha256": "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331",
+      "dest": "models/beat-this/final0.ckpt",
+      "source": "cloud.cp.jku.at/beat_this",
+      "license": "MIT"
+    }
+  ],
+  "models": [
+    {
+      "id": "htdemucs",
+      "loader": "demucs.api.Separator",
+      "loaderBinding": {
+        "package": "demucs",
+        "symbol": "Separator",
+        "argument": "model"
+      },
+      "revision": "955717e8-8726e21a",
+      "license": "MIT",
+      "artifactIds": ["htdemucs"],
+      "dependsOn": [],
+      "configSource": "wheel:demucs:remote/htdemucs.yaml"
+    },
+    {
+      "id": "htdemucs_ft",
+      "loader": "demucs.api.Separator",
+      "loaderBinding": {
+        "package": "demucs",
+        "symbol": "Separator",
+        "argument": "model"
+      },
+      "revision": "bag:f7e0c4bc,d12395a8,92cfc3b6,04573f0d",
+      "license": "MIT",
+      "artifactIds": ["htdemucs_ft.0", "htdemucs_ft.1", "htdemucs_ft.2", "htdemucs_ft.3"],
+      "dependsOn": ["htdemucs_ft.0", "htdemucs_ft.1", "htdemucs_ft.2", "htdemucs_ft.3"],
+      "configSource": "wheel:demucs:remote/htdemucs_ft.yaml"
+    },
+    {
+      "id": "hdemucs_mmi",
+      "loader": "demucs.api.Separator",
+      "loaderBinding": {
+        "package": "demucs",
+        "symbol": "Separator",
+        "argument": "model"
+      },
+      "revision": "75fc33f5-1941ce65",
+      "license": "MIT",
+      "artifactIds": ["hdemucs_mmi"],
+      "dependsOn": [],
+      "configSource": "wheel:demucs:remote/hdemucs_mmi.yaml"
+    },
+    {
+      "id": "mdx_extra",
+      "loader": "demucs.api.Separator",
+      "loaderBinding": {
+        "package": "demucs",
+        "symbol": "Separator",
+        "argument": "model"
+      },
+      "revision": "bag:e51eebcc,a1d90b5c,5d2d6c55,cfa93e08",
+      "license": "MIT",
+      "artifactIds": ["mdx_extra.0", "mdx_extra.1", "mdx_extra.2", "mdx_extra.3"],
+      "dependsOn": ["mdx_extra.0", "mdx_extra.1", "mdx_extra.2", "mdx_extra.3"],
+      "configSource": "wheel:demucs:remote/mdx_extra.yaml"
+    },
+    {
+      "id": "mdx_extra_q",
+      "loader": "demucs.api.Separator",
+      "loaderBinding": {
+        "package": "demucs",
+        "symbol": "Separator",
+        "argument": "model"
+      },
+      "revision": "bag:83fc094f,464b36d7,14fc6a69,7fd6ef75",
+      "license": "MIT",
+      "artifactIds": ["mdx_extra_q.0", "mdx_extra_q.1", "mdx_extra_q.2", "mdx_extra_q.3"],
+      "dependsOn": ["mdx_extra_q.0", "mdx_extra_q.1", "mdx_extra_q.2", "mdx_extra_q.3"],
+      "configSource": "wheel:demucs:remote/mdx_extra_q.yaml"
+    },
+    {
+      "id": "large-v3-turbo",
+      "loader": "faster_whisper.WhisperModel",
+      "loaderBinding": {
+        "package": "faster_whisper",
+        "symbol": "WhisperModel"
+      },
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "license": "MIT",
+      "artifactIds": [
+        "whisper-large-v3-turbo-config",
+        "whisper-large-v3-turbo-preprocessor",
+        "whisper-large-v3-turbo-tokenizer",
+        "whisper-large-v3-turbo-vocabulary",
+        "whisper-large-v3-turbo-model"
+      ],
+      "dependsOn": [],
+      "vadAsset": "wheel:faster-whisper:assets/silero_vad_v6.onnx"
+    },
+    {
+      "id": "mms-fa",
+      "loader": "torchaudio.pipelines.MMS_FA",
+      "loaderBinding": {
+        "package": "torchaudio.pipelines",
+        "symbol": "MMS_FA"
+      },
+      "revision": null,
+      "license": "CC-BY-NC-4.0",
+      "artifactIds": ["mms-fa-model"],
+      "dependsOn": [],
+      "dictionarySource": "torchaudio.pipelines.MMS_FA.get_dict"
+    },
+    {
+      "id": "beat-this-final0",
+      "loader": "beat_this.inference.Audio2Beats",
+      "loaderBinding": {
+        "package": "beat_this.inference",
+        "symbol": "Audio2Beats",
+        "argument": "checkpoint_path"
+      },
+      "revision": null,
+      "license": "MIT",
+      "artifactIds": ["beat-this-final0"],
+      "dependsOn": []
+    }
+  ]
+}

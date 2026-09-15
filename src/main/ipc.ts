@@ -3,7 +3,8 @@ import { rm } from 'fs/promises'
 import { join } from 'path'
 import { ALLOWED_COVER_EXT } from '../shared/trackEdit'
 import type { CoverPreviewResult, TrackEditSaveRequest } from '../shared/trackEdit'
-import { DEMUCS_MODELS, IPC_CHANNELS, sanitizeImportUserMeta } from '../shared/types'
+import { isRuntimeActionAllowed, runtimeActionRejection } from '../shared/bootstrap'
+import { IPC_CHANNELS, isRegisteredDemucsModel, sanitizeImportUserMeta } from '../shared/types'
 import type {
   AlignLang,
   AlignedLine,
@@ -11,6 +12,7 @@ import type {
   AppInfo,
   AppSettings,
   AudioTagPreview,
+  BootstrapState,
   ImportFilesResponse,
   ImportUserMeta,
   PairImportRequest,
@@ -51,6 +53,8 @@ export interface IpcDeps {
   ytDlpService: YtDlpService | null
   trackEditService: TrackEditService
   coverService: CoverService
+  /** 런타임 준비 상태. sidecar가 필요한 IPC는 ready 전에는 거부한다 */
+  getBootstrapState: () => BootstrapState
 }
 
 export function registerIpcHandlers({
@@ -64,9 +68,15 @@ export function registerIpcHandlers({
   capabilities,
   ytDlpService,
   trackEditService,
-  coverService
+  coverService,
+  getBootstrapState
 }: IpcDeps): void {
   const importGate = new ImportRequestGate()
+
+  const requireRuntime = (): BootstrapState | null => {
+    const state = getBootstrapState()
+    return isRuntimeActionAllowed(state) ? null : state
+  }
 
   // 렌더러가 cover.jpg 등 트랙 파일의 media:// URL을 만들 때 쓴다
   ipcMain.handle(IPC_CHANNELS.tracksDir, (): string => tracksDir)
@@ -74,10 +84,7 @@ export function registerIpcHandlers({
   ipcMain.handle(IPC_CHANNELS.settingsGet, (): AppSettings => settingsStore.get())
 
   ipcMain.handle(IPC_CHANNELS.settingsSet, (_event, patch: Partial<AppSettings>): AppSettings => {
-    if (
-      patch.demucsModel !== undefined &&
-      !DEMUCS_MODELS.some((model) => model.id === patch.demucsModel)
-    ) {
+    if (patch.demucsModel !== undefined && !isRegisteredDemucsModel(patch.demucsModel)) {
       throw new Error(`unknown demucs model: ${patch.demucsModel}`)
     }
     return settingsStore.set(patch)
@@ -94,13 +101,18 @@ export function registerIpcHandlers({
 
   ipcMain.handle(
     IPC_CHANNELS.lyricsAlign,
-    (_event, trackId: string, text: string, lang: AlignLang, fromLrclibPlain: boolean) =>
-      lyricsService.alignLyrics(trackId, text, lang, fromLrclibPlain)
+    (_event, trackId: string, text: string, lang: AlignLang, fromLrclibPlain: boolean) => {
+      const blocked = requireRuntime()
+      if (blocked) throw new Error(runtimeActionRejection(blocked).reason)
+      return lyricsService.alignLyrics(trackId, text, lang, fromLrclibPlain)
+    }
   )
 
-  ipcMain.handle(IPC_CHANNELS.lyricsTranscribe, (_event, trackId: string) =>
-    lyricsService.transcribe(trackId)
-  )
+  ipcMain.handle(IPC_CHANNELS.lyricsTranscribe, (_event, trackId: string) => {
+    const blocked = requireRuntime()
+    if (blocked) throw new Error(runtimeActionRejection(blocked).reason)
+    return lyricsService.transcribe(trackId)
+  })
 
   ipcMain.handle(IPC_CHANNELS.lyricsSaveLines, (_event, trackId: string, lines: AlignedLine[]) =>
     lyricsService.saveLines(trackId, lines)
@@ -170,13 +182,29 @@ export function registerIpcHandlers({
 
   ipcMain.handle(
     IPC_CHANNELS.importFiles,
-    (_event, filePaths: string[], userMeta?: ImportUserMeta): Promise<ImportFilesResponse> =>
-      importGate.run(() =>
+    (_event, filePaths: string[], userMeta?: ImportUserMeta): Promise<ImportFilesResponse> => {
+      const blocked = requireRuntime()
+      if (blocked) {
+        const paths = Array.isArray(filePaths) ? filePaths : []
+        return Promise.resolve({
+          imported: [],
+          rejected:
+            paths.length > 0
+              ? paths.map((filePath) => runtimeActionRejection(blocked, filePath))
+              : [runtimeActionRejection(blocked)]
+        })
+      }
+      return importGate.run(() =>
         importService.importFiles(filePaths, undefined, sanitizeImportUserMeta(userMeta))
       )
+    }
   )
 
   ipcMain.handle(IPC_CHANNELS.importDialog, async (): Promise<ImportFilesResponse> => {
+    const blocked = requireRuntime()
+    if (blocked) {
+      return { imported: [], rejected: [runtimeActionRejection(blocked)] }
+    }
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
       filters: AUDIO_FILE_FILTERS
@@ -225,6 +253,14 @@ export function registerIpcHandlers({
   ipcMain.handle(
     IPC_CHANNELS.importPair,
     (_event, req: PairImportRequest): Promise<ImportFilesResponse> => {
+      const blocked = requireRuntime()
+      if (blocked) {
+        const filePath = typeof req?.mrPath === 'string' ? req.mrPath : ''
+        return Promise.resolve({
+          imported: [],
+          rejected: [{ ...runtimeActionRejection(blocked, filePath), role: 'pair' }]
+        })
+      }
       const user = sanitizeImportUserMeta(req)
       return importGate.run(() =>
         importService.importPair({
@@ -257,6 +293,13 @@ export function registerIpcHandlers({
   ipcMain.handle(
     IPC_CHANNELS.importUrl,
     (_event, url: string, userMeta?: ImportUserMeta): Promise<ImportFilesResponse> => {
+      const blocked = requireRuntime()
+      if (blocked) {
+        return Promise.resolve({
+          imported: [],
+          rejected: [runtimeActionRejection(blocked, typeof url === 'string' ? url : '')]
+        })
+      }
       const service = ytDlpService
       const precheck = precheckImportUrl(url, Boolean(capabilities.urlImport && service))
       if (precheck.action === 'reject') return Promise.resolve(precheck.response)

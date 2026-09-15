@@ -1,9 +1,13 @@
 """스펙 002 기준 1·8: 합성 신호로 analyze의 키·BPM·소요 시간을 검증한다."""
 
+import hashlib
 import json
+import os
+import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -14,6 +18,57 @@ from karaoke_worker.analyze import (
     estimate_bpm,
     estimate_key,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+LOCK_PATH = REPO_ROOT / "build" / "locks" / "models.lock.json"
+_BEAT_THIS_READY = False
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _models_env(tmp_path_factory) -> None:
+    """L3: final0 단축 이름 대신 검증된 dest 파일을 쓴다."""
+    global _BEAT_THIS_READY
+    cache = tmp_path_factory.mktemp("models-cache")
+    lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+    art = next(a for a in lock["artifacts"] if a["id"] == "beat-this-final0")
+    dest = cache / art["dest"]
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    hub = Path.home() / ".cache" / "torch" / "hub" / "checkpoints" / "beat_this-final0.ckpt"
+    ready = False
+    if hub.is_file() and hub.stat().st_size == art["size"]:
+        digest = hashlib.sha256()
+        with hub.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                digest.update(chunk)
+        if digest.hexdigest() == art["sha256"]:
+            try:
+                os.link(hub, dest)
+            except OSError:
+                shutil.copy2(hub, dest)
+            ready = True
+    _BEAT_THIS_READY = ready
+    old_lock = os.environ.get("KARAOKE_MODELS_LOCK")
+    old_dir = os.environ.get("KARAOKE_MODELS_DIR")
+    os.environ["KARAOKE_MODELS_LOCK"] = str(LOCK_PATH)
+    os.environ["KARAOKE_MODELS_DIR"] = str(cache)
+    from karaoke_worker.models import reset_registry_for_tests
+
+    reset_registry_for_tests()
+    yield
+    if old_lock is None:
+        os.environ.pop("KARAOKE_MODELS_LOCK", None)
+    else:
+        os.environ["KARAOKE_MODELS_LOCK"] = old_lock
+    if old_dir is None:
+        os.environ.pop("KARAOKE_MODELS_DIR", None)
+    else:
+        os.environ["KARAOKE_MODELS_DIR"] = old_dir
+    reset_registry_for_tests()
+
+
+def _need_beat_this() -> None:
+    if not _BEAT_THIS_READY:
+        pytest.skip("verified beat-this-final0 checkpoint is not available locally")
 
 SR = 44100
 DURATION = 30.0
@@ -132,12 +187,13 @@ def test_estimate_key_silence() -> None:
 
 
 def test_estimate_bpm_120(sig_major: np.ndarray) -> None:
+    _need_beat_this()
     try:
         bpm, conf = estimate_bpm(sig_major, SR, "cpu")
     except Exception as e:  # pragma: no cover - 네트워크 실패 진단용
         pytest.fail(
-            "estimate_bpm failed. final0 체크포인트를 내려받지 못했을 수 있다 "
-            f"(torch.hub 캐시 확인): {e!r}"
+            "estimate_bpm failed. 검증된 beat-this-final0 체크포인트가 없거나 "
+            f"로컬 로드에 실패했다: {e!r}"
         )
     assert bpm is not None
     assert 119.0 <= bpm <= 121.0
@@ -160,6 +216,7 @@ def wav_major(tmp_path_factory, sig_major: np.ndarray) -> str:
 
 
 def test_analyze_end_to_end(wav_major: str) -> None:
+    _need_beat_this()
     result = analyze(wav_major, "cpu")
 
     assert set(result) == {"bpm", "bpm_conf", "key", "key_conf", "version"}
@@ -203,6 +260,10 @@ def test_analyze_without_checkpoint(monkeypatch, wav_major: str) -> None:
     """체크포인트를 못 받으면 bpm만 null이고 key는 정상, 예외는 나가지 않는다."""
     import beat_this.inference as bt
 
+    from karaoke_worker.models import reset_registry_for_tests
+
+    reset_registry_for_tests()
+
     def fail(*args, **kwargs):
         raise ValueError(("Could not load the checkpoint given the provided name", "final0"))
 
@@ -223,6 +284,7 @@ ANALYZE_BUDGET_SEC = 20.0
 
 
 def test_analyze_cpu_within_budget(wav_major: str) -> None:
+    _need_beat_this()
     started = time.perf_counter()
     analyze(wav_major, "cpu")
     elapsed = time.perf_counter() - started
@@ -233,6 +295,7 @@ def test_analyze_cpu_within_budget(wav_major: str) -> None:
 
 
 def test_cli_emits_single_json_line(wav_major: str) -> None:
+    _need_beat_this()
     proc = subprocess.run(
         [sys.executable, "-m", "karaoke_worker.cli", "analyze", "--input", wav_major,
          "--device", "cpu", "--json"],

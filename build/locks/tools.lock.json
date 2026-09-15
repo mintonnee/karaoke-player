@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "kind": "tools",
+  "platform": "win32-x64",
+  "artifacts": [
+    {
+      "id": "uv",
+      "kind": "archive",
+      "version": "0.12.9",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://github.com/astral-sh/uv/releases/download/0.12.9/uv-x86_64-pc-windows-msvc.zip",
+      "size": 16895034,
+      "sha256": "ddbfcee1ac615a0499f6aa97b5ec8ebdf3ee4a7714a48055ec2ba0030e3cf810",
+      "dest": "resources/bin/uv.exe",
+      "source": "github.com/astral-sh/uv",
+      "license": "MIT OR Apache-2.0",
+      "capability": "always",
+      "archive": {
+        "format": "zip",
+        "files": [
+          {
+            "path": "uv.exe",
+            "size": 41386496,
+            "sha256": "b5d230c79ffa3629422f48bfce0766e9827769608a79bbb4e4e540081f59d97c",
+            "executable": true,
+            "dest": "resources/bin/uv.exe"
+          },
+          {
+            "path": "uvw.exe",
+            "size": 333312,
+            "sha256": "42d6abc87fcfcc8e87d69d972af5a55d5a14179f570df901b82caa6d9ca5de2a",
+            "executable": true,
+            "dest": "resources/bin/uvw.exe"
+          },
+          {
+            "path": "uvx.exe",
+            "size": 333312,
+            "sha256": "a0e1bfd0d7c28c2358d7927f77d681049a3fb28bc02060502a4c92dd74168f61",
+            "executable": true,
+            "dest": "resources/bin/uvx.exe"
+          }
+        ]
+      }
+    },
+    {
+      "id": "yt-dlp",
+      "kind": "file",
+      "version": "2026.08.19",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe",
+      "size": 17840399,
+      "sha256": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+      "dest": "resources/bin/yt-dlp.exe",
+      "source": "github.com/yt-dlp/yt-dlp",
+      "license": "Unlicense",
+      "capability": "zip-url-import"
+    },
+    {
+      "id": "deno",
+      "kind": "archive",
+      "version": "2.9.6",
+      "revision": null,
+      "platform": "win32-x64",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.6/deno-x86_64-pc-windows-msvc.zip",
+      "size": 42601047,
+      "sha256": "15e5300b0ba3c3695a7621d90160a746ec9e710228cee639afa9d580f6e3cd11",
+      "dest": "resources/bin/deno.exe",
+      "source": "github.com/denoland/deno",
+      "license": "MIT",
+      "capability": "always",
+      "archive": {
+        "format": "zip",
+        "files": [
+          {
+            "path": "deno.exe",
+            "size": 97316640,
+            "sha256": "2ff9493dfa356be2975f477025ea770088e9e9cb2c83d983236d13561b96b7a6",
+            "executable": true,
+            "dest": "resources/bin/deno.exe"
+          }
+        ]
+      }
+    }
+  ]
+}

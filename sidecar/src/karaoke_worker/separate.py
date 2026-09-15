@@ -43,15 +43,15 @@ def separate(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
+    from .models import get_registry, load_demucs_separator
+
+    registry = get_registry()
+    model_id = registry.resolve_id(model_name)
+
     device = _resolve_device(device_arg)
-    log(f"separate: model={model_name} device={device} shifts={shifts} input={src}")
+    log(f"separate: model={model_id} device={device} shifts={shifts} input={src}")
 
-    emit_progress("separate", 0, f"loading model {model_name}")
-    try:
-        from demucs.api import Separator, save_audio
-    except ImportError as e:
-        raise WorkerError("DEMUCS_MISSING", f"demucs import failed: {e}") from e
-
+    emit_progress("separate", 0, f"loading model {model_id}")
     last_pct = -1
 
     def callback(info: dict[str, Any]) -> None:
@@ -69,11 +69,27 @@ def separate(
             emit_progress("separate", min(pct, 99))
 
     try:
-        separator = Separator(
-            model=model_name, device=device, shifts=shifts, callback=callback, progress=False
-        )
+        from demucs.api import save_audio
+    except ImportError as e:
+        raise WorkerError("DEMUCS_MISSING", f"demucs import failed: {e}") from e
+
+    try:
+        cache_key = ("demucs", model_id)
+        separator = registry.get_loaded(cache_key)
+        if separator is None:
+            prepared = registry.prepare(model_id)
+            separator = load_demucs_separator(
+                prepared, device=device, shifts=shifts, callback=callback, progress=False
+            )
+            registry.remember(cache_key, separator)
+        else:
+            separator.update_parameter(
+                device=device, shifts=shifts, callback=callback, progress=False
+            )
+    except WorkerError:
+        raise
     except Exception as e:
-        raise WorkerError("MODEL_LOAD_FAILED", f"failed to load model {model_name}: {e}") from e
+        raise WorkerError("MODEL_LOAD_FAILED", f"failed to load model {model_id}: {e}") from e
 
     import torch
 

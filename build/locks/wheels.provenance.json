@@ -1,0 +1,4 @@
+{
+  "source": "sidecar/uv.lock hashes/urls; torch/torchaudio size from HEAD Content-Length of download-r2.pytorch.org",
+  "uvLockDigest": "sha256:58f098cafc7b943458c17de8f41332bfd4ce386a09f74c1bf66522faf2d3f06e"
+}

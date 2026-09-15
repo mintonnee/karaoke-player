@@ -1,0 +1,17 @@
+{
+  "id": "bad-platform",
+  "description": "this slice only accepts win32-x64",
+  "entry": {
+    "id": "uv",
+    "kind": "file",
+    "version": "0.12.9",
+    "platform": "darwin-arm64",
+    "url": "https://github.com/astral-sh/uv/releases/download/0.12.9/uv",
+    "size": 4,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "dest": "resources/bin/uv",
+    "source": "github.com/astral-sh/uv",
+    "license": "MIT"
+  },
+  "expected": { "accept": false, "reasonCode": "BAD_PLATFORM" }
+}

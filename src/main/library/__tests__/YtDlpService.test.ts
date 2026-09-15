@@ -17,7 +17,8 @@ import {
   hasUrlImportBinaries,
   normalizeArtist,
   parseDownloadProgress,
-  titleFromFilename
+  titleFromFilename,
+  urlImportAvailability
 } from '../YtDlpService'
 
 const FAKE_YTDLP = join(process.cwd(), 'src', 'main', 'library', '__tests__', 'fake_ytdlp.mjs')
@@ -149,6 +150,22 @@ describe('hasUrlImportBinaries', () => {
 
     await writeFile(deno, '')
     expect(hasUrlImportBinaries(ytDlp, deno)).toBe(true)
+  })
+})
+
+describe('urlImportAvailability', () => {
+  it('APPX에서 yt-dlp가 없어도 오류가 아니다', () => {
+    expect(urlImportAvailability({ ytDlpExists: false, denoExists: true, appx: true })).toEqual({
+      urlImport: false,
+      missingYtDlpOk: true
+    })
+  })
+
+  it('ZIP에서 두 파일이 있으면 켠다', () => {
+    expect(urlImportAvailability({ ytDlpExists: true, denoExists: true, appx: false })).toEqual({
+      urlImport: true,
+      missingYtDlpOk: false
+    })
   })
 })
 
@@ -349,6 +366,37 @@ describe('YtDlpService', () => {
     expect(imported).toHaveLength(2)
     // 각 요청은 서로 다른 스크래치 디렉토리를 쓴다
     expect(imported[0][0]).not.toBe(imported[1][0])
+    expect(await scratchDirs()).toEqual([])
+  })
+
+  it('해시 불일치면 spawn하지 않고 거부한다', async () => {
+    let verified = 0
+    const service = new YtDlpService({
+      command: process.execPath,
+      baseArgs: [FAKE_YTDLP],
+      denoPath: join(root, 'deno.exe'),
+      scratchRoot,
+      tracksDir,
+      ytDlpHash: { sha256: 'deadbeef', size: 1, id: 'yt-dlp' },
+      denoHash: { sha256: 'cafebabe', size: 1, id: 'deno' },
+      verifyCommand: (_path, expected) => {
+        verified += 1
+        throw new Error(`sha256 mismatch for ${expected.id}`)
+      },
+      importFiles: async (filePaths, hint, userMeta) => {
+        imported.push(filePaths)
+        hints.push(hint)
+        userMetas.push(userMeta)
+        return importResult
+      },
+      notify: (channel, payload) => events.push({ channel, payload }),
+      onLog: () => {}
+    })
+    const response = await service.importUrl('https://youtu.be/ok')
+    expect(verified).toBe(1)
+    expect(imported).toEqual([])
+    expect(response.imported).toEqual([])
+    expect(response.rejected[0].reason).toMatch(/sha256 mismatch for yt-dlp/)
     expect(await scratchDirs()).toEqual([])
   })
 

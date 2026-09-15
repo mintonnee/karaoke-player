@@ -3,7 +3,7 @@
 - 작성일: 2026-09-15
 - 연관 스펙: `001-packaging-distribution.md`, `007-db-schema-safety.md`
 - 대상: 001 §4.1 사이드카 부트스트랩·§4.2 번들 리소스·§4.3 URL 임포트의 의존성 고정
-- 상태: 설계 완료, 구현 미착수
+- 상태: 구현됨 (fixture 자동 검증 통과, 실자산·패키징 바이트·수동 UI 확인 대기)
 
 이 문서는 001의 다운로드·부트스트랩에서 Python 런타임과 패키지, sidecar 코드, 모델, uv·yt-dlp·Deno의 고정·검증·활성화를 분리해 다룬다. 기존 001의 파일 존재 기반 재사용과 기존 venv에 직접 sync하는 방식은 이 스펙 구현 완료 후 대체한다.
 
@@ -122,13 +122,13 @@ ZIP·APPX의 capability 분기는 001을 따른다. APPX에서 의도적으로 �
 
 ### 4.6 구현 슬라이스
 
-| 슬라이스 | 산출물                                                       | 소유(수정 가능) 경로                                                                                                                                                                                                                                                            | 수정 금지 경로            | 선행 조건                                    | 상태   |
-| -------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------- | ------ |
-| L1       | schema·검증/갱신 후보 CLI·다운로드 검증·외부 lock·wheel 준비 | `build/locks/`, `scripts/runtime-lock/`, `scripts/prepare-resources.mjs`, `scripts/__tests__/runtime-lock/`                                                                                                                                                                     | 앱·sidecar 코드·루트 설정 | 없음; schema 계약 먼저 확정                  | 미착수 |
-| L2       | Python 환경 준비·manifest 대조·Main runtime 검증             | `src/main/sidecar/`, 신규 `src/main/runtime/`, 신규 `src/main/__tests__/runtime/`                                                                                                                                                                                               | L1·L3·공유 진입점         | L1, 007 D1·D2                                | 미착수 |
-| L3       | 모델 registry·local loader·offline 검증                      | `sidecar/src/`, `sidecar/tests/`, `sidecar/pyproject.toml`, `sidecar/uv.lock`, `sidecar/.python-version`                                                                                                                                                                        | Main·lock 파일            | L1 schema; lock 자산 갱신은 L1 소유자가 수행 | 미착수 |
-| L4       | 앱 시작/IPC/UI·타깃 패키징·최종 통합                         | `src/main/index.ts`, `src/main/ipc.ts`, `src/main/library/YtDlpService.ts`와 전용 테스트, `src/preload/`, `src/shared/`, `src/renderer/`, `package.json`, `pnpm-lock.yaml`, `electron-builder.yml`, `electron-builder.zip.mjs`, `electron-builder.msix.mjs`, `vitest.config.ts` | L1–L3 소유 경로           | L1–L3, 007 D2                                | 미착수 |
-| L5       | 통합 실험·운영 문서·증거                                     | 신규 `scripts/runtime-acceptance/`, 신규 `docs/runtime-lock.md`, `docs/specs/008-runtime-dependency-lock.md`, `docs/specs/001-packaging-distribution.md`, `docs/specs/README.md`                                                                                                | 기능 코드·lock 파일       | L1–L4                                        | 미착수 |
+| 슬라이스 | 산출물                                                       | 소유(수정 가능) 경로                                                                                                                                                                                                                                                            | 수정 금지 경로            | 선행 조건                                    | 상태 |
+| -------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------- | ---- |
+| L1       | schema·검증/갱신 후보 CLI·다운로드 검증·외부 lock·wheel 준비 | `build/locks/`, `scripts/runtime-lock/`, `scripts/prepare-resources.mjs`, `scripts/__tests__/runtime-lock/`                                                                                                                                                                     | 앱·sidecar 코드·루트 설정 | 없음; schema 계약 먼저 확정                  | 완료 |
+| L2       | Python 환경 준비·manifest 대조·Main runtime 검증             | `src/main/sidecar/`, 신규 `src/main/runtime/`, 신규 `src/main/__tests__/runtime/`                                                                                                                                                                                               | L1·L3·공유 진입점         | L1, 007 D1·D2                                | 완료 |
+| L3       | 모델 registry·local loader·offline 검증                      | `sidecar/src/`, `sidecar/tests/`, `sidecar/pyproject.toml`, `sidecar/uv.lock`, `sidecar/.python-version`                                                                                                                                                                        | Main·lock 파일            | L1 schema; lock 자산 갱신은 L1 소유자가 수행 | 완료 |
+| L4       | 앱 시작/IPC/UI·타깃 패키징·최종 통합                         | `src/main/index.ts`, `src/main/ipc.ts`, `src/main/library/YtDlpService.ts`와 전용 테스트, `src/preload/`, `src/shared/`, `src/renderer/`, `package.json`, `pnpm-lock.yaml`, `electron-builder.yml`, `electron-builder.zip.mjs`, `electron-builder.msix.mjs`, `vitest.config.ts` | L1–L3 소유 경로           | L1–L3, 007 D2                                | 완료 |
+| L5       | 통합 실험·운영 문서·증거                                     | 신규 `scripts/runtime-acceptance/`, 신규 `docs/runtime-lock.md`, `docs/specs/008-runtime-dependency-lock.md`, `docs/specs/001-packaging-distribution.md`, `docs/specs/README.md`                                                                                                | 기능 코드·lock 파일       | L1–L4                                        | 완료 |
 
 판정: L1 = 기준 1–3·11의 lock/빌드 계층, L2 = 기준 3–5·8의 Main 계층, L3 = 기준 6–8 모델 계층, L4 = 기준 9–10, L5 = 기준 1–11 통합 증거. 패키지 변경 후 wheel lock 재계산 등 교차 수정은 소유자에게 순서대로 전달한다. 007과 공유하는 `index.ts`·스펙 인덱스는 007 완료 후 수정한다. 생성 `resources/`는 파일 소유 편집 대신 L4 빌드로 생성한다.
 
@@ -136,7 +136,7 @@ ZIP·APPX의 capability 분기는 001을 따른다. APPX에서 의도적으로 �
 
 ## 5. 검증 방법
 
-다음 신규 CLI는 L1·L5에서 제공할 계약이며 현재 실행 가능한 명령이 아니다. fixture 시험은 소형 합성 자산·로컬 HTTP 서버를 쓰고 실제 수 GB 모델 시험과 구분한다.
+fixture 시험은 소형 합성 자산·로컬 HTTP 서버를 쓰고 실제 수 GB 모델 시험과 구분한다.
 
 ```bash
 # 기준 1·3·11: schema·source lock 일치·배포 입력 확인, 파일 변경 없음
@@ -160,4 +160,20 @@ node scripts/runtime-acceptance/run.mjs --real-assets --data-dir dist/runtime-ac
 - 기본 fixture 시험은 잘못된 hash·경로 탈출·일시 파일·동시 요청·대기자별 취소·Windows 파일 잠김·준비 도중 종료·새 앱/구 환경 mismatch를 포함한다. 프로세스 강제 종료는 테스트 전용 디렉터리에서만 한다.
 - 실제 자산 시험은 빈 캐시 준비, 기존 캐시 재사용, 선택 가능한 모든 모델 최소 실행, 네트워크 차단 후 재실행, 이전 환경 보존, URL 도구 검증을 기록한다. 모델명별 수행/미수행과 다운로드·검증 시간/디스크 사용량을 남긴다.
 - 수동: 패키징 앱에서 의존성 실패 시 기존 완료 곡 재생, 작업 차단·재시도, 진행 단계, ZIP/APPX capability를 확인한다. 패키지 검사만으로 GPU·YouTube·실제 기기 동작을 통과했다고 보고하지 않는다.
-- 검증 결과: 문서 작성 단계다. 실제 자산의 version/hash 채택, wheel 호스팅, 구현·패키징·실행 검증은 미완료다. 전체 실자산 검증 없이 이 스펙을 구현 완료로 표시하지 않는다.
+- 검증 결과 (2026-09-16):
+
+| 기준 | 상태                    | 근거                                                                                                           |
+| ---- | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
+| 1    | fixture 통과            | `cli.mjs verify` exit 0, schema/missing-hash/host 테스트. lock 미수정                                          |
+| 2    | fixture 통과            | 1바이트 변조·truncated·ZIP 탈출/symlink/대소문자/비허용 exe. `--version` 전 hash                               |
+| 3    | lock+코드 통과          | CPython 3.12.14+20260901 inventory, win32 x64 wheels.lock ↔ uv.lock. 실기기 offline 설치는 패키징 앱 확인 대기 |
+| 4    | 단위 통과               | sidecar digest에 `.python-version` 포함. `.ready`/`.venv`만으로 ready 아님                                     |
+| 5    | 단위 통과               | 실패 시 이전 포인터 유지, 성공 시에만 swap, manifest mismatch 거부                                             |
+| 6    | lock+registry 통과      | Demucs 5·whisper turbo·MMS_FA·Beat This! `final0` 목록·hash 채택                                               |
+| 7    | fixture 통과            | 가중치/config 변조, 네트워크 차단 후 로컬 로드. 실모델 최소 실행은 `--real-assets` 대기                        |
+| 8    | fixture 통과            | digest single-flight, waiter별 취소, incomplete 미게시                                                         |
+| 9    | fixture 통과, 실팩 대기 | extraResources zip/appx 분기 + `verify-package` fixture. `pnpm build:zip`/`build:msix` 실바이트는 미실행       |
+| 10   | 단위+UI 코드 통과       | 라이브러리는 runtime 준비 전에도 열림. 런타임 필요 작업만 차단. 패키징 앱 수동 확인 대기                       |
+| 11   | 통과                    | `propose`는 `--output`만 기록. verify 자동 수용 없음                                                           |
+
+전체 실자산·패키징 바이트 검증 없이 이 스펙을 구현 완료로 표시하지 않는다.

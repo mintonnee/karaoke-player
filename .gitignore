@@ -342,3 +342,6 @@ lefthook-local.yml
 # 패키징 리소스 (scripts/prepare-resources.mjs 산출물 — 커밋하지 않는다)
 resources/bin/
 resources/sidecar/
+
+# 패키징 시 생성되는 runtime manifest (electron-builder.manifest.mjs)
+build/runtime-manifest.json

@@ -1,0 +1,5 @@
+{
+  "source": "uv 0.12.9 crates/uv-python/download-metadata.json key cpython-3.12.14-windows-x86_64-none",
+  "sha256": "7c45c9622400d578709a9b2cddbe8124cc21d382409d9f13406d706d28e31b14",
+  "innerFiles": "maintainer-verified extract of install_only_stripped tar.gz"
+}

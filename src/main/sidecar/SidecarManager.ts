@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { buildRuntimeSidecarOptions as buildRuntimeLaunch, type RuntimeManifest } from '../runtime'
 
 /** §4.2 사이드카 프로토콜: stdout 한 줄 = JSON 하나 */
 export interface SidecarProgressEvent {
@@ -187,4 +188,18 @@ export function createUvSidecarManager(
     baseArgs: ['run', '--project', sidecarDir, 'karaoke_worker'],
     onLog
   })
+}
+
+/** 검증된 런타임 python으로 worker를 실행. uv sync/네트워크 없음. */
+export function buildRuntimeSidecarOptions(
+  runtimeDir: string,
+  opts: { manifest?: RuntimeManifest; onLog?: (line: string) => void } = {}
+): SidecarManagerOptions {
+  const launch = buildRuntimeLaunch(runtimeDir, { manifest: opts.manifest })
+  return {
+    command: launch.command,
+    baseArgs: launch.baseArgs,
+    env: launch.env,
+    onLog: opts.onLog
+  }
 }

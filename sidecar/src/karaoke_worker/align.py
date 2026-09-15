@@ -117,16 +117,21 @@ def align(vocal_path: str, lyrics_path: str, lang: str, out_lrc: str) -> dict[st
 
     emit_progress("align", 0, "loading MMS_FA model")
     import torch
-    import torchaudio
     import torchaudio.functional as F
 
+    from .models import get_registry, load_mms_fa
     from .separate import _resolve_device
 
     device = _resolve_device("auto")
-    bundle = torchaudio.pipelines.MMS_FA
-    model = bundle.get_model(with_star=False).to(device)
-    dictionary = bundle.get_dict(star=None)
-    sample_rate = bundle.sample_rate
+    registry = get_registry()
+    cache_key = ("mms-fa", False)
+    cached = registry.get_loaded(cache_key)
+    if cached is None:
+        prepared = registry.prepare("mms-fa")
+        cached = load_mms_fa(prepared, with_star=False)
+        registry.remember(cache_key, cached)
+    model, dictionary, sample_rate = cached
+    model = model.to(device)
 
     words_per_line, word_counts = _romanize_words(display_lines, lang)
     flat_words = [w for words in words_per_line for w in words]

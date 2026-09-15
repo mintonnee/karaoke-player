@@ -1,0 +1,8 @@
+import './schema.test.mjs'
+import './zip.test.mjs'
+import './download.test.mjs'
+import './wheels.test.mjs'
+import './verify.test.mjs'
+import './package.test.mjs'
+import './prepare.test.mjs'
+import './parity.test.mjs'

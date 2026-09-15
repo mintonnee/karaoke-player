@@ -1,0 +1,36 @@
+{
+  "id": "duplicate-dest",
+  "description": "two artifacts cannot share a destination path",
+  "lock": {
+    "schemaVersion": 1,
+    "kind": "tools",
+    "platform": "win32-x64",
+    "artifacts": [
+      {
+        "id": "a",
+        "kind": "file",
+        "version": "1",
+        "platform": "win32-x64",
+        "url": "https://github.com/astral-sh/uv/releases/download/1/a.exe",
+        "size": 4,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "dest": "resources/bin/tool.exe",
+        "source": "github.com/astral-sh/uv",
+        "license": "MIT"
+      },
+      {
+        "id": "b",
+        "kind": "file",
+        "version": "1",
+        "platform": "win32-x64",
+        "url": "https://github.com/denoland/deno/releases/download/1/b.exe",
+        "size": 4,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "dest": "resources/bin/tool.exe",
+        "source": "github.com/denoland/deno",
+        "license": "MIT"
+      }
+    ]
+  },
+  "expected": { "accept": false, "reasonCode": "DUPLICATE_DEST" }
+}

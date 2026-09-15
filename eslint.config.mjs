@@ -42,8 +42,8 @@ export default defineConfig(
     }
   },
   {
-    // 테스트 픽스처(plain JS)에는 TS 전용 규칙을 적용하지 않는다
-    files: ['**/__tests__/**/*.mjs'],
+    // .mjs는 JSDoc만 쓰고 반환 타입 표기를 하지 않는다 (scripts/prepare-resources.mjs 와 동일)
+    files: ['**/*.mjs'],
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'off'
     }

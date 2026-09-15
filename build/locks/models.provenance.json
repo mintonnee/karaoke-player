@@ -1,0 +1,38 @@
+{
+  "whisper": {
+    "repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+    "modelBin": "Hugging Face tree API lfs.oid (sha256)",
+    "sidecarFiles": "downloaded resolve/<sha> and hashed locally"
+  },
+  "beat-this": {
+    "url": "https://cloud.cp.jku.at/public.php/dav/files/7ik4RrBKTS273gp/final0.ckpt",
+    "method": "maintainer-verified download SHA-256"
+  },
+  "demucs": {
+    "urls": "https://dl.fbaipublicfiles.com/demucs from facebookresearch/demucs remote/files.txt",
+    "method": "maintainer-verified download of locked HTTPS URL; Content-Length and actual bytes matched locked size; SHA-256 of complete response body",
+    "artifacts": {
+      "htdemucs": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
+      "htdemucs_ft.0": "ba3fe64ae8ef66ac9a4857222ce48efbdc5eb3ad375cb79dd13debee5aaa4066",
+      "htdemucs_ft.1": "e57c48e6b0e38af4f7118d7bd08c49f0a0c0edf7d09143bdd902ea0d237303e6",
+      "htdemucs_ft.2": "ef3bcb9c8b40d14ae5d51b6db2587339cc12c6b77c0be151ce6d69002e087bf2",
+      "htdemucs_ft.3": "f3cf25b222c4eed7cd49dd8b2c9597d50c18bd154090f7b919cfa5f93cf22c49",
+      "hdemucs_mmi": "1941ce654b11df4132b9f4eae408556b4c83fad6fe26b4bc0dbcb36b975befb3",
+      "mdx_extra.0": "c1b80bdd6de58274abf359e66822a76f49ce2b9f086fc5dc917ac14598e6bebf",
+      "mdx_extra.1": "ae9d245283bf24b552913ee233a1101dcd0aeaed59b1c0a2da0e1f6eda15101b",
+      "mdx_extra.2": "db83574e05b2308f76e2764819da673f2d16d437b9e619f5fcb72f275fc0e24f",
+      "mdx_extra.3": "61801ae1567d606c97a9c3469e943ae306d0a873eeb60d623ae7cfc7042b3f68",
+      "mdx_extra_q.0": "4a16d450fd8c9277494e23865cadaa4a3e64141c45411d84243b8c95ea4b7cae",
+      "mdx_extra_q.1": "e5a9386ecbf6f30bb2bdc7ae162f471d87f3b5bffba1a8cb2cebe4403280967e",
+      "mdx_extra_q.2": "a89dd0eeb547221dcfd6c0a47baa768ce0bce548eaf86b9a404d6b1088b5d22f",
+      "mdx_extra_q.3": "a905dd8548f7389f1a3686c24c09d7bee61b716e3372e778e2acec88333ecdf4"
+    }
+  },
+  "mms-fa": {
+    "url": "https://dl.fbaipublicfiles.com/mms/torchaudio/ctc_alignment_mling_uroman/model.pt",
+    "method": "stream SHA-256 of existing local torch-hub file; size matched lock (1262047414)",
+    "path": "C:\\Users\\mingyu\\.cache\\torch\\hub\\checkpoints\\model.pt",
+    "sha256": "20ef12963ab4924bef49ac4fc7f58ad5da2ee43b2c11bc8c853c9b90ecdbc680"
+  }
+}

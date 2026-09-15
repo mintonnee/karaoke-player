@@ -25,6 +25,7 @@ import {
   type SongMetaOrigin
 } from '../import/form'
 import { parseImportYoutubeUrl } from '../import/youtube'
+import { useRuntimeReady } from '../stores/bootstrapStore'
 import { useLibraryStore } from '../stores/libraryStore'
 
 interface ImportDialogProps {
@@ -55,6 +56,7 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
   const importFiles = useLibraryStore((s) => s.importFiles)
   const importPair = useLibraryStore((s) => s.importPair)
   const importUrl = useLibraryStore((s) => s.importUrl)
+  const runtimeReady = useRuntimeReady()
 
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [settingsSaving, setSettingsSaving] = useState(false)
@@ -75,7 +77,7 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
   const titleInputId = useId()
   const artistInputId = useId()
   const separates = form.method === 'general' || form.method === 'url'
-  const submitReady = canSubmit(form) && (!separates || settings !== null)
+  const submitReady = canSubmit(form) && (!separates || settings !== null) && runtimeReady
 
   const methods = METHODS.filter((method) => !method.urlOnly || urlImportAvailable)
 
@@ -257,7 +259,7 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
   }
 
   const submit = async (): Promise<void> => {
-    if (busyRef.current || !submitReady) return
+    if (busyRef.current || !submitReady || !runtimeReady) return
     const songMeta = songMetaFromForm(form)
     try {
       if (form.method === 'general' && form.generalPath) {
@@ -400,6 +402,11 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
           </fieldset>
 
           <div className="import-detail">
+            {!runtimeReady && (
+              <p className="import-error" role="alert">
+                런타임이 준비되면 가져오기를 사용할 수 있습니다. 기존 곡 재생은 계속 할 수 있습니다.
+              </p>
+            )}
             {form.errors.count && (
               <p className="import-error" role="alert">
                 {form.errors.count}
@@ -710,7 +717,11 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
             <button type="button" className="import-secondary" disabled={busy} onClick={onClose}>
               닫기
             </button>
-            <button type="submit" className="import-submit" disabled={busy || !submitReady}>
+            <button
+              type="submit"
+              className="import-submit"
+              disabled={busy || !submitReady || !runtimeReady}
+            >
               {submitLabel}
             </button>
           </div>

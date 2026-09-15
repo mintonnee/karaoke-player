@@ -23,13 +23,15 @@ import SettingsModal from './components/SettingsModal'
 import ShortcutHelp from './components/ShortcutHelp'
 import TrackEditDialog from './components/TrackEditDialog'
 import Transport from './components/Transport'
+import { useBootstrapStore } from './stores/bootstrapStore'
 import { useErrorStore } from './stores/errorStore'
 import { useLibraryStore } from './stores/libraryStore'
 import { useLyricsStore } from './stores/lyricsStore'
 import { usePlayerStore } from './stores/playerStore'
 import { formatBpmDisplay } from '../../shared/analysisFormat'
+import { bootstrapChrome, isRuntimeActionAllowed } from '../../shared/bootstrap'
 import { formatKeyDisplay } from '../../shared/musicKey'
-import type { BootstrapState, Track } from '../../shared/types'
+import type { Track } from '../../shared/types'
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -212,16 +214,18 @@ function App(): React.JSX.Element {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const trackListRef = useRef<HTMLUListElement>(null)
   const modalOpen = showSettings || showImport || editingTrack !== null
-  // null = 아직 조회 전. ready가 아니면 라이브러리 대신 부트스트랩 화면 (스펙 001 §4.1)
-  const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null)
+  const bootstrap = useBootstrapStore((s) => s.state)
+  const setBootstrap = useBootstrapStore((s) => s.setState)
   const importBusy = importing || urlImporting || pairImporting
+  const runtimeAllowed = isRuntimeActionAllowed(bootstrap)
+  const prepChrome = bootstrapChrome(bootstrap, { trackCount: tracks.length })
 
   useEffect(() => {
     // 구독을 먼저 걸어 조회와 이벤트 사이의 상태 변화를 놓치지 않는다
     const unsubscribe = window.api.onBootstrapState(setBootstrap)
     void window.api.getBootstrapState().then(setBootstrap)
     return unsubscribe
-  }, [])
+  }, [setBootstrap])
 
   useEffect(() => {
     void refresh()
@@ -324,7 +328,7 @@ function App(): React.JSX.Element {
     setDragOver(false)
     // 행 드래그가 목록 밖에 떨어진 경우: 파일 임포트로 오인하지 않는다
     if (event.dataTransfer.types.includes(ROW_DRAG_MIME)) return
-    if (importBusy || modalOpen) return
+    if (importBusy || modalOpen || !runtimeAllowed) return
     const paths = Array.from(event.dataTransfer.files).map((file) =>
       window.api.getPathForFile(file)
     )
@@ -334,7 +338,7 @@ function App(): React.JSX.Element {
   }
 
   const openImport = (): void => {
-    if (importBusy || modalOpen) return
+    if (importBusy || modalOpen || !runtimeAllowed) return
     setImportDropPaths([])
     setShowImport(true)
   }
@@ -414,11 +418,6 @@ function App(): React.JSX.Element {
     await deleteTrack(track.id)
   }
 
-  if (bootstrap === null) return <div className="app" />
-  if (bootstrap.status !== 'ready') {
-    return <BootstrapScreen state={bootstrap} onRetry={() => void window.api.retryBootstrap()} />
-  }
-
   return (
     <div className="app">
       <div className="main-area">
@@ -428,7 +427,7 @@ function App(): React.JSX.Element {
             // 행 정렬 드래그는 파일 드롭 하이라이트 대상이 아니다
             if (e.dataTransfer.types.includes(ROW_DRAG_MIME)) return
             e.preventDefault()
-            if (importBusy || modalOpen) return
+            if (importBusy || modalOpen || !runtimeAllowed) return
             setDragOver(true)
           }}
           onDragLeave={() => setDragOver(false)}
@@ -437,7 +436,14 @@ function App(): React.JSX.Element {
           <div className="panel-header">
             <h2>노래 리스트</h2>
             <div className="panel-header-actions">
-              <button type="button" onClick={openImport} disabled={importBusy || modalOpen}>
+              <button
+                type="button"
+                onClick={openImport}
+                disabled={importBusy || modalOpen || !runtimeAllowed}
+                title={
+                  runtimeAllowed ? undefined : '런타임이 준비되면 가져오기를 사용할 수 있습니다'
+                }
+              >
                 {importBusy ? '임포트 중…' : '+ 가져오기'}
               </button>
             </div>
@@ -451,6 +457,14 @@ function App(): React.JSX.Element {
             value={search}
             onChange={(e) => void setSearch(e.target.value)}
           />
+
+          {prepChrome !== 'hidden' && bootstrap && (
+            <BootstrapScreen
+              state={bootstrap}
+              variant={prepChrome}
+              onRetry={() => void window.api.retryBootstrap()}
+            />
+          )}
 
           {rejections.length > 0 && (
             <div className="rejections">
@@ -486,7 +500,7 @@ function App(): React.JSX.Element {
                 onEdit={() => openEdit(track)}
               />
             ))}
-            {tracks.length === 0 && (
+            {tracks.length === 0 && prepChrome !== 'panel' && (
               <li className="track-empty">
                 {search
                   ? '검색 결과가 없습니다.'

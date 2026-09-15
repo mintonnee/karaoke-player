@@ -1,8 +1,9 @@
 /**
- * MSIX(appx, Store 제출용) 타깃 — 스펙 001 §4.2.
- * Store 정책상 yt-dlp.exe 만 제외한다 → 앱이 리소스 부재를 감지해 URL 임포트를 끈다 (§4.3).
- * identity 값은 Partner Center 발급 전까지 placeholder 를 쓰고 env 로 덮어쓴다.
+ * MSIX(appx, Store 제출용) 타깃 — 스펙 001 §4.2, 008 기준 9.
+ * Store 정책상 yt-dlp.exe 만 제외한다. lock·runtime-manifest 는 포함한다.
  */
+import { extraResourcesFor, writeRuntimeManifest } from './electron-builder.manifest.mjs'
+
 const env = process.env
 
 export default {
@@ -22,9 +23,8 @@ export default {
     languages: ['en-US', 'ko-KR'],
     addAutoLaunchExtension: false
   },
-  extraResources: [
-    { from: 'resources/bin/uv.exe', to: 'bin/uv.exe' },
-    { from: 'resources/bin/deno.exe', to: 'bin/deno.exe' },
-    { from: 'resources/sidecar', to: 'sidecar' }
-  ]
+  extraResources: extraResourcesFor('appx'),
+  beforePack: async () => {
+    await writeRuntimeManifest()
+  }
 }

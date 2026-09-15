@@ -136,9 +136,15 @@ def estimate_key(y: np.ndarray, sr: int) -> tuple[str | None, float]:
 
 def estimate_bpm(y: np.ndarray, sr: int, device: str) -> tuple[float | None, float]:
     """Beat This!로 비트 시각을 뽑아 중앙 간격에서 BPM을 구한다."""
-    from beat_this.inference import Audio2Beats
+    from .models import get_registry, load_beat_this
 
-    audio2beats = Audio2Beats(checkpoint_path="final0", device=device, dbn=False)
+    registry = get_registry()
+    cache_key = ("beat-this-final0", device)
+    audio2beats = registry.get_loaded(cache_key)
+    if audio2beats is None:
+        prepared = registry.prepare("beat-this-final0")
+        audio2beats = load_beat_this(prepared, device=device, dbn=False)
+        registry.remember(cache_key, audio2beats)
     beats, _downbeats = audio2beats(np.asarray(y, dtype=np.float32), sr)
 
     beats = np.asarray(beats, dtype=np.float64).ravel()

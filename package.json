@@ -18,9 +18,10 @@
     "build": "npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "prepare:resources": "node scripts/prepare-resources.mjs",
-    "build:unpack": "npm run build && npm run prepare:resources && electron-builder --dir --config electron-builder.zip.mjs",
-    "build:zip": "npm run build && npm run prepare:resources && electron-builder --config electron-builder.zip.mjs",
-    "build:msix": "npm run build && npm run prepare:resources && electron-builder --config electron-builder.msix.mjs",
+    "verify:runtime-lock": "node scripts/runtime-lock/cli.mjs verify",
+    "build:unpack": "npm run build && npm run prepare:resources && node scripts/runtime-lock/cli.mjs verify && electron-builder --dir --config electron-builder.zip.mjs",
+    "build:zip": "npm run build && npm run prepare:resources && node scripts/runtime-lock/cli.mjs verify && electron-builder --config electron-builder.zip.mjs",
+    "build:msix": "npm run build && npm run prepare:resources && node scripts/runtime-lock/cli.mjs verify && electron-builder --config electron-builder.msix.mjs",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux"
   },

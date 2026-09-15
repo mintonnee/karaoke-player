@@ -1425,37 +1425,44 @@
   text-align: center;
 }
 
-/* 첫 실행 부트스트랩 화면 (스펙 001 §4.1): 라이브러리 대신 전체 화면으로 표시 */
-.bootstrap-screen {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  padding: 16px;
-}
-
-.bootstrap-card {
+/* 런타임 준비 배너 (스펙 008 기준 10): 라이브러리를 가리지 않는다 */
+.bootstrap-banner {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  width: min(560px, 100%);
-  padding: 28px 32px;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--ev-c-gray-3);
-  border-radius: 12px;
-  background-color: var(--ev-c-black-soft);
+  border-radius: 8px;
+  background-color: var(--ev-c-black-mute);
 }
 
-.bootstrap-card h1 {
-  font-size: 20px;
-  font-weight: 600;
+.bootstrap-banner.bootstrap-strip {
+  padding: 8px 12px;
+  gap: 6px;
+}
+
+.bootstrap-banner.bootstrap-failed {
+  border-color: #633;
+}
+
+.bootstrap-banner-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .bootstrap-stage {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--ev-c-text-1);
+}
+
+.bootstrap-meta {
+  font-size: 11px;
+  color: var(--ev-c-text-3);
 }
 
 .bootstrap-stage-error {

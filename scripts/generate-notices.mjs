@@ -16,7 +16,6 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8'))
 // LICENSE.electron.txt / LICENSES.chromium.html 이 담당하지만 목록에는 포함한다)
 const bundledPackages = [...Object.keys(pkg.dependencies ?? {}), 'react', 'react-dom', 'electron']
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- 타입 표기 불가한 .mjs
 function readLicenseText(pkgDir) {
   let entries
   try {

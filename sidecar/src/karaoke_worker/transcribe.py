@@ -30,15 +30,31 @@ def transcribe(vocal_path: str, lang: str, out_txt: str) -> dict[str, Any]:
     if not vocal.is_file():
         raise WorkerError("FILE_NOT_FOUND", f"vocal file not found: {vocal_path}")
 
+    from .models import get_registry, load_whisper_model
+
+    registry = get_registry()
+    model_id = registry.resolve_env_whisper()
+
     _expose_torch_cuda_dlls()
-    emit_progress("transcribe", 0, f"loading whisper model {DEFAULT_WHISPER_MODEL}")
-    from faster_whisper import WhisperModel
+    emit_progress("transcribe", 0, f"loading whisper model {model_id}")
+    prepared = registry.prepare(model_id)
+
+    def _load(device: str, compute_type: str):
+        cache_key = ("whisper", model_id, device, compute_type)
+        cached = registry.get_loaded(cache_key)
+        if cached is not None:
+            return cached
+        loaded = load_whisper_model(
+            prepared, device=device, compute_type=compute_type, local_files_only=True
+        )
+        registry.remember(cache_key, loaded)
+        return loaded
 
     try:
-        model = WhisperModel(DEFAULT_WHISPER_MODEL, device="cuda", compute_type="float16")
+        model = _load("cuda", "float16")
     except Exception as e:  # noqa: BLE001 — GPU 불가 시 CPU로
         log(f"cuda whisper unavailable ({e}), falling back to cpu int8")
-        model = WhisperModel(DEFAULT_WHISPER_MODEL, device="cpu", compute_type="int8")
+        model = _load("cpu", "int8")
 
     language = None if lang == "auto" else lang
     segments, info = model.transcribe(str(vocal), language=language, vad_filter=True)

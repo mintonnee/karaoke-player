@@ -1,4 +1,3 @@
-import { createHash } from 'crypto'
 import { existsSync } from 'fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
@@ -14,41 +13,61 @@ import {
   isSidecarReady,
   shouldCopySidecarPath
 } from '../SidecarBootstrap'
-
-const FAKE_UV = join(process.cwd(), 'src', 'main', 'sidecar', '__tests__', 'fake_uv.mjs')
-const LOCK_CONTENT = 'version = 1\n[[package]]\nname = "torch"\n'
-const LOCK_HASH = createHash('sha256').update(LOCK_CONTENT).digest('hex')
+import {
+  envPrepFail,
+  envPrepFlaky,
+  envPrepOk,
+  miniManifest,
+  writeMiniSidecar
+} from '../../__tests__/runtime/helpers'
+import {
+  readPointer,
+  runtimeDir,
+  writePointer,
+  type RuntimeLockSet,
+  type RuntimeManifest
+} from '../../runtime'
 
 let root: string
 let bundled: string
 let target: string
+let manifest: RuntimeManifest
+let locks: RuntimeLockSet
 
 async function writeBundled(): Promise<void> {
   await mkdir(join(bundled, 'src', 'karaoke_worker', '__pycache__'), { recursive: true })
   await mkdir(join(bundled, 'src', 'karaoke_worker.egg-info'), { recursive: true })
   await mkdir(join(bundled, '.venv', 'Scripts'), { recursive: true })
-  await writeFile(join(bundled, 'pyproject.toml'), '[project]\nname = "karaoke-worker"\n')
-  await writeFile(join(bundled, 'uv.lock'), LOCK_CONTENT)
-  await writeFile(join(bundled, 'src', 'karaoke_worker', '__init__.py'), '')
-  await writeFile(join(bundled, 'src', 'karaoke_worker', 'cli.py'), 'def main(): pass\n')
+  await writeMiniSidecar(bundled)
   await writeFile(join(bundled, 'src', 'karaoke_worker', '__pycache__', 'cli.pyc'), 'bin')
   await writeFile(join(bundled, 'src', 'karaoke_worker.egg-info', 'PKG-INFO'), 'x')
   await writeFile(join(bundled, '.venv', 'pyvenv.cfg'), 'home = C:\\python\n')
 }
 
-function createBootstrap(mode: 'ok' | 'fail' | 'flaky'): {
+function createBootstrap(
+  mode: 'ok' | 'fail' | 'flaky',
+  extra: Partial<ConstructorParameters<typeof SidecarBootstrap>[0]> = {}
+): {
   bootstrap: SidecarBootstrap
   statuses: BootstrapStatus[]
 } {
   const statuses: BootstrapStatus[] = []
-  const args = mode === 'flaky' ? [FAKE_UV, 'flaky', join(root, 'flaky.marker')] : [FAKE_UV, mode]
+  const envPrep =
+    mode === 'ok'
+      ? envPrepOk()
+      : mode === 'fail'
+        ? envPrepFail()
+        : envPrepFlaky(join(root, 'flaky.marker'))
   const bootstrap = new SidecarBootstrap({
     bundledSidecarDir: bundled,
     targetSidecarDir: target,
+    userDataDir: root,
     uvCommand: process.execPath,
-    syncArgs: args,
-    env: { KARAOKE_TEST: '1' },
-    onLog: () => {}
+    manifest,
+    locks,
+    envPrep,
+    onLog: () => {},
+    ...extra
   })
   bootstrap.onChange((state: BootstrapState) => {
     if (statuses[statuses.length - 1] !== state.status) statuses.push(state.status)
@@ -59,8 +78,11 @@ function createBootstrap(mode: 'ok' | 'fail' | 'flaky'): {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'karaoke-bootstrap-'))
   bundled = join(root, 'bundled')
-  target = join(root, 'target')
+  target = join(root, 'sidecar')
   await writeBundled()
+  const built = await miniManifest(bundled)
+  manifest = built.manifest
+  locks = built.locks
 })
 
 afterEach(async () => {
@@ -72,6 +94,7 @@ describe('shouldCopySidecarPath', () => {
     expect(shouldCopySidecarPath('')).toBe(true)
     expect(shouldCopySidecarPath('pyproject.toml')).toBe(true)
     expect(shouldCopySidecarPath('uv.lock')).toBe(true)
+    expect(shouldCopySidecarPath('.python-version')).toBe(true)
     expect(shouldCopySidecarPath(join('src', 'karaoke_worker', 'cli.py'))).toBe(true)
     expect(shouldCopySidecarPath('.venv')).toBe(false)
     expect(shouldCopySidecarPath(join('.venv', 'pyvenv.cfg'))).toBe(false)
@@ -99,6 +122,7 @@ describe('copySidecarProject', () => {
 
     expect(existsSync(join(target, 'pyproject.toml'))).toBe(true)
     expect(existsSync(join(target, 'uv.lock'))).toBe(true)
+    expect(existsSync(join(target, '.python-version'))).toBe(true)
     expect(existsSync(join(target, 'src', 'karaoke_worker', 'cli.py'))).toBe(true)
     expect(existsSync(join(target, 'src', 'karaoke_worker', '__pycache__'))).toBe(false)
     expect(existsSync(join(target, 'src', 'karaoke_worker.egg-info'))).toBe(false)
@@ -109,119 +133,126 @@ describe('copySidecarProject', () => {
 })
 
 describe('isSidecarReady', () => {
-  it('마커 부재 → false', async () => {
-    expect(await isSidecarReady(bundled, target)).toBe(false)
+  it('포인터 부재 → false', async () => {
+    expect(await isSidecarReady({ userDataDir: root, manifest })).toBe(false)
   })
 
-  it('마커 일치 + .venv 존재 → true', async () => {
+  it('.ready + .venv 만으로는 true가 아니다', async () => {
     await mkdir(join(target, '.venv'), { recursive: true })
     await writeFile(join(target, READY_MARKER_FILE), `${await computeProjectHash(bundled)}\n`)
-    expect(await isSidecarReady(bundled, target)).toBe(true)
+    expect(await isSidecarReady({ userDataDir: root, manifest })).toBe(false)
   })
 
-  it('마커 불일치 → false', async () => {
-    await mkdir(join(target, '.venv'), { recursive: true })
-    await writeFile(join(target, READY_MARKER_FILE), 'deadbeef\n')
-    expect(await isSidecarReady(bundled, target)).toBe(false)
-  })
-
-  it('마커 일치해도 .venv가 없으면 false', async () => {
-    await mkdir(target, { recursive: true })
-    await writeFile(join(target, READY_MARKER_FILE), `${await computeProjectHash(bundled)}\n`)
-    expect(await isSidecarReady(bundled, target)).toBe(false)
+  it('포인터 runtimeId가 현재 manifest와 다르면 false', async () => {
+    await writePointer(root, {
+      runtimeId: 'old-runtime',
+      inputDigests: {
+        platform: 'win32-x64',
+        interpreter: 'old',
+        wheels: 'old',
+        uv: 'old',
+        sidecar: 'old'
+      }
+    })
+    expect(await isSidecarReady({ userDataDir: root, manifest })).toBe(false)
   })
 })
 
 describe('SidecarBootstrap', () => {
-  it.each(['src/karaoke_worker/cli.py', 'pyproject.toml'])(
-    'lock이 같아도 %s 변경 시 기존 venv를 보존하고 재복사한다',
-    async (file) => {
-      await copySidecarProject(bundled, target)
-      await mkdir(join(target, '.venv'), { recursive: true })
-      await writeFile(join(target, '.venv', 'keep'), 'cached')
-      await writeFile(join(target, READY_MARKER_FILE), await computeProjectHash(bundled))
-      await writeFile(join(bundled, file), 'updated')
-      const { bootstrap, statuses } = createBootstrap('ok')
-      expect((await bootstrap.start()).status).toBe('ready')
-      expect(statuses).toContain('copying')
-      expect(await readFile(join(target, file), 'utf-8')).toBe('updated')
-      expect(await readFile(join(target, '.venv', 'keep'), 'utf-8')).toBe('cached')
-    }
-  )
-
-  it('기존 lock 전용 마커는 한 번 재동기화한다', async () => {
-    await mkdir(join(target, '.venv'), { recursive: true })
-    await writeFile(join(target, READY_MARKER_FILE), LOCK_HASH)
+  it('첫 실행: 최종 경로에 준비 후 포인터를 기록한다', async () => {
     const { bootstrap, statuses } = createBootstrap('ok')
-    expect((await bootstrap.start()).status).toBe('ready')
-    expect(statuses).toContain('syncing')
-  })
-
-  it('소스 삭제는 해시를 바꾸지만 제외 캐시는 영향을 주지 않는다', async () => {
-    const initial = await computeProjectHash(bundled)
-    await writeFile(join(bundled, 'src', 'karaoke_worker', '__pycache__', 'new.pyc'), 'cache')
-    expect(await computeProjectHash(bundled)).toBe(initial)
-    await rm(join(bundled, 'src', 'karaoke_worker', 'cli.py'))
-    expect(await computeProjectHash(bundled)).not.toBe(initial)
-  })
-
-  it('첫 실행: 복사 → sync → ready, 마커에 lock 해시를 기록한다', async () => {
-    const { bootstrap, statuses } = createBootstrap('ok')
-    // fake uv는 .venv를 만들지 않으므로 마커 검증만 본다
     const state = await bootstrap.start()
 
     expect(state.status).toBe('ready')
-    expect(statuses).toEqual(['checking', 'copying', 'syncing', 'ready'])
-    expect(existsSync(join(target, 'src', 'karaoke_worker', 'cli.py'))).toBe(true)
-    expect(existsSync(join(target, 'src', 'karaoke_worker', '__pycache__'))).toBe(false)
-    expect((await readFile(join(target, READY_MARKER_FILE), 'utf-8')).trim()).toBe(
-      await computeProjectHash(bundled)
-    )
-    expect(state.log.some((line) => line.includes('Installed 42 packages'))).toBe(true)
+    expect(statuses[0]).toBe('checking')
+    expect(statuses).toContain('download')
+    expect(statuses).toContain('env-prep')
+    expect(statuses[statuses.length - 1]).toBe('ready')
+    expect((await readPointer(root))?.runtimeId).toBe(manifest.runtimeId)
+    expect(existsSync(join(runtimeDir(root, manifest.runtimeId), 'venv'))).toBe(true)
+    expect(
+      existsSync(
+        join(runtimeDir(root, manifest.runtimeId), 'sidecar', 'src', 'karaoke_worker', 'cli.py')
+      )
+    ).toBe(true)
     await expect(bootstrap.whenReady()).resolves.toBeUndefined()
   })
 
-  it('마커가 일치하면 sync를 건너뛰고 즉시 ready', async () => {
-    await mkdir(join(target, '.venv'), { recursive: true })
-    await writeFile(join(target, READY_MARKER_FILE), `${await computeProjectHash(bundled)}\n`)
-    // uv가 실패하는 모드라도 호출되지 않으므로 ready여야 한다
+  it('포인터가 일치하면 준비를 건너뛰고 즉시 ready', async () => {
+    const dest = runtimeDir(root, manifest.runtimeId)
+    await mkdir(join(dest, 'venv'), { recursive: true })
+    await writeFile(
+      join(dest, 'inventory.json'),
+      JSON.stringify({
+        packages: { marker: { wheel: 'm.whl', sha256: 'a'.repeat(64), version: '1' } }
+      })
+    )
+    await writeFile(
+      join(dest, 'smoke.json'),
+      JSON.stringify({ ok: true, module: 'karaoke_worker', at: 't' })
+    )
+    await writeFile(join(dest, 'meta.json'), JSON.stringify({ runtimeId: manifest.runtimeId }))
+    await writePointer(root, {
+      runtimeId: manifest.runtimeId,
+      inputDigests: {
+        platform: manifest.platform,
+        interpreter: `${manifest.interpreter.patch}+${manifest.interpreter.distributionBuild}`,
+        wheels: manifest.wheelListDigest,
+        uv: manifest.uvToolDigest,
+        sidecar: manifest.sidecarSourceDigest
+      }
+    })
     const { bootstrap, statuses } = createBootstrap('fail')
     const state = await bootstrap.start()
-
     expect(state.status).toBe('ready')
     expect(statuses).toEqual(['checking', 'ready'])
-    expect(state.log).toEqual([])
   })
 
-  it('마커 불일치(앱 업데이트)면 재복사 + 재sync 후 마커를 갱신한다', async () => {
-    await mkdir(join(target, 'src'), { recursive: true })
-    await mkdir(join(target, '.venv'), { recursive: true })
-    await writeFile(join(target, READY_MARKER_FILE), 'old-hash\n')
-    await writeFile(join(target, 'src', 'stale.py'), '')
-    const { bootstrap, statuses } = createBootstrap('ok')
-    const state = await bootstrap.start()
-
-    expect(state.status).toBe('ready')
-    expect(statuses).toEqual(['checking', 'copying', 'syncing', 'ready'])
-    expect(existsSync(join(target, 'src', 'stale.py'))).toBe(false)
-    expect(existsSync(join(target, '.venv'))).toBe(true)
-    expect((await readFile(join(target, READY_MARKER_FILE), 'utf-8')).trim()).toBe(
-      await computeProjectHash(bundled)
-    )
-  })
-
-  it('sync 실패 → error, 마커를 남기지 않는다', async () => {
+  it('준비 실패 시 이전 포인터와 이전 런타임 디렉터리를 유지한다', async () => {
+    const prevDir = runtimeDir(root, 'previous')
+    await mkdir(prevDir, { recursive: true })
+    await writeFile(join(prevDir, 'keep'), 'cached')
+    await writePointer(root, {
+      runtimeId: 'previous',
+      inputDigests: {
+        platform: 'win32-x64',
+        interpreter: 'old',
+        wheels: 'old',
+        uv: 'old',
+        sidecar: 'old'
+      }
+    })
     const { bootstrap, statuses } = createBootstrap('fail')
     const state = await bootstrap.start()
-
     expect(state.status).toBe('error')
-    expect(state.error).toContain('uv sync 종료 코드 1')
-    expect(state.log.some((line) => line.includes('network unreachable'))).toBe(true)
-    expect(statuses).toEqual(['checking', 'copying', 'syncing', 'error'])
-    expect(existsSync(join(target, READY_MARKER_FILE))).toBe(false)
+    expect(state.error).toContain('env prep failed')
+    expect(statuses).toContain('error')
+    expect((await readPointer(root))?.runtimeId).toBe('previous')
+    expect(await readFile(join(prevDir, 'keep'), 'utf-8')).toBe('cached')
   })
 
-  it('실패 후 retry가 성공하면 ready + 마커 기록, whenReady가 resolve된다', async () => {
+  it('성공 시에만 포인터를 바꾸고 이전 런타임 디렉터리는 남긴다', async () => {
+    const prevDir = runtimeDir(root, 'previous')
+    await mkdir(prevDir, { recursive: true })
+    await writeFile(join(prevDir, 'keep'), 'cached')
+    await writePointer(root, {
+      runtimeId: 'previous',
+      inputDigests: {
+        platform: 'win32-x64',
+        interpreter: 'old',
+        wheels: 'old',
+        uv: 'old',
+        sidecar: 'old'
+      }
+    })
+    const { bootstrap } = createBootstrap('ok')
+    expect((await bootstrap.start()).status).toBe('ready')
+    expect((await readPointer(root))?.runtimeId).toBe(manifest.runtimeId)
+    expect(await readFile(join(prevDir, 'keep'), 'utf-8')).toBe('cached')
+    expect(existsSync(runtimeDir(root, manifest.runtimeId))).toBe(true)
+  })
+
+  it('실패 후 retry가 성공하면 포인터를 기록하고 whenReady가 resolve된다', async () => {
     const { bootstrap, statuses } = createBootstrap('flaky')
     let ready = false
     void bootstrap.whenReady().then(() => {
@@ -229,25 +260,16 @@ describe('SidecarBootstrap', () => {
     })
 
     expect((await bootstrap.start()).status).toBe('error')
-    expect(existsSync(join(target, READY_MARKER_FILE))).toBe(false)
+    expect(await readPointer(root)).toBeNull()
     expect(ready).toBe(false)
 
     const state = await bootstrap.retry()
     expect(state.status).toBe('ready')
     expect(state.error).toBeNull()
-    expect(statuses).toEqual([
-      'checking',
-      'copying',
-      'syncing',
-      'error',
-      'checking',
-      'copying',
-      'syncing',
-      'ready'
-    ])
-    expect((await readFile(join(target, READY_MARKER_FILE), 'utf-8')).trim()).toBe(
-      await computeProjectHash(bundled)
-    )
+    expect(statuses[0]).toBe('checking')
+    expect(statuses).toContain('error')
+    expect(statuses[statuses.length - 1]).toBe('ready')
+    expect((await readPointer(root))?.runtimeId).toBe(manifest.runtimeId)
     await bootstrap.whenReady()
     expect(ready).toBe(true)
   })
@@ -260,16 +282,66 @@ describe('SidecarBootstrap', () => {
     expect((await first).status).toBe('ready')
   })
 
-  it('실행 파일이 없으면 error (크래시 없음)', async () => {
+  it('준비 도중 dispose하면 이전 포인터를 유지한다', async () => {
+    await writePointer(root, {
+      runtimeId: 'previous',
+      inputDigests: {
+        platform: 'win32-x64',
+        interpreter: 'old',
+        wheels: 'old',
+        uv: 'old',
+        sidecar: 'old'
+      }
+    })
+    let release!: () => void
+    const hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const { bootstrap } = createBootstrap('ok', {
+      envPrep: {
+        prepare: async (ctx) => {
+          entered()
+          await hold
+          if (ctx.signal?.aborted) {
+            const err = new Error('aborted') as Error & { code: string }
+            err.name = 'AbortError'
+            err.code = 'ABORT_ERR'
+            throw err
+          }
+          return envPrepOk().prepare!(ctx)
+        }
+      }
+    })
+    const pending = bootstrap.start()
+    await started
+    bootstrap.dispose()
+    release()
+    const state = await pending
+    expect(state.status).toBe('error')
+    expect((await readPointer(root))?.runtimeId).toBe('previous')
+  })
+
+  it('manifest 없이 start하면 error (크래시 없음)', async () => {
     const bootstrap = new SidecarBootstrap({
       bundledSidecarDir: bundled,
       targetSidecarDir: target,
-      uvCommand: 'karaoke-player-no-such-uv',
+      uvCommand: process.execPath,
       onLog: () => {}
     })
     const state = await bootstrap.start()
     expect(state.status).toBe('error')
-    expect(state.error).toContain('uv 실행 실패')
-    expect(existsSync(join(target, READY_MARKER_FILE))).toBe(false)
+    expect(state.error).toContain('runtime manifest가 필요합니다')
+  })
+
+  it('.python-version 변경은 프로젝트 해시를 바꾼다', async () => {
+    const initial = await computeProjectHash(bundled)
+    await writeFile(join(bundled, 'src', 'karaoke_worker', '__pycache__', 'new.pyc'), 'cache')
+    expect(await computeProjectHash(bundled)).toBe(initial)
+    await writeFile(join(bundled, '.python-version'), '3.13\n')
+    expect(await computeProjectHash(bundled)).not.toBe(initial)
   })
 })

@@ -1,0 +1,15 @@
+{
+  "uv": {
+    "source": "https://github.com/astral-sh/uv/releases/download/0.12.9/uv-x86_64-pc-windows-msvc.zip.sha256",
+    "archiveSha256": "ddbfcee1ac615a0499f6aa97b5ec8ebdf3ee4a7714a48055ec2ba0030e3cf810",
+    "innerFiles": "maintainer-verified extract of the official zip"
+  },
+  "yt-dlp": {
+    "source": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/SHA2-256SUMS",
+    "line": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a  yt-dlp.exe"
+  },
+  "deno": {
+    "source": "https://github.com/denoland/deno/releases/download/v2.9.6/deno-x86_64-pc-windows-msvc.zip.sha256sum",
+    "archiveSha256": "15e5300b0ba3c3695a7621d90160a746ec9e710228cee639afa9d580f6e3cd11"
+  }
+}

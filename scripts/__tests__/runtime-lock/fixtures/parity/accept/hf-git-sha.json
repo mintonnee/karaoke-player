@@ -1,0 +1,18 @@
+{
+  "id": "hf-git-sha",
+  "description": "Hugging Face artifact pinned to a full 40-char commit SHA",
+  "entry": {
+    "id": "whisper-config",
+    "kind": "file",
+    "version": "large-v3-turbo",
+    "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+    "platform": "win32-x64",
+    "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/config.json",
+    "size": 2263,
+    "sha256": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e",
+    "dest": "models/whisper-large-v3-turbo/config.json",
+    "source": "huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "license": "MIT"
+  },
+  "expected": { "accept": true }
+}

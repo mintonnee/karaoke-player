@@ -110,7 +110,7 @@ const api = {
     subscribe(IPC_CHANNELS.trackUpdated, callback),
   onImportProgress: (callback: (event: ImportProgressEvent) => void): (() => void) =>
     subscribe(IPC_CHANNELS.importProgress, callback),
-  /** 사이드카 부트스트랩 (스펙 001 §4.1). ready가 될 때까지 렌더러는 전용 화면을 보여준다 */
+  /** 사이드카 부트스트랩 (스펙 008 §4.5). 라이브러리는 ready 전에도 연다 */
   getBootstrapState: (): Promise<BootstrapState> => ipcRenderer.invoke(IPC_CHANNELS.bootstrapGet),
   retryBootstrap: (): Promise<BootstrapState> => ipcRenderer.invoke(IPC_CHANNELS.bootstrapRetry),
   onBootstrapState: (callback: (state: BootstrapState) => void): (() => void) =>

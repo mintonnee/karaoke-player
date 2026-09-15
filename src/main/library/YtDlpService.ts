@@ -45,6 +45,14 @@ const THUMBNAIL_EXTS = new Set(['.webp', '.jpg', '.jpeg', '.png'])
 /** stderr 보관 상한 (실패 사유 추출용) */
 const STDERR_KEEP = 40
 
+export interface BinaryHashSpec {
+  sha256: string
+  size: number
+  id?: string
+}
+
+export type VerifyCommandFn = (path: string, expected: BinaryHashSpec) => void
+
 export interface YtDlpServiceOptions {
   /** yt-dlp 실행 파일 경로. 테스트에서는 process.execPath */
   command: string
@@ -52,6 +60,12 @@ export interface YtDlpServiceOptions {
   baseArgs?: string[]
   /** `--js-runtimes deno:<denoPath>` 에 쓰는 동봉 deno.exe 경로 */
   denoPath: string
+  /** 최초 spawn 전에 yt-dlp 해시 검사. 없으면 생략 */
+  ytDlpHash?: BinaryHashSpec
+  /** 최초 spawn 전에 deno 해시 검사. 없으면 생략 */
+  denoHash?: BinaryHashSpec
+  /** 테스트용 해시 검사 훅. 기본은 호출하지 않음(해시 스펙이 있을 때만 필수) */
+  verifyCommand?: VerifyCommandFn
   /** 요청별 스크래치 디렉토리의 부모 (<userData>/tmp/url-import) */
   scratchRoot: string
   /** <userData>/tracks */
@@ -75,6 +89,22 @@ export interface YtDlpServiceOptions {
 /** URL 임포트 활성화 판정 (스펙 001 §4.3 / 기준 6). zip판에만 두 바이너리가 동봉된다 */
 export function hasUrlImportBinaries(ytDlpPath: string, denoPath: string): boolean {
   return existsSync(ytDlpPath) && existsSync(denoPath)
+}
+
+/**
+ * APPX에서 yt-dlp 부재는 기능 꺼짐일 뿐 오류가 아니다.
+ * 해시 불일치·ZIP에서 파일 누락은 호출 측에서 오류로 다룬다.
+ */
+export function urlImportAvailability(opts: {
+  ytDlpExists: boolean
+  denoExists: boolean
+  appx: boolean
+}): { urlImport: boolean; missingYtDlpOk: boolean } {
+  const urlImport = opts.ytDlpExists && opts.denoExists
+  return {
+    urlImport,
+    missingYtDlpOk: opts.appx && !opts.ytDlpExists
+  }
 }
 
 /** `[download]  45.3% of ...` 줄에서 퍼센트를 뽑는다. 진행 줄이 아니면 null */
@@ -155,6 +185,7 @@ export class YtDlpService {
   private chain: Promise<unknown> = Promise.resolve()
   private readonly running = new Set<ChildProcess>()
   private disposed = false
+  private binariesVerified = false
 
   constructor(private readonly options: YtDlpServiceOptions) {}
 
@@ -226,7 +257,20 @@ export class YtDlpService {
     }
   }
 
+  private verifyBinaries(): void {
+    if (this.binariesVerified) return
+    const verify = this.options.verifyCommand
+    if (verify) {
+      if (this.options.ytDlpHash) verify(this.options.command, this.options.ytDlpHash)
+      if (this.options.denoHash) verify(this.options.denoPath, this.options.denoHash)
+    } else if (this.options.ytDlpHash || this.options.denoHash) {
+      throw new Error('yt-dlp hash spec requires verifyCommand')
+    }
+    this.binariesVerified = true
+  }
+
   private download(id: string, url: string, scratch: string): Promise<DownloadOutcome> {
+    this.verifyBinaries()
     const args = [
       ...(this.options.baseArgs ?? []),
       ...buildYtDlpArgs({

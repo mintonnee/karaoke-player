@@ -1,9 +1,22 @@
-import { spawn } from 'child_process'
-import type { ChildProcess } from 'child_process'
+import { dirname, join, relative } from 'path'
+import { cp, mkdir, readFile, rm } from 'fs/promises'
 import { createHash } from 'crypto'
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'fs/promises'
-import { join, relative } from 'path'
-import type { BootstrapState } from '../../shared/types'
+import type { BootstrapPrepStage, BootstrapState } from '../../shared/types'
+import {
+  LockError,
+  computeSidecarSourceDigest,
+  isRuntimeSelected,
+  preparePythonEnv,
+  runtimeCacheRoot,
+  runtimeDir,
+  runtimeInputDigests,
+  shouldHashSidecarPath,
+  verifyManifest,
+  writePointer,
+  type EnvPrepHooks,
+  type RuntimeLockSet,
+  type RuntimeManifest
+} from '../runtime'
 
 export const READY_MARKER_FILE = '.ready'
 
@@ -11,19 +24,24 @@ export const READY_MARKER_FILE = '.ready'
 const EXCLUDED_DIRS = new Set(['.venv', '__pycache__', '.git', '.mypy_cache', '.ruff_cache'])
 
 export interface SidecarBootstrapOptions {
-  /** 번들 sidecar 프로젝트 (pyproject.toml, uv.lock, src/) */
+  /** 번들 sidecar 프로젝트 (pyproject.toml, uv.lock, src/, .python-version) */
   bundledSidecarDir: string
-  /** 복사·sync 대상. 보통 <userData>/sidecar */
+  /** 기존 경로 보존용. 보통 <userData>/sidecar. 준비 완료 판정에는 쓰지 않는다 */
   targetSidecarDir: string
-  /** uv 실행 파일. 테스트에서는 process.execPath */
+  /** 패키징 앱의 uv 경로. 해시 검증 후에만 사용 */
   uvCommand: string
-  /** uv 인자. 기본은 ['sync', '--project', targetSidecarDir, '--frozen'] */
+  /** 하위 호환. 새 준비 경로에서는 무시한다 */
   syncArgs?: string[]
-  /** process.env 위에 덮어쓸 환경 변수 (UV_CACHE_DIR 등) */
   env?: NodeJS.ProcessEnv
   onLog?: (line: string) => void
-  /** 상태에 포함할 stderr 최근 줄 수. 기본 8 */
   logTailLines?: number
+  /** 없으면 targetSidecarDir 부모를 userData로 본다 */
+  userDataDir?: string
+  manifest?: RuntimeManifest
+  locks?: RuntimeLockSet
+  fetchImpl?: typeof fetch
+  skipHostCheck?: boolean
+  envPrep?: EnvPrepHooks
 }
 
 export interface BootstrapController {
@@ -35,7 +53,7 @@ export interface BootstrapController {
   retry(): Promise<BootstrapState>
   /** 처음 ready가 되는 시점에 resolve (재시도를 거쳐도 한 번만) */
   whenReady(): Promise<void>
-  /** 진행 중인 uv 프로세스를 종료한다 (앱 종료 시) */
+  /** 진행 중인 준비를 취소한다 (앱 종료 시) */
   dispose(): void
 }
 
@@ -46,7 +64,10 @@ export const READY_STATE: BootstrapState = {
   log: []
 }
 
-/** dev 등 부트스트랩이 필요 없는 환경용: 항상 ready */
+/** L2 내부 단계. L4가 BootstrapState에 download/verify/env-prep을 확장해야 한다 */
+export type RuntimePrepareStage =
+  'checking' | 'download' | 'verify' | 'env-prep' | 'smoke' | 'ready' | 'error'
+
 export function createReadyBootstrap(): BootstrapController {
   return {
     getState: () => READY_STATE,
@@ -63,9 +84,7 @@ export function buildUvEnv(userDataDir: string): NodeJS.ProcessEnv {
   return {
     UV_CACHE_DIR: join(userDataDir, 'uv-cache'),
     UV_PYTHON_INSTALL_DIR: join(userDataDir, 'uv-python'),
-    // 시스템 Python에 의존하지 않고 항상 관리형 Python을 쓴다 (환경 재현성, uv 0.11 `--managed-python`)
     UV_MANAGED_PYTHON: '1',
-    // stderr가 TTY가 아니어도 진행 바 없이 한 줄 로그만 남기도록
     UV_NO_PROGRESS: '1'
   }
 }
@@ -88,21 +107,12 @@ export async function computeLockHash(lockPath: string): Promise<string> {
   return createHash('sha256').update(content).digest('hex')
 }
 
-/** 소스만 바뀐 릴리스도 갱신한다. 경로와 파일 해시를 정렬해 플랫폼과 순서에 독립적이다. */
+/** `.python-version`을 포함하는 sidecar 소스 digest. */
 export async function computeProjectHash(projectDir: string): Promise<string> {
-  const entries: Array<[string, string]> = []
-  const visit = async (rel: string): Promise<void> => {
-    if (!shouldCopySidecarPath(rel)) return
-    const path = join(projectDir, rel)
-    if ((await stat(path)).isDirectory()) {
-      for (const name of (await readdir(path)).sort()) await visit(`${rel}/${name}`)
-    } else {
-      entries.push([rel, await computeLockHash(path)])
-    }
-  }
-  for (const name of ['pyproject.toml', 'uv.lock', 'src']) await visit(name)
-  return createHash('sha256').update(JSON.stringify(entries)).digest('hex')
+  return computeSidecarSourceDigest(projectDir)
 }
+
+export { computeSidecarSourceDigest, shouldHashSidecarPath }
 
 export async function readReadyMarker(targetSidecarDir: string): Promise<string | null> {
   try {
@@ -114,38 +124,27 @@ export async function readReadyMarker(targetSidecarDir: string): Promise<string 
   }
 }
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
-  }
+export interface SidecarReadyOptions {
+  userDataDir: string
+  manifest: RuntimeManifest
 }
 
 /**
- * 준비 판정: 마커의 해시가 번들 프로젝트 해시와 같고 .venv가 존재해야 ready.
- * (마커만 남고 .venv가 지워진 경우도 재sync 대상)
+ * 준비 판정: 선택 포인터의 runtimeId가 현재 manifest와 같고 inventory/smoke가 기록되어야 ready.
+ * `.ready`나 `.venv` 존재만으로는 준비 완료가 아니다.
  */
-export async function isSidecarReady(
-  bundledSidecarDir: string,
-  targetSidecarDir: string
-): Promise<boolean> {
-  const marker = await readReadyMarker(targetSidecarDir)
-  if (marker === null) return false
-  const projectHash = await computeProjectHash(bundledSidecarDir)
-  if (marker !== projectHash) return false
-  return exists(join(targetSidecarDir, '.venv'))
+export async function isSidecarReady(options: SidecarReadyOptions): Promise<boolean> {
+  return isRuntimeSelected(options.userDataDir, options.manifest)
 }
 
-/** 프로젝트 파일만 새로 복사한다. 기존 .venv는 남겨 uv sync가 재사용하게 한다 */
+/** 프로젝트 파일만 새로 복사한다. 기존 .venv는 남겨 두되 신뢰하지 않는다 */
 export async function copySidecarProject(
   bundledSidecarDir: string,
   targetSidecarDir: string
 ): Promise<void> {
   await mkdir(targetSidecarDir, { recursive: true })
   await Promise.all(
-    ['src', 'pyproject.toml', 'uv.lock', READY_MARKER_FILE].map((name) =>
+    ['src', 'pyproject.toml', 'uv.lock', '.python-version', READY_MARKER_FILE].map((name) =>
       rm(join(targetSidecarDir, name), { recursive: true, force: true })
     )
   )
@@ -158,11 +157,43 @@ export async function copySidecarProject(
 
 const DEFAULT_LOG_TAIL = 8
 
+function mapStageToStatus(stage: RuntimePrepareStage): BootstrapState['status'] {
+  switch (stage) {
+    case 'checking':
+      return 'checking'
+    case 'download':
+      return 'download'
+    case 'verify':
+      return 'verify'
+    case 'env-prep':
+    case 'smoke':
+      return 'env-prep'
+    case 'ready':
+      return 'ready'
+    case 'error':
+      return 'error'
+  }
+}
+
+function stageField(stage: RuntimePrepareStage): BootstrapPrepStage | null {
+  switch (stage) {
+    case 'download':
+      return 'download'
+    case 'verify':
+      return 'verify'
+    case 'env-prep':
+    case 'smoke':
+      return 'env-prep'
+    default:
+      return null
+  }
+}
+
 /**
- * 패키징된 앱의 첫 실행 부트스트랩 (스펙 001 §4.1).
- * checking → (마커 일치) ready
- *          → copying → syncing → ready (마커 기록)
- * 실패는 어느 단계든 error. retry()로 checking부터 다시.
+ * 패키징된 앱의 런타임 준비 (스펙 008 §4.3).
+ * checking → (포인터 일치) ready
+ *          → download/verify → env-prep/smoke → 포인터 교체 → ready
+ * 실패는 어느 단계든 error. 이전 포인터·런타임 디렉터리는 유지한다.
  */
 export class SidecarBootstrap implements BootstrapController {
   private state: BootstrapState = {
@@ -173,12 +204,13 @@ export class SidecarBootstrap implements BootstrapController {
   }
   private readonly listeners = new Set<(state: BootstrapState) => void>()
   private running: Promise<BootstrapState> | null = null
-  private child: ChildProcess | null = null
   private disposed = false
+  private prepareAbort: AbortController | null = null
   private readonly readyPromise: Promise<void>
   private resolveReady!: () => void
 
   constructor(private readonly options: SidecarBootstrapOptions) {
+    this.prepareAbort = new AbortController()
     this.readyPromise = new Promise((resolve) => {
       this.resolveReady = resolve
     })
@@ -212,12 +244,31 @@ export class SidecarBootstrap implements BootstrapController {
 
   dispose(): void {
     this.disposed = true
-    this.child?.kill('SIGTERM')
+    this.prepareAbort?.abort()
   }
 
   private setState(patch: Partial<BootstrapState>): void {
     this.state = { ...this.state, ...patch }
     for (const listener of this.listeners) listener(this.state)
+  }
+
+  private setStage(
+    stage: RuntimePrepareStage,
+    message: string,
+    extra: Partial<BootstrapState> = {}
+  ): void {
+    const nextStage =
+      extra.stage !== undefined
+        ? extra.stage
+        : stage === 'error'
+          ? (this.state.stage ?? null)
+          : stageField(stage)
+    this.setState({
+      status: mapStageToStatus(stage),
+      message,
+      stage: nextStage,
+      ...extra
+    })
   }
 
   private log(line: string): void {
@@ -227,77 +278,77 @@ export class SidecarBootstrap implements BootstrapController {
     this.setState({ log })
   }
 
+  private userDataDir(): string {
+    return this.options.userDataDir ?? dirname(this.options.targetSidecarDir)
+  }
+
   private async run(): Promise<BootstrapState> {
-    const { bundledSidecarDir, targetSidecarDir } = this.options
-    this.setState({ status: 'checking', message: '사이드카 환경 확인 중', error: null, log: [] })
+    const { bundledSidecarDir } = this.options
+    this.prepareAbort = new AbortController()
+    if (this.disposed) this.prepareAbort.abort()
+    this.setStage('checking', '사이드카 환경 확인 중', { error: null, log: [] })
     try {
-      if (await isSidecarReady(bundledSidecarDir, targetSidecarDir)) {
+      const manifest = this.options.manifest
+      const locks = this.options.locks
+      if (!manifest || !locks) {
+        throw new Error('runtime manifest가 필요합니다')
+      }
+      const userDataDir = this.userDataDir()
+      const verified = await verifyManifest(manifest, locks, bundledSidecarDir)
+      if (!verified.ok) {
+        throw new Error(verified.errors.map((e) => `${e.code} ${e.message}`).join('\n'))
+      }
+
+      if (await isSidecarReady({ userDataDir, manifest })) {
         return this.markReady()
       }
-      const projectHash = await computeProjectHash(bundledSidecarDir)
+      if (this.disposed) throw new Error('bootstrap disposed')
 
-      this.setState({ status: 'copying', message: '사이드카 복사 중' })
-      await copySidecarProject(bundledSidecarDir, targetSidecarDir)
+      const dest = runtimeDir(userDataDir, manifest.runtimeId)
+      await mkdir(dest, { recursive: true })
 
-      this.setState({
-        status: 'syncing',
-        message: 'Python 환경 구성 중 (수 GB 다운로드, 수 분 소요)'
+      this.setStage('download', '런타임 입력 준비 중')
+      await copySidecarProject(bundledSidecarDir, join(dest, 'sidecar'))
+
+      this.setStage('env-prep', 'Python 환경 구성 중')
+      const result = await preparePythonEnv({
+        runtimeDir: dest,
+        manifest,
+        locks,
+        cacheRoot: runtimeCacheRoot(userDataDir),
+        signal: this.prepareAbort.signal,
+        fetchImpl: this.options.fetchImpl,
+        skipHostCheck: this.options.skipHostCheck,
+        hooks: this.options.envPrep,
+        uvCommand: this.options.uvCommand,
+        onLog: (line) => this.log(line)
       })
-      await this.runUvSync()
 
-      // 실패 시에는 여기 도달하지 않으므로 마커는 성공 경로에서만 남는다
-      await writeFile(join(targetSidecarDir, READY_MARKER_FILE), `${projectHash}\n`, 'utf-8')
+      this.setStage('smoke', '런타임 smoke 확인 중')
+      if (!result.smoke.ok) {
+        throw new Error(result.smoke.error ?? 'runtime smoke failed')
+      }
+
+      await writePointer(userDataDir, {
+        runtimeId: manifest.runtimeId,
+        inputDigests: result.inputDigests ?? runtimeInputDigests(manifest)
+      })
       return this.markReady()
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      this.setState({ status: 'error', message: '사이드카 환경 구성 실패', error: message })
+      const logicalId = error instanceof LockError ? (error.id ?? null) : null
+      this.setStage('error', '사이드카 환경 구성 실패', {
+        error: message,
+        logicalId,
+        retryable: true
+      })
       return this.state
     }
   }
 
   private markReady(): BootstrapState {
-    this.setState({ status: 'ready', message: '준비 완료', error: null })
+    this.setStage('ready', '준비 완료', { error: null })
     this.resolveReady()
     return this.state
-  }
-
-  private runUvSync(): Promise<void> {
-    const { uvCommand, targetSidecarDir } = this.options
-    const args = this.options.syncArgs ?? ['sync', '--project', targetSidecarDir, '--frozen']
-    return new Promise((resolve, reject) => {
-      if (this.disposed) {
-        reject(new Error('bootstrap disposed'))
-        return
-      }
-      const child = spawn(uvCommand, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-        env: { ...process.env, ...this.options.env }
-      })
-      this.child = child
-
-      let buffer = ''
-      const onChunk = (chunk: string): void => {
-        buffer += chunk
-        const lines = buffer.split(/\r?\n/)
-        buffer = lines.pop() ?? ''
-        for (const line of lines) if (line.trim() !== '') this.log(line)
-      }
-      child.stdout.setEncoding('utf-8')
-      child.stdout.on('data', onChunk)
-      child.stderr.setEncoding('utf-8')
-      child.stderr.on('data', onChunk)
-
-      child.on('error', (error) => {
-        this.child = null
-        reject(new Error(`uv 실행 실패: ${error.message}`))
-      })
-      child.on('close', (code) => {
-        this.child = null
-        if (buffer.trim() !== '') this.log(buffer)
-        if (code === 0) resolve()
-        else reject(new Error(`uv sync 종료 코드 ${code}`))
-      })
-    })
   }
 }

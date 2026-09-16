@@ -256,19 +256,37 @@ def test_analyze_unsupported_format(tmp_path) -> None:
 # --- 기준 4: 체크포인트 다운로드 실패 격리 ------------------------------------
 
 
-def test_analyze_without_checkpoint(monkeypatch, wav_major: str) -> None:
-    """체크포인트를 못 받으면 bpm만 null이고 key는 정상, 예외는 나가지 않는다."""
-    import beat_this.inference as bt
+@pytest.mark.parametrize("code", ["MODEL_NOT_READY", "HASH_MISMATCH"])
+def test_analyze_without_checkpoint(monkeypatch, wav_major: str, code: str) -> None:
+    """모델 준비 실패는 원래 오류 코드로 전달하고 완료 결과를 만들지 않는다."""
+    from karaoke_worker.models import ModelError, ModelRegistry
 
-    from karaoke_worker.models import reset_registry_for_tests
-
-    reset_registry_for_tests()
+    error = ModelError(code, "checkpoint unavailable", id="beat-this-final0")
 
     def fail(*args, **kwargs):
-        raise ValueError(("Could not load the checkpoint given the provided name", "final0"))
+        raise error
 
-    monkeypatch.setattr(bt, "load_checkpoint", fail)
+    monkeypatch.setattr(ModelRegistry, "get_loaded", lambda *args: None)
+    monkeypatch.setattr(ModelRegistry, "prepare", fail)
+    with pytest.raises(ModelError) as excinfo:
+        analyze(wav_major, "cpu")
+    assert excinfo.value is error
 
+
+def test_analyze_bpm_runtime_failure(monkeypatch, wav_major: str) -> None:
+    from karaoke_worker.protocol import WorkerError
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("inference failed")
+
+    monkeypatch.setattr("karaoke_worker.analyze.estimate_bpm", fail)
+    with pytest.raises(WorkerError) as excinfo:
+        analyze(wav_major, "cpu")
+    assert excinfo.value.code == "BPM_ANALYSIS_FAILED"
+
+
+def test_analyze_no_beats_is_valid_partial_result(monkeypatch, wav_major: str) -> None:
+    monkeypatch.setattr("karaoke_worker.analyze.estimate_bpm", lambda *args: (None, 0.0))
     result = analyze(wav_major, "cpu")
     assert result["bpm"] is None
     assert result["bpm_conf"] is None

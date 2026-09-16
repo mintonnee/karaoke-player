@@ -73,7 +73,8 @@ export interface Track {
  * 스펙 002 §1 결정 기록: 알고리즘 버전. 올리면 백필이 auto 트랙을 다시 분석한다.
  * 1 = Krumhansl–Kessler·55–2000 Hz·접기 상한 200, 2 = Bellman–Budge·110–2000 Hz·접기 상한 170
  */
-export const ANALYSIS_VERSION = 2
+// 3 = 모델 준비/추론 실패를 성공으로 저장하지 않음. 기존 실패 결과를 백필한다.
+export const ANALYSIS_VERSION = 3
 /**
  * BPM 신뢰도가 이 값 미만이면 표시에 '?' 접미 (스펙 002 §4.3). 비트 간격 분산 기반이라
  * 0–0.97로 넓게 분포한다. 키 신뢰도는 정답 여부와 상관이 약해 '?'를 붙이지 않는다(§1 v2).

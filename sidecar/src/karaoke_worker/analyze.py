@@ -1,7 +1,7 @@
 """analyze: 반주 스템(inst.wav)에서 BPM과 조성을 추정한다.
 
 BPM은 Beat This!(신경망 비트 트래커), 키는 크로마 + Bellman-Budge 프로파일 템플릿.
-두 단계는 서로 독립이라 한쪽이 실패해도 다른 값은 그대로 반환한다.
+BPM 실행 오류는 작업 실패로 전달한다. 비트 미검출과 키 추정 실패는 빈 값을 허용한다.
 torch/beat_this import가 무거워서 함수 내부에서 지연 import한다.
 """
 
@@ -16,7 +16,8 @@ from .separate import DEFAULT_DEVICE, _resolve_device
 
 # 알고리즘 버전. 추정 방식을 바꾸면 올린다 (스펙 002 §1 결정 기록).
 # 1 = Krumhansl-Kessler·55–2000 Hz·접기 상한 200, 2 = Bellman-Budge·110–2000 Hz·접기 상한 170.
-ANALYSIS_VERSION = 2
+# 3 = 모델 준비/추론 실패를 성공으로 저장하지 않음. 기존 실패 결과를 백필한다.
+ANALYSIS_VERSION = 3
 
 # 조성 표기는 샤프 통일 12음 + 단조 'm' 접미.
 PITCH_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
@@ -193,8 +194,11 @@ def analyze(input_path: str, device_arg: str = DEFAULT_DEVICE) -> dict[str, Any]
     bpm_conf = 0.0
     try:
         bpm, bpm_conf = estimate_bpm(y, sr, device)
-    except Exception as e:  # noqa: BLE001 — 체크포인트 다운로드 실패 등은 bpm만 null로
+    except WorkerError:
+        raise
+    except Exception as e:  # noqa: BLE001 — 실행 실패와 정상적인 비트 미검출을 구분한다
         log(f"analyze: bpm estimation failed: {e!r}")
+        raise WorkerError("BPM_ANALYSIS_FAILED", f"BPM estimation failed: {e}") from e
     t_bpm = time.perf_counter() - t1
     log(f"analyze: bpm={bpm} conf={bpm_conf:.3f} elapsed={t_bpm:.2f}s")
 

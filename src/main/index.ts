@@ -32,11 +32,11 @@ import {
   resolveSelectedRuntime,
   runtimeCacheRoot,
   verifyExistingFile,
-  type Artifact,
   type LockFile,
   type RuntimeLockSet,
   type RuntimeManifest
 } from './runtime'
+import { artifactsForModel } from './runtime/modelArtifacts'
 import { SettingsStore } from './settings/SettingsStore'
 import { LyricsService } from './lyrics/LyricsService'
 import { SidecarBootstrap, buildUvEnv, createReadyBootstrap } from './sidecar/SidecarBootstrap'
@@ -115,28 +115,6 @@ function exeHashSpec(
     return { sha256: member.sha256, size: member.size, id }
   }
   return { sha256: art.sha256, size: art.size, id }
-}
-
-function artifactsForModel(models: LockFile, modelId: string): Artifact[] {
-  const bindings = models.models ?? []
-  const byId = new Map(models.artifacts.map((artifact) => [artifact.id, artifact]))
-  const seen = new Set<string>()
-  const out: Artifact[] = []
-  const visit = (id: string): void => {
-    if (seen.has(id)) return
-    seen.add(id)
-    const binding = bindings.find((item) => item.id === id)
-    if (binding) {
-      for (const artifactId of binding.artifactIds) visit(artifactId)
-      for (const dep of binding.dependsOn) visit(dep)
-      return
-    }
-    const artifact = byId.get(id)
-    if (!artifact) throw new Error(`unregistered model/artifact id: ${id}`)
-    out.push(artifact)
-  }
-  visit(modelId)
-  return out
 }
 
 function enrichBootstrapState(state: BootstrapState): BootstrapState {

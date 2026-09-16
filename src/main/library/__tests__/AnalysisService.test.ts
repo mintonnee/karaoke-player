@@ -183,6 +183,14 @@ describe('AnalysisService', () => {
     await createReadyTrack('a')
     await createReadyTrack('b')
     await createReadyTrack('c')
+    // 008 이전 코드가 BPM 실행 실패를 최신(v2) 결과로 저장했던 곡도 복구한다.
+    store.setAnalysis('b', {
+      bpm: null,
+      musicKey: 'Am',
+      bpmConf: null,
+      keyConf: 0.5,
+      version: 2
+    })
     store.updateMeta('c', { title: 'c', artist: null, album: null, bpm: 100, musicKey: null })
     store.createTrack({
       id: 'd',
@@ -198,6 +206,7 @@ describe('AnalysisService', () => {
 
     expect(store.getTrack('a')!.analysisSource).toBe('auto')
     expect(store.getTrack('b')!.analysisSource).toBe('auto')
+    expect(store.getTrack('b')!.bpm).toBe(128)
     expect(store.getTrack('c')!.bpm).toBe(100)
     expect(store.getTrack('c')!.analysisSource).toBe('user')
     expect(store.getTrack('d')!.analysisSource).toBe('none')

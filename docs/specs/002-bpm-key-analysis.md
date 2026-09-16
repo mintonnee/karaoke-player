@@ -45,18 +45,18 @@
 
 - BPM은 Beat This!(`beat-this>=1.1`, ISMIR 2024 비트 트래커)로 검출한다 (2026-09-02, 사용자 결정). 자기상관 방식의 절반·두 배 템포 오류를 피하기 위함이다. 처음 검토 때는 PyPI 미등록으로 알았으나 1.1.0(2026-04-14)이 순수 Python 휠로 배포돼 있고 의존성(numpy, torch, torchaudio, einops, rotary-embedding-torch, soxr)이 모두 프리빌트라 빌드 리스크가 없다. 체크포인트는 `final0`(약 78 MB) 고정. **2026-09-02 개정(v2)**: 템포 접기 상한을 200에서 170으로 내린다. 정답을 확인한 13곡 중 모델 원값이 두 배로 나온 廻廻奇譚(187.5)·ポルターガイスト(200.0)가 정답이 되고 145 BPM인 シャルル는 유지된다. songbpm의 "느린 쪽을 기본, 더블타임을 부기" 관례를 따른 것이며, 실제 170 초과인 곡은 메타 편집으로 고칠 수 있다.
 - 키는 외부 모델 없이 크로마 + 조성 프로파일 템플릿으로 자체 구현한다. Beat This!는 조성을 내놓지 않는다. **2026-09-02 개정(v2)**: 프로파일을 Krumhansl–Kessler에서 Bellman–Budge로, 크로마 대역을 55–2000에서 110–2000 Hz로 바꾼다. 정답을 확인한 13곡에서 v1은 5곡, v2는 12곡을 맞혔다(상대조 인정, §4.5 정확도 대조). v1의 오답은 대부분 정답의 5도 위(딸림조)였고, 55–110 Hz 옥타브의 킥·베이스 기음이 크로마를 흐리는 것이 원인으로 보인다.
-- BPM 단계와 키 단계는 서로 독립이다. 한쪽이 실패(체크포인트 다운로드 실패 등)해도 다른 값은 반환하고, 실패 사유는 stderr에만 남긴다.
+- **2026-09-16 개정(v3, 008 연계)**: 모델 준비·검증·BPM 추론 예외는 작업 실패로 전달하고 분석 버전을 저장하지 않는다. 정상 추론 후 비트 미검출은 `bpm: null`을 허용한다. 키 추정 실패는 기존처럼 `key: null`을 허용한다. 기존 v2 실패 기록 복구를 위해 자동 분석 곡은 한 번 재분석하며 사용자 값은 보존한다.
 - 분석 입력은 원본이 아니라 `inst.wav`다. 보컬이 빠진 신호에서 온셋(드럼)이 또렷해 템포 추정이 안정적이고, 화성 정보는 반주에 그대로 남아 조성 추정에도 충분하다. 파일 하나만 읽어 두 값을 뽑는다.
 - 조성 표기는 샤프 통일 12음(`C C# D D# E F F# G G# A A# B`) + 단조는 `m` 접미(예: `C#m`). 이명동음(Db 등)을 쓰지 않는다 — 변조 계산이 정수 덧셈으로 끝나고, 노래방 기기 표기와 같다.
 - 신뢰도는 "1위 후보와 2위 후보의 격차"를 0–1로 정규화한 값이다. 임계값은 상수로 두고 §5 실곡 검증에서 보정한다. **2026-09-02 보정**: 처음 단일 상수 `ANALYSIS_LOW_CONF = 0.3`으로 잡았으나 실곡 10곡의 키 신뢰도가 전부 0.02–0.25였다(크로마 상관 2위가 거의 항상 상대조라 격차가 태생적으로 작다). 키와 BPM은 분포가 달라 `KEY_LOW_CONF = 0.05`, `BPM_LOW_CONF = 0.5`로 분리했다 (§4.5). **2026-09-02 재보정(v2)**: 키 신뢰도는 정답 여부와 상관이 약하다(틀린 폭망이 최고 0.32, 맞은 廻廻奇譚이 0.00). 키에는 `?`를 붙이지 않고 `key_conf`는 저장만 한다. `KEY_LOW_CONF`는 제거하고 `BPM_LOW_CONF = 0.5`만 남긴다.
-- 알고리즘 버전(`ANALYSIS_VERSION`, 정수)을 결과와 함께 저장한다. 알고리즘을 바꾸면 버전을 올리고, 백필이 `analysis_version < ANALYSIS_VERSION AND analysis_source != 'user'`인 트랙을 다시 분석한다. 버전 이력: 1 = Krumhansl–Kessler·55–2000 Hz·접기 상한 200, 2 = Bellman–Budge·110–2000 Hz·접기 상한 170.
+- 알고리즘 버전(`ANALYSIS_VERSION`, 정수)을 결과와 함께 저장한다. 알고리즘을 바꾸면 버전을 올리고, 백필이 `analysis_version < ANALYSIS_VERSION AND analysis_source != 'user'`인 트랙을 다시 분석한다. 버전 이력: 1 = Krumhansl–Kessler·55–2000 Hz·접기 상한 200, 2 = Bellman–Budge·110–2000 Hz·접기 상한 170, 3 = v2 알고리즘 유지·모델/BPM 실행 실패 전달 및 기존 실패 기록 백필.
 
 ## 2. 성공 기준
 
 1. 합성 신호(120 BPM 클릭 + C 장조 3화음 패드, 30초, 44.1 kHz)로 `karaoke_worker analyze`를 실행하면 `done.result`에 `bpm`이 119–121 범위, `key === "C"`, `bpm_conf`·`key_conf`가 0–1 범위로 나오고 exit 0이다. A 단조 화음(A–C–E 지속)으로 바꾸면 `key === "Am"`이다. 이 검증은 `sidecar/tests/test_analyze.py`가 자동으로 수행한다. 키 부분은 순수 함수 단위 테스트로도 커버해 체크포인트 없이 통과한다.
 2. 실제 곡을 임포트하면 분리 완료 후 별도 조작 없이 라이브러리 행 메타 줄에 `<n> BPM · <키>`가 나타나고, `library.sqlite`의 해당 행에 `bpm`, `music_key`, `analysis_source='auto'`가 기록된다. 분석 중에도 트랙은 `ready` 상태로 즉시 재생할 수 있다.
 3. 스키마 v2 DB(분석 컬럼 없음)로 앱을 시작하면 `user_version`이 3으로 올라가고 기존 행이 보존되며, `status='ready'`이고 `analysis_source='none'`인 트랙이 시작 후 순차 분석돼 값이 채워진다. 상태 전이(`separating` 등)는 발생하지 않는다.
-4. 분석이 실패하면(fake worker가 `error`를 반환하거나 `inst.wav`가 손상된 경우) 트랙 상태는 `ready`로 유지되고, 표시는 비어 있으며, 메인 로그에 `[analysis]` 실패 줄이 남는다. 앱은 크래시하지 않는다. 체크포인트 다운로드만 실패한 경우(네트워크 차단으로 재현)에는 `bpm: null`, `key`는 정상값으로 `done`이 오고, 키만 표시된다.
+4. 분석이 실패하면(fake worker 오류·손상된 입력·모델 준비/검증 실패·BPM 추론 예외) 트랙 상태는 `ready`로 유지되고 기존 분석값/버전을 덮어쓰지 않는다. 메인 로그와 앱 오류 알림으로 실패를 전달하며 앱은 크래시하지 않는다. 모델 오류는 원래 오류 코드, 그 밖의 BPM 실행 예외는 `BPM_ANALYSIS_FAILED`로 전달한다. 정상 추론에서 비트가 부족한 경우만 빈 BPM을 완료 결과로 저장한다.
 5. 원키 `C#m`인 곡에서 키를 +2 하면 트랜스포트에 `C#m → D#m`, −3이면 `C#m → A#m`, +6이면 `C#m → Gm`이 표시되고, 원키 리셋 후에는 `C#m`만 표시된다. **2026-09-02 개정(003)**: 표시 위치와 형태는 `003-player-layout.md` §4.3의 키 패널(상단 상자 원키, 하단 상자 변경 키)로 대체된다. 값의 규칙(`transposeKey`, 리셋 시 원키)은 그대로다. 순수 함수 `transposeKey`의 단위 테스트가 12음 × ±6 경계와 `null` 입력을 커버한다.
 6. `bpm_conf`가 `BPM_LOW_CONF` 미만이면 BPM이 `128 BPM?`처럼 표시되고, 키에는 `?`가 붙지 않는다. 메타 편집 폼에서 키를 `Bm`, BPM을 `96`으로 입력·저장하면 즉시 반영되고, 앱을 재시작해도 값이 유지되며 백필이 덮어쓰지 않는다(`analysis_source='user'`). 형식이 틀린 키(`H`, `c#`)와 범위 밖 BPM(30 미만, 300 초과)은 저장이 거부된다.
 7. `pnpm typecheck && pnpm lint && pnpm test`가 exit 0이다. 기존 테스트(LibraryStore, JobQueue, SidecarManager 등)는 수정 없이 통과한다.
@@ -87,15 +87,15 @@
 
 ### 4.1 사이드카 `analyze`
 
-- 명령: `analyze --input <inst.wav> [--device auto] --json` → `{"bpm": 128.0, "bpm_conf": 0.72, "key": "C#m", "key_conf": 0.41, "version": 2}`. `key`는 추정 불가(무음, 무조성) 시 `null`, `bpm`은 비트 검출 실패·체크포인트 다운로드 실패 시 `null`. 둘 다 `null`이어도 `done`으로 응답한다 — 오류는 파일 읽기 실패·형식 오류에 한정한다(`WorkerError("FILE_NOT_FOUND" | "UNSUPPORTED_FORMAT")`).
+- 명령: `analyze --input <inst.wav> [--device auto] --json` → `{"bpm": 128.0, "bpm_conf": 0.72, "key": "C#m", "key_conf": 0.41, "version": 3}`. `key`는 추정 불가(무음, 무조성) 시 `null`, `bpm`은 정상 추론 후 비트 미검출 시 `null`이다. 정상 실행 결과가 둘 다 `null`이어도 `done`으로 응답한다. 파일 읽기·모델 준비/검증·BPM 추론 오류는 `error`와 exit 1로 전달한다.
 - 의존성: `sidecar/pyproject.toml` dependencies에 `beat-this>=1.1`을 추가한다. `uv lock` 후 새로 들어오는 패키지가 `beat-this`, `rotary-embedding-torch`, `soxr`(및 그 순수 의존성) 범위인지 확인한다. torch·torchaudio 버전 고정(2.8, cu128)은 유지한다.
 - 처리 참고 구현(성공 기준이 우선, 구현 방식은 자유):
   - 로드: soundfile로 `inst.wav`를 읽어 모노 다운믹스(float32).
-  - BPM: `beat_this.inference.Audio2Beats(checkpoint_path="final0", device=device, dbn=False)`에 파형과 샘플레이트를 넘겨 비트 시각 배열을 받는다. 비트 간격의 중앙값으로 `bpm = 60 / median(diff(beats))`를 구하고 소수 첫째 자리로 반올림한다. 결과가 170 초과면 절반, 60 미만이면 두 배로 접는다(v1은 상한 200이었다, §1 결정 기록). 비트가 4개 미만이면 `null`.
+  - BPM: `beat_this.inference.Audio2Beats(checkpoint_path=<검증된 로컬 경로>, device=device, dbn=False)`에 파형과 샘플레이트를 넘겨 비트 시각 배열을 받는다. 비트 간격의 중앙값으로 `bpm = 60 / median(diff(beats))`를 구하고 소수 첫째 자리로 반올림한다. 결과가 170 초과면 절반, 60 미만이면 두 배로 접는다(v1은 상한 200이었다, §1 결정 기록). 비트가 4개 미만이면 `null`.
   - BPM 신뢰도: 비트 간격의 분산이 작을수록 1에 가깝게, 예: `clip(1 - 4 * std(ibi) / median(ibi), 0, 1)`. 템포가 변하는 곡은 자연히 낮게 나온다.
   - 키: STFT 크기 스펙트럼(n_fft 8192, hop 4096)을 110–2000 Hz 대역에서 12 피치 클래스로 접어 로그 압축 후 시간 평균 크로마를 만들고, Bellman–Budge 장조·단조 프로파일 24개와 피어슨 상관을 구해 최댓값을 고른다(v1은 55–2000 Hz·Krumhansl–Kessler였다, §1 결정 기록). 드럼의 광대역 잡음은 대역 제한과 로그 압축으로 억제한다. 튜닝 오프셋 보정은 넣지 않는다(§5 정확도 기록에서 필요가 확인되면 추가).
   - 키 신뢰도: 후보 상관 1위와 2위의 차를 1위로 나눈 값을 0–1로 클램프한다.
-  - 두 단계는 각각 try/except로 감싸 독립적으로 실패한다. 체크포인트 다운로드 실패는 stderr에 원인을 남기고 `bpm: null`로 진행한다.
+  - BPM 실행 예외는 작업 오류로 전달한다. 모델 준비는 008의 registry와 검증된 로컬 경로 계약을 따른다. 키 추정 예외는 stderr에 기록하고 `key: null`로 진행한다.
 - 값이 `null`이면 대응하는 `*_conf`도 `null`이다 (DB 컬럼이 nullable REAL이라 그대로 저장된다).
 - `progress`는 `stage: "analyze"`로 0(로드)·30(BPM 시작)·70(키 시작)·100이면 충분하다. 단계별 소요 시간을 stderr `log()`로 남긴다(기준 8).
 - 디바이스: `--device`는 `separate`와 같은 `_resolve_device` 규칙(`KARAOKE_DEVICE` 우선)을 따른다. 키는 결정적 연산이라 디바이스와 무관하게 같은 값이어야 한다. BPM은 신경망 추론이라 디바이스 간 ±0.5 이내 차이를 허용한다.
@@ -204,7 +204,7 @@ pnpm dev                                                       # 기준 2·3·4�
 - 기준 3 (수동): 이 스펙 이전 커밋으로 만든 `library.sqlite`(v2)를 두고 앱 시작 → 기존 트랙에 값이 순차로 채워지는지, 상태 표시가 흔들리지 않는지 확인.
 - 기준 4 (수동 보조): 한 트랙의 `inst.wav`를 0바이트로 바꾸고 `analysis_source`를 `none`으로 되돌린 뒤 재시작 → 로그에 실패 줄, 행은 `ready` 유지.
 - 기준 6 (수동): 메타 편집에서 키·BPM 입력·저장 → 재시작 → 유지 확인. 틀린 형식 입력 시 저장 거부 메시지 확인.
-- 기준 4 후반 (수동): 체크포인트 캐시를 비우고 네트워크를 차단한 채 위 단독 명령 실행 → `bpm: null`, `key` 정상, exit 0, stderr에 다운로드 실패 원인.
+- 기준 4 후반: 격리된 빈 모델 캐시로 실행 → 모델 준비 오류, exit 1, `done` 없음. 추론 예외도 실패하며, 정상적인 비트 미검출은 빈 BPM 완료를 허용한다. `test_analyze.py`에서 각각 회귀 검증한다.
 - 기준 8 (수동): 5분 안팎 곡의 `inst.wav`로 위 단독 명령을 CUDA와 `KARAOKE_DEVICE=cpu`로 각각 실행해 stderr 시간을 읽는다.
 - 기준 9 (A4 후): §4.5 정확도 대조 표의 13곡을 v2로 재분석한 결과를 `sidecar/tests`의 회귀 테스트(정답 표를 코드에 두고, 로컬 트랙이 있을 때만 실행)로 고정한다. 앱 시작 후 `library.sqlite`에서 `analysis_version=2`·값 갱신을 확인한다.
 - 정확도 기록은 §4.5에 남겼다(2026-09-02, 13곡). 곡이 늘면 같은 표를 확장한다. 폭망처럼 계속 틀리는 곡은 사용자 값으로 고친다.

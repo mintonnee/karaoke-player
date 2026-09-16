@@ -1,30 +1,52 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
-import { MdClose, MdFolderOpen, MdImage } from 'react-icons/md'
+import {
+  MdBlock,
+  MdCheckCircle,
+  MdClose,
+  MdError,
+  MdFolderOpen,
+  MdImage,
+  MdLink,
+  MdSync,
+  MdWarning
+} from 'react-icons/md'
 import { DEMUCS_MODELS, type AppSettings } from '../../../shared/types'
 import {
   applyAudioTags,
   applyDropToForm,
   applyRejections,
   applySlotDrop,
+  applyYoutubePreviewSnapshot,
   assignUnassigned,
   canSubmit,
   clearSlot,
+  dropUrlPreviewReady,
   emptyImportForm,
   fileNameFromPath,
   isSupportedAudioPath,
   isSupportedCoverPath,
   PAIR_STAGE_LABEL,
   setCoverPath,
+  setImportUrl,
   setSongArtist,
   setSongTitle,
   songMetaFromForm,
   switchImportMethod,
+  type FileSongMetaOrigin,
   type ImportFormState,
-  type ImportMethod,
-  type SongMetaOrigin
+  type ImportMethod
 } from '../import/form'
 import { parseImportYoutubeUrl } from '../import/youtube'
+import {
+  createYoutubePreviewController,
+  createYoutubePreviewSessionId,
+  idleYoutubePreviewSnapshot,
+  YOUTUBE_THUMBNAIL_LOAD_FAILED,
+  type YoutubePreviewController,
+  type YoutubePreviewSnapshot,
+  type YoutubePreviewUiStatus
+} from '../import/youtubePreview'
 import { useRuntimeReady } from '../stores/bootstrapStore'
 import { useLibraryStore } from '../stores/libraryStore'
 
@@ -68,16 +90,30 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
     applyDropToForm(emptyImportForm(), initialPaths)
   )
   const [coverPreview, setCoverPreview] = useState<{ path: string; url: string } | null>(null)
+  const [failedYoutubeThumb, setFailedYoutubeThumb] = useState<string | null>(null)
+  const [preview, setPreview] = useState<YoutubePreviewSnapshot>(() =>
+    idleYoutubePreviewSnapshot('')
+  )
   const tagProbeGen = useRef(0)
   const panelRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef(onClose)
+  const previewControllerRef = useRef<YoutubePreviewController | null>(null)
   const typeName = useId()
   const guideKindName = useId()
   const modelInputId = useId()
   const titleInputId = useId()
   const artistInputId = useId()
+  const urlStatusId = useId()
+  const urlErrorId = useId()
   const separates = form.method === 'general' || form.method === 'url'
   const submitReady = canSubmit(form) && (!separates || settings !== null) && runtimeReady
+  const youtubeThumbSrc = form.coverPath ? null : form.youtubeThumbnailDataUrl
+  const youtubeThumbFailed = youtubeThumbSrc != null && failedYoutubeThumb === youtubeThumbSrc
+  const youtubeThumb = youtubeThumbFailed ? null : youtubeThumbSrc
+  const coverWarning =
+    !form.coverPath && (Boolean(form.youtubeThumbnailWarning) || youtubeThumbFailed)
+      ? YOUTUBE_THUMBNAIL_LOAD_FAILED
+      : null
 
   const methods = METHODS.filter((method) => !method.urlOnly || urlImportAvailable)
 
@@ -120,6 +156,29 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
   useEffect(() => {
     closeRef.current = onClose
   }, [onClose])
+
+  useEffect(() => {
+    const controller = createYoutubePreviewController({
+      sessionId: createYoutubePreviewSessionId(),
+      api: {
+        previewYoutube: (req) => window.api.previewYoutube(req),
+        cancelYoutubePreview: (req) => window.api.cancelYoutubePreview(req)
+      },
+      onChange: (snapshot) => {
+        setPreview(snapshot)
+        setForm((state) => applyYoutubePreviewSnapshot(state, snapshot))
+      }
+    })
+    previewControllerRef.current = controller
+    return () => {
+      controller.dispose()
+      previewControllerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    previewControllerRef.current?.setMethod(form.method)
+  }, [form.method])
 
   useEffect(() => {
     const previouslyFocused =
@@ -167,7 +226,7 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
     }
   }, [])
 
-  const fillTagsFromFile = (path: string, source: Exclude<SongMetaOrigin, 'user'>): void => {
+  const fillTagsFromFile = (path: string, source: FileSongMetaOrigin): void => {
     if (!isSupportedAudioPath(path)) return
     const gen = ++tagProbeGen.current
     void window.api.probeAudioTags(path).then(
@@ -236,7 +295,7 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
     const files = paths.filter((path) => path !== '')
     const only = files[0]
     if (files.length !== 1 || !only) return
-    const source: Exclude<SongMetaOrigin, 'user'> =
+    const source: FileSongMetaOrigin =
       form.method === 'pair' && form.guideKind === 'none' ? 'mr' : 'general'
     fillTagsFromFile(only, source)
   }
@@ -313,20 +372,25 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
           onClose()
           return
         }
+        previewControllerRef.current?.invalidateReady()
         setForm((state) =>
-          response.rejected.length > 0
-            ? applyRejections(state, response.rejected)
-            : {
-                ...state,
-                errors: { ...state.errors, url: '가져오기에 실패했습니다' }
-              }
+          dropUrlPreviewReady(
+            response.rejected.length > 0
+              ? applyRejections(state, response.rejected)
+              : {
+                  ...state,
+                  errors: { ...state.errors, url: '가져오기에 실패했습니다' }
+                }
+          )
         )
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      if (form.method === 'url') previewControllerRef.current?.invalidateReady()
       setForm((state) => {
         const field = state.method === 'url' ? 'url' : state.method === 'pair' ? 'pair' : 'general'
-        return { ...state, errors: { ...state.errors, [field]: message } }
+        const next = { ...state, errors: { ...state.errors, [field]: message } }
+        return state.method === 'url' ? dropUrlPreviewReady(next) : next
       })
     }
   }
@@ -538,27 +602,66 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
 
             {form.method === 'url' && urlImportAvailable && (
               <div className="import-url">
-                <label className="import-url-label" htmlFor="import-youtube-url">
-                  YouTube URL
-                </label>
-                <input
-                  id="import-youtube-url"
-                  className="import-url-input"
-                  type="text"
-                  spellCheck={false}
-                  placeholder="https://www.youtube.com/watch?v=…"
-                  value={form.url}
-                  disabled={busy}
-                  onChange={(event) =>
-                    setForm((state) => ({
-                      ...state,
-                      url: event.target.value,
-                      errors: { ...state.errors, url: null }
-                    }))
-                  }
-                />
+                <div className="import-url-head">
+                  <label className="import-url-label" htmlFor="import-youtube-url">
+                    YouTube URL
+                  </label>
+                  <div className="import-url-status-row">
+                    <p
+                      id={urlStatusId}
+                      className={`import-url-status-text is-${preview.status}`}
+                      role="status"
+                      aria-live="polite"
+                    >
+                      {preview.description}
+                    </p>
+                    {preview.showRetry && (
+                      <button
+                        type="button"
+                        className="import-url-retry"
+                        disabled={busy}
+                        onClick={() => previewControllerRef.current?.retry()}
+                      >
+                        다시 확인
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="import-url-field">
+                  <input
+                    id="import-youtube-url"
+                    className="import-url-input"
+                    type="text"
+                    spellCheck={false}
+                    placeholder="https://www.youtube.com/watch?v=…"
+                    value={form.url}
+                    disabled={busy}
+                    aria-describedby={
+                      form.errors.url ? `${urlStatusId} ${urlErrorId}` : urlStatusId
+                    }
+                    aria-invalid={preview.status === 'invalid' || Boolean(form.errors.url)}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      setForm((state) => setImportUrl(state, value))
+                      previewControllerRef.current?.setUrl(value)
+                    }}
+                    onCompositionStart={() => previewControllerRef.current?.setComposing(true)}
+                    onCompositionEnd={(event) => {
+                      const value = event.currentTarget.value
+                      previewControllerRef.current?.setComposing(false)
+                      setForm((state) => setImportUrl(state, value))
+                      previewControllerRef.current?.setUrl(value)
+                    }}
+                  />
+                  <span
+                    className={`import-url-status-icon is-${preview.status}`}
+                    aria-hidden="true"
+                  >
+                    <YoutubePreviewStatusIcon status={preview.status} />
+                  </span>
+                </div>
                 {form.errors.url && (
-                  <p className="import-error" role="alert">
+                  <p id={urlErrorId} className="import-error" role="alert">
                     {form.errors.url}
                   </p>
                 )}
@@ -597,8 +700,14 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
                 onDrop={onCoverDrop}
               >
                 <div className="import-cover-thumb" aria-hidden="true">
-                  {coverPreview?.path === form.coverPath ? (
+                  {form.coverPath && coverPreview?.path === form.coverPath ? (
                     <img src={coverPreview.url} alt="" />
+                  ) : youtubeThumb ? (
+                    <img
+                      src={youtubeThumb}
+                      alt=""
+                      onError={() => setFailedYoutubeThumb(youtubeThumbSrc)}
+                    />
                   ) : (
                     <MdImage />
                   )}
@@ -630,6 +739,7 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
                   </button>
                 )}
               </div>
+              {coverWarning && <p className="import-cover-warning">{coverWarning}</p>}
             </div>
 
             {separates && (
@@ -729,6 +839,27 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
       </div>
     </div>
   )
+}
+
+function YoutubePreviewStatusIcon({
+  status
+}: {
+  status: YoutubePreviewUiStatus
+}): React.JSX.Element {
+  switch (status) {
+    case 'invalid':
+      return <MdError />
+    case 'checking':
+      return <MdSync />
+    case 'ready':
+      return <MdCheckCircle />
+    case 'blocked':
+      return <MdBlock />
+    case 'error':
+      return <MdWarning />
+    default:
+      return <MdLink />
+  }
 }
 
 interface FileSlotProps {

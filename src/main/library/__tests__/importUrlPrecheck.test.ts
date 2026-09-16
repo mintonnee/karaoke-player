@@ -21,11 +21,21 @@ describe('precheckImportUrl', () => {
     }
   })
 
-  it('허용 URL은 정규화한 href로 진행한다', () => {
+  it('허용 URL은 canonical URL로 진행한다', () => {
     const result = precheckImportUrl('  https://youtu.be/dQw4w9WgXcQ  ', true)
     expect(result).toEqual({
       action: 'proceed',
-      url: 'https://youtu.be/dQw4w9WgXcQ'
+      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
     })
+  })
+
+  it('비문자열은 예외 없이 거부한다', () => {
+    expect(() => precheckImportUrl(null, true)).not.toThrow()
+    const result = precheckImportUrl({ href: 'https://youtu.be/dQw4w9WgXcQ' }, true)
+    expect(result.action).toBe('reject')
+    if (result.action === 'reject') {
+      expect(result.response.rejected[0].filePath).toBe('')
+      expect(result.response.rejected[0].reason).toContain('올바른 URL')
+    }
   })
 })

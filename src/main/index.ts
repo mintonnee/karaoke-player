@@ -1,4 +1,4 @@
-import { app, dialog, shell, BrowserWindow, ipcMain, net, protocol } from 'electron'
+import { app, dialog, shell, BrowserWindow, ipcMain, nativeImage, net, protocol } from 'electron'
 import { existsSync, readFileSync } from 'fs'
 import { join, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
@@ -23,6 +23,7 @@ import { recoverIncompleteTrackEdits } from './library/coverRecovery'
 import { recoverIncompletePairImports } from './library/pairRecovery'
 import { SearchKeyService } from './library/SearchKeyService'
 import { TrackEditService } from './library/TrackEditService'
+import { YoutubePreviewService } from './library/YoutubePreviewService'
 import { YtDlpService, urlImportAvailability } from './library/YtDlpService'
 import { getBundledBinary, getBundledSidecarDir } from './paths'
 import {
@@ -593,6 +594,17 @@ function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapCont
           })
       })
     : null
+  const previewService = urlImport
+    ? new YoutubePreviewService({
+        command: ytDlpPath,
+        denoPath,
+        ytDlpHash,
+        denoHash,
+        verifyCommand: ytDlpHash || denoHash ? verifyExistingFile : undefined,
+        enabled: true,
+        encodeThumbnail: encodeYoutubePreviewThumbnail
+      })
+    : null
 
   registerIpcHandlers({
     store,
@@ -604,6 +616,7 @@ function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapCont
     notify,
     capabilities: { urlImport },
     ytDlpService,
+    previewService,
     trackEditService,
     coverService,
     getBootstrapState: () => bootstrap.getState()
@@ -623,6 +636,7 @@ function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapCont
   app.on('will-quit', () => {
     bootstrap.dispose()
     ytDlpService?.dispose()
+    previewService?.dispose()
     store.close()
   })
   return bootstrap
@@ -699,4 +713,24 @@ app.on('window-all-closed', () => {
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value ?? '', 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function encodeYoutubePreviewThumbnail(
+  bytes: Buffer,
+  _width: number,
+  _height: number
+): string | null {
+  // nativeImage.createFromBuffer는 JPEG/PNG만 연다. WebP는 isEmpty()다.
+  const image = nativeImage.createFromBuffer(bytes)
+  if (image.isEmpty()) return null
+  const { width, height } = image.getSize()
+  if (width <= 0 || height <= 0) return null
+  const longest = Math.max(width, height)
+  const resized =
+    longest <= 512 ? image : image.resize(width >= height ? { width: 512 } : { height: 512 })
+  const jpegUrl = `data:image/jpeg;base64,${resized.toJPEG(80).toString('base64')}`
+  if (jpegUrl.length <= 1024 * 1024) return jpegUrl
+  const pngUrl = `data:image/png;base64,${resized.toPNG().toString('base64')}`
+  if (pngUrl.length <= 1024 * 1024) return pngUrl
+  return null
 }

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { youtubePreviewMessage, type YoutubePreviewResult } from '../../../shared/types'
 import {
   applyAudioTags,
   applyDropToForm,
   applyRejections,
   applySlotDrop,
+  applyYoutubePreviewToForm,
   assignUnassigned,
   canSubmit,
   canSubmitGeneral,
@@ -16,6 +18,7 @@ import {
   setSongTitle,
   songMetaFromForm,
   switchImportMethod,
+  withUrlReady,
   type ImportFormState
 } from './form'
 
@@ -54,6 +57,23 @@ function filledUrl(): ImportFormState {
   }
 }
 
+function youtubeReady(requestId: string): YoutubePreviewResult {
+  return {
+    requestId,
+    status: 'ready',
+    code: 'READY',
+    canonicalUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    message: youtubePreviewMessage('READY'),
+    checkedAt: 1,
+    metadata: {
+      title: 'YT 제목',
+      artist: 'YT 가수',
+      thumbnailDataUrl: 'data:image/jpeg;base64,abc'
+    },
+    thumbnailWarning: null
+  }
+}
+
 describe('applyAudioTags', () => {
   it('빈 칸을 파일 태그로 채운다', () => {
     const next = applyAudioTags(
@@ -71,6 +91,14 @@ describe('applyAudioTags', () => {
     const typed = setSongTitle(emptyImportForm(), '직접 제목')
     const next = applyAudioTags(typed, { title: '태그 제목', artist: '태그 가수' }, 'general')
     expect(next.title).toBe('직접 제목')
+    expect(next.artist).toBe('태그 가수')
+  })
+
+  it('빈 값으로 지워도 user dirty라 태그가 다시 채우지 않는다', () => {
+    const cleared = setSongTitle(setSongTitle(emptyImportForm(), '직접 제목'), '')
+    expect(cleared.titleOrigin).toBe('user')
+    const next = applyAudioTags(cleared, { title: '태그 제목', artist: '태그 가수' }, 'general')
+    expect(next.title).toBe('')
     expect(next.artist).toBe('태그 가수')
   })
 
@@ -109,6 +137,30 @@ describe('songMetaFromForm', () => {
       artist: '가수'
     })
     expect(songMetaFromForm({ title: '', artist: '', coverPath: 'C:\\art.png' })).toEqual({
+      coverPath: 'C:\\art.png'
+    })
+  })
+
+  it('URL 방식은 수동 제목·아티스트와 로컬 커버만 보내고 자동값은 뺀다', () => {
+    const auto: ImportFormState = {
+      ...filledUrl(),
+      title: 'YT 제목',
+      artist: 'YT 가수',
+      titleOrigin: 'youtube',
+      artistOrigin: 'youtube',
+      coverPath: null,
+      youtubeThumbnailDataUrl: 'data:image/jpeg;base64,abc'
+    }
+    expect(songMetaFromForm(auto)).toBeUndefined()
+    expect(
+      songMetaFromForm({
+        ...auto,
+        title: '직접 제목',
+        titleOrigin: 'user',
+        coverPath: 'C:\\art.png'
+      })
+    ).toEqual({
+      title: '직접 제목',
       coverPath: 'C:\\art.png'
     })
   })
@@ -204,8 +256,21 @@ describe('submit-enabled predicates', () => {
     expect(canSubmit({ ...filledGeneral(), generalPath: 'a.txt' })).toBe(false)
     expect(canSubmit(filledPair())).toBe(true)
     expect(canSubmit({ ...filledPair(), guideKind: null })).toBe(false)
-    expect(canSubmit(filledUrl())).toBe(true)
-    expect(canSubmit({ ...filledUrl(), url: 'not-a-url' })).toBe(false)
+    expect(canSubmit(filledUrl())).toBe(false)
+    expect(canSubmit(withUrlReady(filledUrl()))).toBe(true)
+    expect(canSubmit({ ...withUrlReady(filledUrl()), url: 'not-a-url' })).toBe(false)
+    expect(canSubmit({ ...withUrlReady(filledUrl()), urlPreviewUrl: 'other' })).toBe(false)
+  })
+
+  it('URL 제출은 현재 URL의 ready 결과가 있어야 한다', () => {
+    expect(canSubmit(filledUrl())).toBe(false)
+    expect(canSubmit(withUrlReady(filledUrl()))).toBe(true)
+    expect(
+      canSubmit({
+        ...withUrlReady(filledUrl()),
+        urlPreviewReady: false
+      })
+    ).toBe(false)
   })
 })
 
@@ -262,6 +327,29 @@ describe('method-switch clearing', () => {
     expect(dropped.method).toBe('pair')
     expect(dropped.title).toBe('직접 제목')
     expect(dropped.artist).toBe('직접 가수')
+  })
+
+  it('방식 변경 시 youtube 자동값과 썸네일은 제거하고 수동값·로컬 커버는 유지한다', () => {
+    const auto = applyYoutubePreviewToForm(
+      {
+        ...filledUrl(),
+        coverPath: 'C:\\art.png',
+        title: '직접 제목',
+        titleOrigin: 'user'
+      },
+      youtubeReady('s:1'),
+      1,
+      filledUrl().url
+    )
+    expect(auto.artistOrigin).toBe('youtube')
+    expect(auto.youtubeThumbnailDataUrl).not.toBeNull()
+    const switched = switchImportMethod(auto, 'general')
+    expect(switched.title).toBe('직접 제목')
+    expect(switched.artist).toBe('')
+    expect(switched.artistOrigin).toBeNull()
+    expect(switched.coverPath).toBe('C:\\art.png')
+    expect(switched.youtubeThumbnailDataUrl).toBeNull()
+    expect(switched.urlPreviewReady).toBe(false)
   })
 
   it('같은 방식이면 입력을 유지한다', () => {

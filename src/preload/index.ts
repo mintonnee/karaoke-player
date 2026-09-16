@@ -22,7 +22,10 @@ import type {
   TrackVolumes,
   TrackFiles,
   TrackMetaInput,
-  UrlImportProgressEvent
+  UrlImportProgressEvent,
+  YoutubePreviewCancelRequest,
+  YoutubePreviewRequest,
+  YoutubePreviewResult
 } from '../shared/types'
 
 function subscribe<T>(channel: string, callback: (payload: T) => void): () => void {
@@ -119,6 +122,10 @@ const api = {
   getCapabilities: (): Promise<AppCapabilities> => ipcRenderer.invoke(IPC_CHANNELS.capabilities),
   importUrl: (url: string, userMeta?: ImportUserMeta): Promise<ImportFilesResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.importUrl, url, userMeta),
+  previewYoutube: (req: YoutubePreviewRequest): Promise<YoutubePreviewResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.previewYoutube, req),
+  cancelYoutubePreview: (req: YoutubePreviewCancelRequest): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.cancelYoutubePreview, req),
   onUrlImportProgress: (callback: (event: UrlImportProgressEvent) => void): (() => void) =>
     subscribe(IPC_CHANNELS.urlImportProgress, callback)
 }

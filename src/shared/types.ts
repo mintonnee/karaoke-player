@@ -205,6 +205,246 @@ export interface UrlImportProgressEvent {
   msg?: string
 }
 
+/** capability urlImport=false 일 때 사용자 메시지 (스펙 001·004·009) */
+export const URL_IMPORT_DISABLED_REASON = '이 배포판에서는 URL 가져오기를 쓸 수 없습니다'
+
+/** 스펙 009 §4.2·§4.3 YouTube 사전 확인 결과 코드 */
+export const YOUTUBE_PREVIEW_BLOCKED_CODES = [
+  'DRM_PROTECTED',
+  'UNAVAILABLE',
+  'AUTH_REQUIRED',
+  'LIVE_UNSUPPORTED',
+  'NO_SUPPORTED_AUDIO'
+] as const
+
+export const YOUTUBE_PREVIEW_ERROR_CODES = [
+  'NETWORK',
+  'RATE_LIMITED',
+  'TIMEOUT',
+  'EXTRACTOR_ERROR',
+  'UNKNOWN',
+  'INVALID_URL',
+  'DISABLED'
+] as const
+
+export const YOUTUBE_PREVIEW_CODES = [
+  'READY',
+  ...YOUTUBE_PREVIEW_BLOCKED_CODES,
+  ...YOUTUBE_PREVIEW_ERROR_CODES,
+  'CANCELLED'
+] as const
+
+export type YoutubePreviewBlockedCode = (typeof YOUTUBE_PREVIEW_BLOCKED_CODES)[number]
+export type YoutubePreviewErrorCode = (typeof YOUTUBE_PREVIEW_ERROR_CODES)[number]
+export type YoutubePreviewCode = (typeof YOUTUBE_PREVIEW_CODES)[number]
+export type YoutubePreviewStatus = 'ready' | 'blocked' | 'error' | 'cancelled'
+
+export interface YoutubePreviewRequest {
+  requestId: string
+  url: string
+}
+
+export interface YoutubePreviewCancelRequest {
+  requestId: string
+}
+
+export interface YoutubePreviewMetadata {
+  title: string | null
+  artist: string | null
+  thumbnailDataUrl: string | null
+}
+
+interface YoutubePreviewResultBase {
+  requestId: string
+  message: string
+  metadata: YoutubePreviewMetadata | null
+  thumbnailWarning: string | null
+}
+
+export interface YoutubePreviewReadyResult extends YoutubePreviewResultBase {
+  status: 'ready'
+  code: 'READY'
+  canonicalUrl: string
+  checkedAt: number
+}
+
+export interface YoutubePreviewBlockedResult extends YoutubePreviewResultBase {
+  status: 'blocked'
+  code: YoutubePreviewBlockedCode
+  canonicalUrl: string | null
+  checkedAt: number | null
+}
+
+export interface YoutubePreviewErrorResult extends YoutubePreviewResultBase {
+  status: 'error'
+  code: YoutubePreviewErrorCode
+  canonicalUrl: string | null
+  checkedAt: number | null
+}
+
+export interface YoutubePreviewCancelledResult extends YoutubePreviewResultBase {
+  status: 'cancelled'
+  code: 'CANCELLED'
+  canonicalUrl: string | null
+  checkedAt: number | null
+}
+
+export type YoutubePreviewResult =
+  | YoutubePreviewReadyResult
+  | YoutubePreviewBlockedResult
+  | YoutubePreviewErrorResult
+  | YoutubePreviewCancelledResult
+
+export const YOUTUBE_PREVIEW_MESSAGES: Record<YoutubePreviewCode, string> = {
+  READY: '가져오기 가능',
+  DRM_PROTECTED: 'DRM으로 보호된 콘텐츠는 가져올 수 없습니다',
+  UNAVAILABLE: '동영상을 찾을 수 없거나 재생할 수 없습니다',
+  AUTH_REQUIRED: '로그인이 필요한 콘텐츠는 가져올 수 없습니다',
+  LIVE_UNSUPPORTED: '진행 중이거나 예정된 라이브는 가져올 수 없습니다',
+  NO_SUPPORTED_AUDIO: '가져올 수 있는 오디오가 없습니다',
+  NETWORK: '확인하지 못했습니다. 다시 시도해 주세요',
+  RATE_LIMITED: '확인하지 못했습니다. 다시 시도해 주세요',
+  TIMEOUT: '확인하지 못했습니다. 다시 시도해 주세요',
+  EXTRACTOR_ERROR: '확인하지 못했습니다. 다시 시도해 주세요',
+  UNKNOWN: '확인하지 못했습니다. 다시 시도해 주세요',
+  INVALID_URL: '올바른 YouTube 동영상 URL을 입력하세요',
+  DISABLED: URL_IMPORT_DISABLED_REASON,
+  CANCELLED: '확인이 취소되었습니다'
+}
+
+export function youtubePreviewMessage(code: YoutubePreviewCode): string {
+  return YOUTUBE_PREVIEW_MESSAGES[code]
+}
+
+export function youtubePreviewStatusForCode(code: YoutubePreviewCode): YoutubePreviewStatus {
+  if (code === 'READY') return 'ready'
+  if (code === 'CANCELLED') return 'cancelled'
+  if ((YOUTUBE_PREVIEW_BLOCKED_CODES as readonly string[]).includes(code)) return 'blocked'
+  return 'error'
+}
+
+/** 팝업 세션 ID와 증가 generation을 `sessionId:generation`으로 붙인 불투명 요청 ID */
+export function makeYoutubePreviewRequestId(sessionId: string, generation: number): string {
+  return `${sessionId}:${generation}`
+}
+
+const YOUTUBE_PREVIEW_CODE_SET = new Set<string>(YOUTUBE_PREVIEW_CODES)
+const YOUTUBE_PREVIEW_STATUS_CODES: Record<YoutubePreviewStatus, ReadonlySet<string>> = {
+  ready: new Set(['READY']),
+  blocked: new Set(YOUTUBE_PREVIEW_BLOCKED_CODES),
+  error: new Set(YOUTUBE_PREVIEW_ERROR_CODES),
+  cancelled: new Set(['CANCELLED'])
+}
+
+export function isYoutubePreviewCode(raw: unknown): raw is YoutubePreviewCode {
+  return typeof raw === 'string' && YOUTUBE_PREVIEW_CODE_SET.has(raw)
+}
+
+/**
+ * IPC 미리보기 결과를 화이트리스트 필드로만 재구성한다.
+ * 예외를 던지지 않으며 yt-dlp JSON·쿠키·서명 URL·stderr를 통과시키지 않는다.
+ */
+export function parseYoutubePreviewResult(raw: unknown): YoutubePreviewResult | null {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const rec = raw as Record<string, unknown>
+
+  if (typeof rec.requestId !== 'string') return null
+  if (typeof rec.message !== 'string') return null
+  if (!isYoutubePreviewStatus(rec.status)) return null
+  if (!isYoutubePreviewCode(rec.code)) return null
+  if (!YOUTUBE_PREVIEW_STATUS_CODES[rec.status].has(rec.code)) return null
+
+  const metadata = parseYoutubePreviewMetadata(rec.metadata)
+  if (metadata === undefined) return null
+  const thumbnailWarning = parseStringOrNull(rec.thumbnailWarning)
+  if (thumbnailWarning === undefined) return null
+
+  if (rec.status === 'ready') {
+    if (rec.code !== 'READY') return null
+    if (typeof rec.canonicalUrl !== 'string' || rec.canonicalUrl === '') return null
+    if (typeof rec.checkedAt !== 'number' || !Number.isFinite(rec.checkedAt)) return null
+    return {
+      requestId: rec.requestId,
+      canonicalUrl: rec.canonicalUrl,
+      status: 'ready',
+      code: 'READY',
+      message: rec.message,
+      checkedAt: rec.checkedAt,
+      metadata,
+      thumbnailWarning
+    }
+  }
+
+  const canonicalUrl = parseStringOrNull(rec.canonicalUrl)
+  if (canonicalUrl === undefined) return null
+  const checkedAt = parseFiniteNumberOrNull(rec.checkedAt)
+  if (checkedAt === undefined) return null
+
+  if (rec.status === 'blocked') {
+    return {
+      requestId: rec.requestId,
+      canonicalUrl,
+      status: 'blocked',
+      code: rec.code as YoutubePreviewBlockedCode,
+      message: rec.message,
+      checkedAt,
+      metadata,
+      thumbnailWarning
+    }
+  }
+  if (rec.status === 'error') {
+    return {
+      requestId: rec.requestId,
+      canonicalUrl,
+      status: 'error',
+      code: rec.code as YoutubePreviewErrorCode,
+      message: rec.message,
+      checkedAt,
+      metadata,
+      thumbnailWarning
+    }
+  }
+  return {
+    requestId: rec.requestId,
+    canonicalUrl,
+    status: 'cancelled',
+    code: 'CANCELLED',
+    message: rec.message,
+    checkedAt,
+    metadata,
+    thumbnailWarning
+  }
+}
+
+function isYoutubePreviewStatus(raw: unknown): raw is YoutubePreviewStatus {
+  return raw === 'ready' || raw === 'blocked' || raw === 'error' || raw === 'cancelled'
+}
+
+function parseYoutubePreviewMetadata(raw: unknown): YoutubePreviewMetadata | null | undefined {
+  if (raw == null) return null
+  if (typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const rec = raw as Record<string, unknown>
+  const title = parseStringOrNull(rec.title)
+  const artist = parseStringOrNull(rec.artist)
+  const thumbnailDataUrl = parseStringOrNull(rec.thumbnailDataUrl)
+  if (title === undefined || artist === undefined || thumbnailDataUrl === undefined)
+    return undefined
+  return { title, artist, thumbnailDataUrl }
+}
+
+/** undefined = 타입 불일치 (거부). null/undefined 입력은 null */
+function parseStringOrNull(raw: unknown): string | null | undefined {
+  if (raw == null) return null
+  if (typeof raw === 'string') return raw
+  return undefined
+}
+
+function parseFiniteNumberOrNull(raw: unknown): number | null | undefined {
+  if (raw == null) return null
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  return undefined
+}
+
 /** MR + 가이드 한 곡 가져오기 요청 (스펙 004). 일반 importFiles를 두 번 호출하지 않는다 */
 export interface PairImportRequest {
   mrPath: string
@@ -367,6 +607,8 @@ export const IPC_CHANNELS = {
   bootstrapState: 'bootstrap:state',
   capabilities: 'app:capabilities',
   importUrl: 'library:import-url',
+  previewYoutube: 'library:preview-youtube',
+  cancelYoutubePreview: 'library:cancel-youtube-preview',
   urlImportProgress: 'library:url-import-progress',
   /** 메인 → 렌더러: 사용자에게 보여줄 실패 (오류 센터에 쌓인다) */
   appError: 'app:error',

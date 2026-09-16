@@ -3,14 +3,17 @@ import type {
   GuideKind,
   ImportRejection,
   ImportUserMeta,
-  PairImportStage
+  PairImportStage,
+  YoutubePreviewResult
 } from '../../../shared/types'
 import { parseYoutubeVideoUrl } from '../../../shared/youtubeUrl'
+import type { YoutubePreviewSnapshot } from './youtubePreview'
 
 export type ImportMethod = 'general' | 'pair' | 'url'
 
-/** 곡 정보 칸을 누가 채웠는지. 사용자 입력은 파일 태그가 덮어쓰지 않는다 */
-export type SongMetaOrigin = 'user' | 'general' | 'mr' | 'guide'
+/** 곡 정보 칸을 누가 채웠는지. 사용자 입력은 자동값이 덮어쓰지 않는다 */
+export type SongMetaOrigin = 'user' | 'general' | 'mr' | 'guide' | 'youtube'
+export type FileSongMetaOrigin = 'general' | 'mr' | 'guide'
 
 export interface ImportFormErrors {
   general: string | null
@@ -33,7 +36,17 @@ export interface ImportFormState {
   artist: string
   titleOrigin: SongMetaOrigin | null
   artistOrigin: SongMetaOrigin | null
+  /** youtube 자동 제목을 채운 preview generation. URL 변경 시 제거 */
+  titleYoutubeGeneration: number | null
+  artistYoutubeGeneration: number | null
+  /** 로컬 파일 경로만. data URL·원격 URL 금지 */
   coverPath: string | null
+  youtubeThumbnailDataUrl: string | null
+  youtubeThumbnailGeneration: number | null
+  youtubeThumbnailWarning: string | null
+  urlPreviewReady: boolean
+  urlPreviewUrl: string | null
+  urlPreviewGeneration: number | null
   errors: ImportFormErrors
 }
 
@@ -80,39 +93,78 @@ export function emptyImportForm(): ImportFormState {
     artist: '',
     titleOrigin: null,
     artistOrigin: null,
+    titleYoutubeGeneration: null,
+    artistYoutubeGeneration: null,
     coverPath: null,
+    youtubeThumbnailDataUrl: null,
+    youtubeThumbnailGeneration: null,
+    youtubeThumbnailWarning: null,
+    urlPreviewReady: false,
+    urlPreviewUrl: null,
+    urlPreviewGeneration: null,
     errors: emptyErrors()
   }
 }
 
-/** 비어 있으면 undefined. 메인에서 태그·파일명으로 채운다 */
-export function songMetaFromForm(
-  state: Pick<ImportFormState, 'title' | 'artist' | 'coverPath'>
+function serializeSongMeta(
+  title: string,
+  artist: string,
+  coverPath: string | null
 ): ImportUserMeta | undefined {
-  const title = state.title.trim()
-  const artist = state.artist.trim()
-  const coverPath = state.coverPath?.trim() ?? ''
-  if (title === '' && artist === '' && coverPath === '') return undefined
+  const trimmedTitle = title.trim()
+  const trimmedArtist = artist.trim()
+  const trimmedCover = coverPath?.trim() ?? ''
+  if (trimmedTitle === '' && trimmedArtist === '' && trimmedCover === '') return undefined
   const meta: ImportUserMeta = {}
-  if (title !== '') meta.title = title
-  if (artist !== '') meta.artist = artist
-  if (coverPath !== '') meta.coverPath = coverPath
+  if (trimmedTitle !== '') meta.title = trimmedTitle
+  if (trimmedArtist !== '') meta.artist = trimmedArtist
+  if (trimmedCover !== '') meta.coverPath = trimmedCover
   return meta
 }
 
+/** 비어 있으면 undefined. URL 방식은 수동값만 보내고 자동 제목·썸네일은 제외한다 */
+export function songMetaFromForm(
+  state: Pick<ImportFormState, 'title' | 'artist' | 'coverPath'> &
+    Partial<Pick<ImportFormState, 'method' | 'titleOrigin' | 'artistOrigin'>>
+): ImportUserMeta | undefined {
+  if (state.method === 'url') return songMetaFromUrlForm(state)
+  return serializeSongMeta(state.title, state.artist, state.coverPath)
+}
+
+/** URL 제출: 비어 있지 않은 수동 제목·아티스트와 로컬 coverPath만 */
+export function songMetaFromUrlForm(
+  state: Pick<ImportFormState, 'title' | 'artist' | 'coverPath'> &
+    Partial<Pick<ImportFormState, 'titleOrigin' | 'artistOrigin'>>
+): ImportUserMeta | undefined {
+  const title = state.titleOrigin === 'user' ? state.title : ''
+  const artist = state.artistOrigin === 'user' ? state.artist : ''
+  return serializeSongMeta(title, artist, state.coverPath)
+}
+
 function withSongMeta(from: ImportFormState, next: ImportFormState): ImportFormState {
+  const titleFromYoutube = from.titleOrigin === 'youtube'
+  const artistFromYoutube = from.artistOrigin === 'youtube'
   return {
     ...next,
-    title: from.title,
-    artist: from.artist,
-    titleOrigin: from.titleOrigin,
-    artistOrigin: from.artistOrigin,
-    coverPath: from.coverPath
+    title: titleFromYoutube ? '' : from.title,
+    artist: artistFromYoutube ? '' : from.artist,
+    titleOrigin: titleFromYoutube ? null : from.titleOrigin,
+    artistOrigin: artistFromYoutube ? null : from.artistOrigin,
+    titleYoutubeGeneration: null,
+    artistYoutubeGeneration: null,
+    coverPath: from.coverPath,
+    youtubeThumbnailDataUrl: null,
+    youtubeThumbnailGeneration: null,
+    youtubeThumbnailWarning: null,
+    urlPreviewReady: false,
+    urlPreviewUrl: null,
+    urlPreviewGeneration: null
   }
 }
 
 const ORIGIN_RANK: Record<SongMetaOrigin, number> = {
-  user: 4,
+  user: 5,
+  youtube: 4,
   guide: 3,
   general: 2,
   mr: 1
@@ -122,7 +174,7 @@ function applyTagField(
   current: string,
   origin: SongMetaOrigin | null,
   tag: string | null,
-  source: Exclude<SongMetaOrigin, 'user'>
+  source: FileSongMetaOrigin
 ): { value: string; origin: SongMetaOrigin | null } {
   const trimmed = tag?.trim() ?? ''
   if (origin === 'user') return { value: current, origin }
@@ -140,7 +192,7 @@ function applyTagField(
 export function applyAudioTags(
   state: ImportFormState,
   tags: AudioTagPreview,
-  source: Exclude<SongMetaOrigin, 'user'>
+  source: FileSongMetaOrigin
 ): ImportFormState {
   const title = applyTagField(state.title, state.titleOrigin, tags.title, source)
   const artist = applyTagField(state.artist, state.artistOrigin, tags.artist, source)
@@ -154,17 +206,146 @@ export function applyAudioTags(
 }
 
 export function setSongTitle(state: ImportFormState, value: string): ImportFormState {
-  return { ...state, title: value, titleOrigin: value.trim() === '' ? null : 'user' }
+  return { ...state, title: value, titleOrigin: 'user', titleYoutubeGeneration: null }
 }
 
 export function setSongArtist(state: ImportFormState, value: string): ImportFormState {
-  return { ...state, artist: value, artistOrigin: value.trim() === '' ? null : 'user' }
+  return { ...state, artist: value, artistOrigin: 'user', artistYoutubeGeneration: null }
 }
 
-function clearMetaFromSource(
+export function dropUrlPreviewReady(state: ImportFormState): ImportFormState {
+  if (!state.urlPreviewReady && state.urlPreviewUrl == null && state.urlPreviewGeneration == null) {
+    return state
+  }
+  return {
+    ...state,
+    urlPreviewReady: false,
+    urlPreviewUrl: null,
+    urlPreviewGeneration: null
+  }
+}
+
+/** URL이 채운 제목·아티스트·썸네일만 지운다. 수동값·로컬 커버는 유지 */
+export function clearYoutubeAutoFill(state: ImportFormState): ImportFormState {
+  return {
+    ...state,
+    title: state.titleOrigin === 'youtube' ? '' : state.title,
+    titleOrigin: state.titleOrigin === 'youtube' ? null : state.titleOrigin,
+    titleYoutubeGeneration: null,
+    artist: state.artistOrigin === 'youtube' ? '' : state.artist,
+    artistOrigin: state.artistOrigin === 'youtube' ? null : state.artistOrigin,
+    artistYoutubeGeneration: null,
+    youtubeThumbnailDataUrl: null,
+    youtubeThumbnailGeneration: null,
+    youtubeThumbnailWarning: null,
+    urlPreviewReady: false,
+    urlPreviewUrl: null,
+    urlPreviewGeneration: null
+  }
+}
+
+export function setImportUrl(state: ImportFormState, url: string): ImportFormState {
+  const clearedErrors = { ...state, errors: { ...state.errors, url: null } }
+  if (state.url === url) return clearedErrors
+  return clearYoutubeAutoFill({ ...clearedErrors, url })
+}
+
+export function withUrlReady(state: ImportFormState, generation = 1): ImportFormState {
+  return {
+    ...state,
+    method: 'url',
+    urlPreviewReady: true,
+    urlPreviewUrl: state.url,
+    urlPreviewGeneration: generation
+  }
+}
+
+function applyYoutubeMetaField(
+  current: string,
+  origin: SongMetaOrigin | null,
+  incoming: string | null,
+  generation: number
+): { value: string; origin: SongMetaOrigin | null; generation: number | null } {
+  if (origin === 'user') {
+    return { value: current, origin, generation: null }
+  }
+  const trimmed = incoming?.trim() ?? ''
+  if (trimmed === '') {
+    return {
+      value: current,
+      origin,
+      generation: origin === 'youtube' ? generation : null
+    }
+  }
+  return { value: trimmed, origin: 'youtube', generation }
+}
+
+/** ready·blocked 메타데이터를 비-dirty 칸에만 채운다. coverPath는 건드리지 않는다 */
+export function applyYoutubePreviewToForm(
   state: ImportFormState,
-  source: Exclude<SongMetaOrigin, 'user'>
+  result: YoutubePreviewResult,
+  generation: number,
+  url: string
 ): ImportFormState {
+  if (state.method !== 'url' || state.url !== url) return state
+  if (result.status === 'cancelled') return state
+
+  const ready = result.status === 'ready'
+  let next: ImportFormState = {
+    ...state,
+    urlPreviewReady: ready,
+    urlPreviewUrl: ready ? url : null,
+    urlPreviewGeneration: ready ? generation : null
+  }
+
+  if (result.status === 'error') return next
+
+  const meta = result.metadata
+  if (meta == null) {
+    if (result.thumbnailWarning) {
+      next = { ...next, youtubeThumbnailWarning: result.thumbnailWarning }
+    }
+    return next
+  }
+
+  const title = applyYoutubeMetaField(next.title, next.titleOrigin, meta.title, generation)
+  const artist = applyYoutubeMetaField(next.artist, next.artistOrigin, meta.artist, generation)
+  next = {
+    ...next,
+    title: title.value,
+    titleOrigin: title.origin,
+    titleYoutubeGeneration: title.origin === 'youtube' ? title.generation : null,
+    artist: artist.value,
+    artistOrigin: artist.origin,
+    artistYoutubeGeneration: artist.origin === 'youtube' ? artist.generation : null
+  }
+
+  if (meta.thumbnailDataUrl) {
+    next = {
+      ...next,
+      youtubeThumbnailDataUrl: meta.thumbnailDataUrl,
+      youtubeThumbnailGeneration: generation,
+      youtubeThumbnailWarning: result.thumbnailWarning
+    }
+  } else if (result.thumbnailWarning) {
+    next = { ...next, youtubeThumbnailWarning: result.thumbnailWarning }
+  }
+
+  return next
+}
+
+export function applyYoutubePreviewSnapshot(
+  state: ImportFormState,
+  snapshot: YoutubePreviewSnapshot
+): ImportFormState {
+  if (snapshot.status === 'ready' || snapshot.status === 'blocked') {
+    if (snapshot.result == null) return dropUrlPreviewReady(state)
+    return applyYoutubePreviewToForm(state, snapshot.result, snapshot.generation, snapshot.url)
+  }
+  return dropUrlPreviewReady(state)
+}
+
+function clearMetaFromSource(state: ImportFormState, source: FileSongMetaOrigin): ImportFormState {
   return {
     ...state,
     title: state.titleOrigin === source ? '' : state.title,
@@ -234,7 +415,14 @@ export function canSubmit(state: ImportFormState): boolean {
   if (state.method === 'pair') {
     return canSubmitPair(state.mrPath, state.guidePath, state.guideKind)
   }
-  if (state.method === 'url') return canSubmitUrl(state.url)
+  if (state.method === 'url') {
+    return (
+      canSubmitUrl(state.url) &&
+      state.urlPreviewReady &&
+      state.urlPreviewUrl === state.url &&
+      state.urlPreviewGeneration != null
+    )
+  }
   return false
 }
 

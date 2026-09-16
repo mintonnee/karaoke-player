@@ -123,6 +123,8 @@ export function buildYtDlpArgs(params: {
   url: string
 }): string[] {
   return [
+    // 사용자 전역 yt-dlp.conf가 format/cookies/후처리를 바꾸지 못하게 격리한다 (스펙 009 §4.3)
+    '--ignore-config',
     // Windows에서 파이프로 받는 stdout이 시스템 코드페이지(cp949)로 나와 한자·가나가 깨진다.
     // PYTHONIOENCODING은 PyInstaller 번들에 먹지 않으므로 yt-dlp 자체 옵션으로 고정한다
     '--encoding',
@@ -215,15 +217,15 @@ export class YtDlpService {
     if (!parsed.ok) {
       return reject(url, parsed.reason)
     }
-    const href = parsed.href
+    const canonicalUrl = parsed.canonicalUrl
 
     const id = randomUUID()
     const scratch = join(this.options.scratchRoot, id)
     try {
       await mkdir(scratch, { recursive: true })
-      this.emit({ id, url: href, pct: 0, msg: '다운로드 준비 중' })
+      this.emit({ id, url: canonicalUrl, pct: 0, msg: '다운로드 준비 중' })
 
-      const outcome = await this.download(id, href, scratch)
+      const outcome = await this.download(id, canonicalUrl, scratch)
       if (outcome.code !== 0) {
         return reject(url, describeFailure(outcome))
       }
@@ -233,7 +235,7 @@ export class YtDlpService {
         return reject(url, describeFailure(outcome, '다운로드된 오디오 파일을 찾지 못했습니다'))
       }
 
-      this.emit({ id, url: href, pct: 100, msg: '라이브러리에 추가 중' })
+      this.emit({ id, url: canonicalUrl, pct: 100, msg: '라이브러리에 추가 중' })
       const response = await this.options.importFiles(
         [mediaPath],
         {

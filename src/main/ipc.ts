@@ -19,8 +19,10 @@ import type {
   Track,
   TrackVolumes,
   TrackFiles,
-  TrackMetaInput
+  TrackMetaInput,
+  YoutubePreviewResult
 } from '../shared/types'
+import { parseYoutubeVideoUrl } from '../shared/youtubeUrl'
 import { inspectCoverImage } from './library/coverImage'
 import type { CoverService } from './library/CoverService'
 import { ImportRequestGate } from './library/ImportRequestGate'
@@ -30,6 +32,10 @@ import type { LibraryStore } from './library/LibraryStore'
 import type { SearchKeyService } from './library/SearchKeyService'
 import type { TrackEditService } from './library/TrackEditService'
 import { requireReadyTrackFiles } from './library/trackFiles'
+import {
+  buildYoutubePreviewResult,
+  type YoutubePreviewService
+} from './library/YoutubePreviewService'
 import type { YtDlpService } from './library/YtDlpService'
 import type { LyricsService } from './lyrics/LyricsService'
 import type { SettingsStore } from './settings/SettingsStore'
@@ -51,6 +57,7 @@ export interface IpcDeps {
   capabilities: AppCapabilities
   /** URL 임포트가 꺼진 실행(MSIX판·리소스 미배치)에서는 null */
   ytDlpService: YtDlpService | null
+  previewService: YoutubePreviewService | null
   trackEditService: TrackEditService
   coverService: CoverService
   /** 런타임 준비 상태. sidecar가 필요한 IPC는 ready 전에는 거부한다 */
@@ -67,6 +74,7 @@ export function registerIpcHandlers({
   notify,
   capabilities,
   ytDlpService,
+  previewService,
   trackEditService,
   coverService,
   getBootstrapState
@@ -292,12 +300,13 @@ export function registerIpcHandlers({
 
   ipcMain.handle(
     IPC_CHANNELS.importUrl,
-    (_event, url: string, userMeta?: ImportUserMeta): Promise<ImportFilesResponse> => {
+    (event, url: unknown, userMeta?: ImportUserMeta): Promise<ImportFilesResponse> => {
       const blocked = requireRuntime()
+      const filePath = typeof url === 'string' ? url : ''
       if (blocked) {
         return Promise.resolve({
           imported: [],
-          rejected: [runtimeActionRejection(blocked, typeof url === 'string' ? url : '')]
+          rejected: [runtimeActionRejection(blocked, filePath)]
         })
       }
       const service = ytDlpService
@@ -306,12 +315,70 @@ export function registerIpcHandlers({
       if (!service) {
         return Promise.resolve({
           imported: [],
-          rejected: [{ filePath: url, reason: URL_IMPORT_DISABLED_REASON }]
+          rejected: [{ filePath, reason: URL_IMPORT_DISABLED_REASON }]
         })
       }
-      return importGate.run(() => service.importUrl(precheck.url, sanitizeImportUserMeta(userMeta)))
+      previewService?.abortActive(event.sender)
+      return importGate.run(async () => {
+        if (previewService) {
+          const confirmed = await previewService.confirmReadyForImport(event.sender, precheck.url)
+          if (!confirmed.ok) {
+            return {
+              imported: [],
+              rejected: [{ filePath, reason: confirmed.reason }]
+            }
+          }
+        }
+        return service.importUrl(precheck.url, sanitizeImportUserMeta(userMeta))
+      })
     }
   )
+
+  ipcMain.handle(
+    IPC_CHANNELS.previewYoutube,
+    (event, raw: unknown): Promise<YoutubePreviewResult> => {
+      const { requestId, url } = previewRequestFields(raw)
+      if (!capabilities.urlImport || !previewService) {
+        return Promise.resolve(previewErrorResult(requestId, 'DISABLED'))
+      }
+      const parsed = parseYoutubeVideoUrl(url)
+      if (!parsed.ok) {
+        return Promise.resolve(previewErrorResult(requestId, 'INVALID_URL'))
+      }
+      return previewService.preview(event.sender, { requestId, url: parsed.canonicalUrl })
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.cancelYoutubePreview, (event, raw: unknown): Promise<void> => {
+    const { requestId } = previewRequestFields(raw)
+    if (requestId !== '') previewService?.cancel(event.sender, requestId)
+    return Promise.resolve()
+  })
+}
+
+function previewRequestFields(raw: unknown): { requestId: string; url: unknown } {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { requestId: '', url: undefined }
+  }
+  const rec = raw as Record<string, unknown>
+  return {
+    requestId: typeof rec.requestId === 'string' ? rec.requestId : '',
+    url: rec.url
+  }
+}
+
+function previewErrorResult(
+  requestId: string,
+  code: 'DISABLED' | 'INVALID_URL'
+): YoutubePreviewResult {
+  return buildYoutubePreviewResult({
+    requestId,
+    code,
+    canonicalUrl: null,
+    checkedAt: null,
+    metadata: null,
+    thumbnailWarning: null
+  })
 }
 
 async function previewCoverDataUrl(filePath: string): Promise<string | null> {

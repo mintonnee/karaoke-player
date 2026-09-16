@@ -17,7 +17,8 @@ const SOURCE_LABEL: Record<AppErrorReport['source'], string> = {
   lyrics: '가사',
   player: '재생',
   jobs: '작업 큐',
-  'url-import': 'URL 가져오기'
+  'url-import': 'URL 가져오기',
+  runtime: '실행 환경'
 }
 
 export function sourceLabel(source: AppErrorReport['source']): string {

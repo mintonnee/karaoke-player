@@ -49,7 +49,7 @@ export interface BootstrapController {
   onChange(listener: (state: BootstrapState) => void): () => void
   /** 부트스트랩을 시작한다. 이미 진행 중이면 그 결과를 돌려준다 */
   start(): Promise<BootstrapState>
-  /** error 상태에서 다시 시도한다. 진행 중이면 start와 동일 */
+  /** retryable=true 오류만 다시 시도한다. 진행 중이면 start와 동일 */
   retry(): Promise<BootstrapState>
   /** 처음 ready가 되는 시점에 resolve (재시도를 거쳐도 한 번만) */
   whenReady(): Promise<void>
@@ -61,7 +61,10 @@ export const READY_STATE: BootstrapState = {
   status: 'ready',
   message: '준비 완료',
   error: null,
-  log: []
+  log: [],
+  stage: null,
+  logicalId: null,
+  retryable: false
 }
 
 /** L2 내부 단계. L4가 BootstrapState에 download/verify/env-prep을 확장해야 한다 */
@@ -239,6 +242,10 @@ export class SidecarBootstrap implements BootstrapController {
   }
 
   retry(): Promise<BootstrapState> {
+    if (this.running) return this.running
+    if (this.state.status === 'error' && this.state.retryable !== true) {
+      return Promise.resolve(this.state)
+    }
     return this.start()
   }
 
@@ -284,9 +291,15 @@ export class SidecarBootstrap implements BootstrapController {
 
   private async run(): Promise<BootstrapState> {
     const { bundledSidecarDir } = this.options
+    let canRebuild = false
     this.prepareAbort = new AbortController()
     if (this.disposed) this.prepareAbort.abort()
-    this.setStage('checking', '사이드카 환경 확인 중', { error: null, log: [] })
+    this.setStage('checking', '사이드카 환경 확인 중', {
+      error: null,
+      log: [],
+      logicalId: null,
+      retryable: false
+    })
     try {
       const manifest = this.options.manifest
       const locks = this.options.locks
@@ -298,6 +311,7 @@ export class SidecarBootstrap implements BootstrapController {
       if (!verified.ok) {
         throw new Error(verified.errors.map((e) => `${e.code} ${e.message}`).join('\n'))
       }
+      canRebuild = true
 
       if (await isSidecarReady({ userDataDir, manifest })) {
         return this.markReady()
@@ -340,14 +354,18 @@ export class SidecarBootstrap implements BootstrapController {
       this.setStage('error', '사이드카 환경 구성 실패', {
         error: message,
         logicalId,
-        retryable: true
+        retryable: canRebuild && !this.disposed
       })
       return this.state
     }
   }
 
   private markReady(): BootstrapState {
-    this.setStage('ready', '준비 완료', { error: null })
+    this.setStage('ready', '준비 완료', {
+      error: null,
+      logicalId: null,
+      retryable: false
+    })
     this.resolveReady()
     return this.state
   }

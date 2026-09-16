@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useRuntimeReady } from '../stores/bootstrapStore'
+import { isRuntimeActionAllowed } from '../../../shared/bootstrap'
+import { useBootstrapStore } from '../stores/bootstrapStore'
 import { useLyricsStore } from '../stores/lyricsStore'
 import type { AlignLang } from '../../../shared/types'
 
@@ -18,7 +19,12 @@ interface LyricsSetupProps {
 /** S5.2/S5.4: 동기 가사가 없을 때 — 붙여넣기(또는 전사) → 정렬 실행 */
 function LyricsSetup({ trackId, noGuide = false }: LyricsSetupProps): React.JSX.Element {
   const { plain, working, progress, workError, refetch, align, transcribe } = useLyricsStore()
-  const runtimeReady = useRuntimeReady()
+  const bootstrap = useBootstrapStore((s) => s.state)
+  const runtimeReady = isRuntimeActionAllowed(bootstrap)
+  const runtimeBlockedMessage =
+    bootstrap?.status === 'error'
+      ? '실행 환경 준비 실패 · 알림에서 확인'
+      : '환경 준비 중 · 알림에서 확인'
   const alignDisabled = noGuide || !runtimeReady
   // 사용자가 건드리기 전에는 저장된 plain 가사를 따라간다 (로드 완료 시 자동 반영)
   const [editedText, setEditedText] = useState<string | null>(null)
@@ -53,7 +59,7 @@ function LyricsSetup({ trackId, noGuide = false }: LyricsSetupProps): React.JSX.
         {noGuide
           ? '가이드 보컬이 없어 자동 정렬·받아쓰기를 사용할 수 없습니다. LRCLIB에서 동기 가사를 찾아보세요.'
           : !runtimeReady
-            ? '런타임이 준비되면 가사 정렬·받아쓰기를 사용할 수 있습니다. LRCLIB 조회는 지금 가능합니다.'
+            ? `${runtimeBlockedMessage}. LRCLIB 조회는 지금 가능합니다.`
             : '동기 가사가 없습니다. 가사를 붙여넣고 정렬하거나, LRCLIB에서 다시 찾아보세요.'}
       </p>
       {workError && <p className="lyrics-error">실패: {workError}</p>}

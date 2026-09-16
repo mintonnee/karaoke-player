@@ -47,7 +47,8 @@ import {
   type YoutubePreviewSnapshot,
   type YoutubePreviewUiStatus
 } from '../import/youtubePreview'
-import { useRuntimeReady } from '../stores/bootstrapStore'
+import { isRuntimeActionAllowed } from '../../../shared/bootstrap'
+import { useBootstrapStore } from '../stores/bootstrapStore'
 import { useLibraryStore } from '../stores/libraryStore'
 
 interface ImportDialogProps {
@@ -78,7 +79,12 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
   const importFiles = useLibraryStore((s) => s.importFiles)
   const importPair = useLibraryStore((s) => s.importPair)
   const importUrl = useLibraryStore((s) => s.importUrl)
-  const runtimeReady = useRuntimeReady()
+  const bootstrap = useBootstrapStore((s) => s.state)
+  const runtimeReady = isRuntimeActionAllowed(bootstrap)
+  const runtimeBlockedMessage =
+    bootstrap?.status === 'error'
+      ? '실행 환경 준비 실패 · 알림에서 확인'
+      : '환경 준비 중 · 알림에서 확인'
 
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [settingsSaving, setSettingsSaving] = useState(false)
@@ -468,7 +474,7 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
           <div className="import-detail">
             {!runtimeReady && (
               <p className="import-error" role="alert">
-                런타임이 준비되면 가져오기를 사용할 수 있습니다. 기존 곡 재생은 계속 할 수 있습니다.
+                {runtimeBlockedMessage}. 기존 곡 재생은 계속할 수 있습니다.
               </p>
             )}
             {form.errors.count && (

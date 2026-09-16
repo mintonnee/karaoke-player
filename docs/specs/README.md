@@ -16,6 +16,7 @@ Karaoke Player의 기능 스펙 문서 모음. 새 스펙은 아래 템플릿 �
 | 007  | [`007-db-schema-safety.md`](007-db-schema-safety.md)                               | 000 §4.3·S3 — DB 스키마 버전 보호·백업·복구                          | 구현 완료 (자동 검증 통과, 패키징 앱 수동 확인 대기)                                   |
 | 008  | [`008-runtime-dependency-lock.md`](008-runtime-dependency-lock.md)                 | 001 §4.1–4.3 — Python·모델·외부 실행 파일 lock                       | 구현됨 (fixture 자동 검증 통과, 실자산·패키징 바이트·수동 UI 확인 대기)                |
 | 009  | [`009-youtube-url-preview.md`](009-youtube-url-preview.md)                         | 004 §4.1-4.2 — YouTube URL 사전 확인·상태 아이콘·메타데이터 미리보기 | 구현 완료 (기준 1–10 자동 검증, 11·12 수동 확인 대기)                                  |
+| 010  | [`010-notification-center.md`](010-notification-center.md)                         | 008 §4.5·003 사이드 툴바 — 준비 상태·오류 기록을 알림 센터로 통합    | 구현 완료 (자동 검증 통과, 실제 앱 수동 확인 대기)                                     |
 
 ## 템플릿
 

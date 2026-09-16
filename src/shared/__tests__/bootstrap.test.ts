@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  bootstrapStatusMessage,
   bootstrapChrome,
   bootstrapDisplayStage,
   formatRuntimeBlockedMessage,
+  isBootstrapInProgress,
   isBootstrapRetryable,
   isRuntimeActionAllowed,
   isRuntimeReady,
@@ -58,6 +60,33 @@ describe('bootstrapDisplayStage', () => {
   })
 })
 
+describe('notification bootstrap status', () => {
+  it('미수신과 준비 단계는 진행 중이고 단계 중심 문구를 사용한다', () => {
+    expect(isBootstrapInProgress(null)).toBe(true)
+    expect(bootstrapStatusMessage(null)).toBe('준비 상태 확인 중')
+
+    const cases = [
+      [state({ status: 'copying' }), '실행 환경 다운로드 중'],
+      [state({ status: 'verify', stage: 'verify' }), '다운로드 파일 확인 중'],
+      [state({ status: 'syncing' }), '실행 환경 구성 중'],
+      [state({ status: 'model-prep', stage: 'model-prep' }), '모델 준비 중']
+    ] as const
+    for (const [current, message] of cases) {
+      expect(isBootstrapInProgress(current)).toBe(true)
+      expect(bootstrapStatusMessage(current)).toBe(message)
+    }
+  })
+
+  it('ready는 숨기고 error는 실패 문구를 보존하며 진행으로 보지 않는다', () => {
+    const ready = state({ status: 'ready' })
+    const failed = state({ status: 'error', message: '구성 실패', error: 'sha256 mismatch' })
+    expect(isBootstrapInProgress(ready)).toBe(false)
+    expect(bootstrapStatusMessage(ready)).toBeNull()
+    expect(isBootstrapInProgress(failed)).toBe(false)
+    expect(bootstrapStatusMessage(failed)).toBe('sha256 mismatch')
+  })
+})
+
 describe('runtime-needed action', () => {
   it('준비 전에는 거부 사유에 id·stage·retryable을 포함한다', () => {
     const failed = state({
@@ -79,6 +108,20 @@ describe('runtime-needed action', () => {
       filePath: 'song.mp3',
       reason: message
     })
+  })
+
+  it('명시적으로 재구성 가능한 runtime 오류만 재시도 가능하다', () => {
+    const missingManifest = state({
+      status: 'error',
+      stage: 'verify',
+      logicalId: 'runtime-manifest',
+      error: 'manifest missing'
+    })
+    expect(isBootstrapRetryable(missingManifest)).toBe(false)
+    expect(formatRuntimeBlockedMessage(missingManifest)).toContain('retryable=false')
+    expect(isBootstrapRetryable({ ...missingManifest, retryable: false })).toBe(false)
+    expect(isBootstrapRetryable({ ...missingManifest, retryable: true })).toBe(true)
+    expect(isBootstrapRetryable(state({ status: 'model-prep', retryable: true }))).toBe(false)
   })
 })
 

@@ -12,7 +12,6 @@ import {
   MdSchedule,
   MdSettings
 } from 'react-icons/md'
-import BootstrapScreen from './components/BootstrapScreen'
 import CoverArt from './components/CoverArt'
 import ErrorCenter from './components/ErrorCenter'
 import ImportDialog from './components/ImportDialog'
@@ -23,13 +22,13 @@ import SettingsModal from './components/SettingsModal'
 import ShortcutHelp from './components/ShortcutHelp'
 import TrackEditDialog from './components/TrackEditDialog'
 import Transport from './components/Transport'
-import { useBootstrapStore } from './stores/bootstrapStore'
+import { connectBootstrap, useBootstrapStore } from './stores/bootstrapStore'
 import { useErrorStore } from './stores/errorStore'
 import { useLibraryStore } from './stores/libraryStore'
 import { useLyricsStore } from './stores/lyricsStore'
 import { usePlayerStore } from './stores/playerStore'
 import { formatBpmDisplay } from '../../shared/analysisFormat'
-import { bootstrapChrome, isRuntimeActionAllowed } from '../../shared/bootstrap'
+import { isBootstrapInProgress, isRuntimeActionAllowed } from '../../shared/bootstrap'
 import { formatKeyDisplay } from '../../shared/musicKey'
 import type { Track } from '../../shared/types'
 
@@ -205,27 +204,27 @@ function App(): React.JSX.Element {
   const [dragOver, setDragOver] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
-  const [showErrors, setShowErrors] = useState(false)
   const unseenErrors = useErrorStore((s) => s.entries.filter((e) => !e.seen).length)
-  const markErrorsSeen = useErrorStore((s) => s.markAllSeen)
+  const notificationOpen = useErrorStore((s) => s.notificationOpen)
+  const setNotificationOpen = useErrorStore((s) => s.setNotificationOpen)
   const [showImport, setShowImport] = useState(false)
   const [importDropPaths, setImportDropPaths] = useState<string[]>([])
   const [editingTrack, setEditingTrack] = useState<Track | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const trackListRef = useRef<HTMLUListElement>(null)
-  const modalOpen = showSettings || showImport || editingTrack !== null
+  const notificationButtonRef = useRef<HTMLButtonElement>(null)
+  const otherModalOpen = showSettings || showHelp || showImport || editingTrack !== null
+  const modalOpen = otherModalOpen || notificationOpen
   const bootstrap = useBootstrapStore((s) => s.state)
-  const setBootstrap = useBootstrapStore((s) => s.setState)
   const importBusy = importing || urlImporting || pairImporting
   const runtimeAllowed = isRuntimeActionAllowed(bootstrap)
-  const prepChrome = bootstrapChrome(bootstrap, { trackCount: tracks.length })
+  const bootstrapInProgress = isBootstrapInProgress(bootstrap)
+  const runtimeBlockedMessage =
+    bootstrap?.status === 'error'
+      ? '실행 환경 준비 실패 · 알림에서 확인'
+      : '환경 준비 중 · 알림에서 확인'
 
-  useEffect(() => {
-    // 구독을 먼저 걸어 조회와 이벤트 사이의 상태 변화를 놓치지 않는다
-    const unsubscribe = window.api.onBootstrapState(setBootstrap)
-    void window.api.getBootstrapState().then(setBootstrap)
-    return unsubscribe
-  }, [setBootstrap])
+  useEffect(() => connectBootstrap(), [])
 
   useEffect(() => {
     void refresh()
@@ -241,7 +240,7 @@ function App(): React.JSX.Element {
     const clampDb = (db: number): number => Math.max(-60, Math.min(0, db))
 
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (showSettings || showImport || editingTrack) return
+      if (showSettings || showImport || notificationOpen || editingTrack) return
       if (event.metaKey) return
       const target = event.target as HTMLElement
       if (
@@ -316,7 +315,7 @@ function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showSettings, showImport, editingTrack])
+  }, [showSettings, showImport, notificationOpen, editingTrack])
 
   useEffect(() => {
     if (currentTrackId) void loadLyrics(currentTrackId)
@@ -440,9 +439,7 @@ function App(): React.JSX.Element {
                 type="button"
                 onClick={openImport}
                 disabled={importBusy || modalOpen || !runtimeAllowed}
-                title={
-                  runtimeAllowed ? undefined : '런타임이 준비되면 가져오기를 사용할 수 있습니다'
-                }
+                title={runtimeAllowed ? undefined : runtimeBlockedMessage}
               >
                 {importBusy ? '임포트 중…' : '+ 가져오기'}
               </button>
@@ -457,14 +454,6 @@ function App(): React.JSX.Element {
             value={search}
             onChange={(e) => void setSearch(e.target.value)}
           />
-
-          {prepChrome !== 'hidden' && bootstrap && (
-            <BootstrapScreen
-              state={bootstrap}
-              variant={prepChrome}
-              onRetry={() => void window.api.retryBootstrap()}
-            />
-          )}
 
           {rejections.length > 0 && (
             <div className="rejections">
@@ -500,11 +489,16 @@ function App(): React.JSX.Element {
                 onEdit={() => openEdit(track)}
               />
             ))}
-            {tracks.length === 0 && prepChrome !== 'panel' && (
+            {tracks.length === 0 && (
               <li className="track-empty">
-                {search
-                  ? '검색 결과가 없습니다.'
-                  : '오디오 파일을 이 패널에 끌어다 놓거나 [+ 가져오기]를 누르세요 (MP3/WAV/FLAC/M4A)'}
+                <span>
+                  {search
+                    ? '검색 결과가 없습니다.'
+                    : '오디오 파일을 이 패널에 끌어다 놓거나 [+ 가져오기]를 누르세요 (MP3/WAV/FLAC/M4A)'}
+                </span>
+                {!search && !runtimeAllowed && (
+                  <span className="track-empty-runtime">{runtimeBlockedMessage}</span>
+                )}
               </li>
             )}
           </ul>
@@ -528,17 +522,35 @@ function App(): React.JSX.Element {
       <aside className="side-column">
         <div className="side-toolbar">
           <button
-            className={`icon-btn icon-btn-badge-host${unseenErrors > 0 ? ' has-badge' : ''}`}
-            title={unseenErrors > 0 ? `오류 ${unseenErrors}건 (보고하기)` : '오류 기록'}
+            ref={notificationButtonRef}
+            type="button"
+            className={`icon-btn icon-btn-badge-host${unseenErrors > 0 ? ' has-badge' : ''}${
+              bootstrapInProgress ? ' has-progress' : ''
+            }`}
+            aria-label="알림"
+            aria-describedby="notification-button-status"
+            title={`알림${bootstrapInProgress ? ' · 환경 준비 중' : ''}${
+              unseenErrors > 0 ? ` · 읽지 않은 오류 ${unseenErrors}건` : ''
+            }`}
+            disabled={otherModalOpen}
             onClick={() => {
-              markErrorsSeen()
-              setShowErrors(true)
+              if (otherModalOpen) return
+              setNotificationOpen(true)
             }}
           >
-            <MdNotificationsNone />
-            {unseenErrors > 0 && (
-              <span className="icon-btn-badge">{unseenErrors > 9 ? '9+' : unseenErrors}</span>
+            <MdNotificationsNone aria-hidden="true" />
+            {bootstrapInProgress && (
+              <span className="notification-progress-mark" aria-hidden="true" />
             )}
+            {unseenErrors > 0 && (
+              <span className="icon-btn-badge" aria-hidden="true">
+                {unseenErrors > 9 ? '9+' : unseenErrors}
+              </span>
+            )}
+            <span id="notification-button-status" className="a11y-only">
+              {unseenErrors > 0 ? `읽지 않은 오류 ${unseenErrors}건. ` : ''}
+              {bootstrapInProgress ? '환경 준비 중.' : ''}
+            </span>
           </button>
           <button
             className="icon-btn"
@@ -569,7 +581,14 @@ function App(): React.JSX.Element {
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} />}
-      {showErrors && <ErrorCenter onClose={() => setShowErrors(false)} />}
+      {notificationOpen && (
+        <ErrorCenter
+          onClose={() => {
+            setNotificationOpen(false)
+            requestAnimationFrame(() => notificationButtonRef.current?.focus())
+          }}
+        />
+      )}
       {showImport && <ImportDialog initialPaths={importDropPaths} onClose={closeImport} />}
       {editingTrack && (
         <TrackEditDialog

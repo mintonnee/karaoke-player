@@ -39,6 +39,12 @@ describe('buildIssueTitle', () => {
   it('개행은 공백으로 접는다', () => {
     expect(buildIssueTitle(error({ message: 'line1\n  line2' }))).toBe('[보컬 분리] line1 line2')
   })
+
+  it('runtime 오류는 실행 환경으로 표시한다', () => {
+    expect(buildIssueTitle(error({ source: 'runtime', message: 'manifest missing' }))).toBe(
+      '[실행 환경] manifest missing'
+    )
+  })
 })
 
 describe('buildIssueBody', () => {

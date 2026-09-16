@@ -517,7 +517,7 @@ export interface BootstrapState {
   stage?: BootstrapPrepStage | null
   /** 실패한 논리 ID (uv, 모델 id 등) */
   logicalId?: string | null
-  /** 재시도 가능. 오류에서 기본 true */
+  /** 실제 bootstrap 재구성을 다시 실행할 수 있는 오류에서만 true */
   retryable?: boolean
 }
 
@@ -619,7 +619,7 @@ export const IPC_CHANNELS = {
 
 /** 오류 센터 항목의 출처. 이슈 제목 접두어로도 쓴다 */
 export type AppErrorSource =
-  'import' | 'separate' | 'analyze' | 'lyrics' | 'player' | 'jobs' | 'url-import'
+  'import' | 'separate' | 'analyze' | 'lyrics' | 'player' | 'jobs' | 'url-import' | 'runtime'
 
 /** 메인/렌더러가 오류 센터로 보내는 실패 한 건 */
 export interface AppErrorReport {

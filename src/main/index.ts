@@ -134,7 +134,7 @@ function enrichBootstrapState(state: BootstrapState): BootstrapState {
     ...state,
     stage,
     logicalId: state.logicalId ?? null,
-    retryable: state.retryable ?? state.status === 'error'
+    retryable: state.retryable === true
   }
 }
 
@@ -307,7 +307,7 @@ function createSidecar(
           error: 'bundled runtime-manifest.json 또는 lock이 없습니다',
           stage: 'verify',
           logicalId: 'runtime-manifest',
-          retryable: true,
+          retryable: false,
           log: []
         })
   const bootstrap = new OverlayBootstrap(inner)
@@ -384,7 +384,7 @@ function wrapSidecarRun(
         stage: 'model-prep',
         message: `모델 준비 중 (${modelId})`,
         logicalId: modelId,
-        retryable: true,
+        retryable: false,
         error: null
       })
       try {
@@ -399,7 +399,7 @@ function wrapSidecarRun(
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        throw new Error(`${message} (id=${modelId}, stage=model-prep, retryable=true)`)
+        throw new Error(`${message} (id=${modelId}, stage=model-prep, retryable=false)`)
       } finally {
         modelPrepDepth -= 1
         if (modelPrepDepth === 0) opts.bootstrap.setOverlay(null)

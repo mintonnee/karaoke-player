@@ -12,6 +12,8 @@ export interface AppErrorEntry extends AppErrorReport {
 
 interface ErrorState {
   entries: AppErrorEntry[]
+  notificationOpen: boolean
+  setNotificationOpen: (open: boolean) => void
   /** 렌더러 쪽 실패를 기록한다. 메인 프로세스 실패는 onAppError 구독으로 들어온다 */
   report: (source: AppErrorSource, message: string, trackId?: string) => void
   markAllSeen: () => void
@@ -21,9 +23,9 @@ interface ErrorState {
 
 let nextId = 0
 
-function push(entries: AppErrorEntry[], report: AppErrorReport): AppErrorEntry[] {
+function push(entries: AppErrorEntry[], report: AppErrorReport, seen: boolean): AppErrorEntry[] {
   nextId += 1
-  const entry: AppErrorEntry = { ...report, id: `e${nextId}`, seen: false }
+  const entry: AppErrorEntry = { ...report, id: `e${nextId}`, seen }
   return [entry, ...entries].slice(0, MAX_ENTRIES)
 }
 
@@ -33,14 +35,26 @@ function push(entries: AppErrorEntry[], report: AppErrorReport): AppErrorEntry[]
  */
 export const useErrorStore = create<ErrorState>((set) => {
   window.api.onAppError((report) => {
-    set((state) => ({ entries: push(state.entries, report) }))
+    set((state) => ({ entries: push(state.entries, report, state.notificationOpen) }))
   })
 
   return {
     entries: [],
+    notificationOpen: false,
+    setNotificationOpen: (notificationOpen) =>
+      set((state) => ({
+        notificationOpen,
+        entries: notificationOpen
+          ? state.entries.map((entry) => (entry.seen ? entry : { ...entry, seen: true }))
+          : state.entries
+      })),
     report: (source, message, trackId) =>
       set((state) => ({
-        entries: push(state.entries, { source, message, at: new Date().toISOString(), trackId })
+        entries: push(
+          state.entries,
+          { source, message, at: new Date().toISOString(), trackId },
+          state.notificationOpen
+        )
       })),
     markAllSeen: () =>
       set((state) =>

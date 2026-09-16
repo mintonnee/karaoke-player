@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { bootstrapChrome, isRuntimeActionAllowed, isRuntimeReady } from '../../shared/bootstrap'
+import {
+  bootstrapStatusMessage,
+  isBootstrapInProgress,
+  isRuntimeActionAllowed,
+  isRuntimeReady
+} from '../../shared/bootstrap'
 import type { BootstrapState, Track } from '../../shared/types'
 
 function bootstrap(patch: Partial<BootstrapState> = {}): BootstrapState {
@@ -35,15 +40,16 @@ function readyTrack(): Track {
 }
 
 describe('library UI when bootstrap is not ready', () => {
-  it('빈 라이브러리는 준비 패널을 보여주고 가져오기를 끈다', () => {
+  it('미수신·준비 단계는 알림 진행 상태이며 runtime 동작만 막는다', () => {
     const state = bootstrap({ status: 'download', stage: 'download', logicalId: 'cpython' })
-    const tracks: Track[] = []
-    expect(bootstrapChrome(state, { trackCount: tracks.length })).toBe('panel')
+    expect(isBootstrapInProgress(null)).toBe(true)
+    expect(isBootstrapInProgress(state)).toBe(true)
+    expect(bootstrapStatusMessage(state)).toBe('실행 환경 다운로드 중')
     expect(isRuntimeActionAllowed(state)).toBe(false)
     expect(isRuntimeReady(state)).toBe(false)
   })
 
-  it('ready 트랙이 있으면 목록·재생은 열고 가져오기만 막는다', () => {
+  it('runtime 실패여도 기존 ready 트랙은 재생 대상으로 유지한다', () => {
     const state = bootstrap({
       status: 'error',
       stage: 'env-prep',
@@ -52,14 +58,19 @@ describe('library UI when bootstrap is not ready', () => {
       retryable: true
     })
     const tracks = [readyTrack()]
-    expect(tracks.some((t) => t.status === 'ready')).toBe(true)
-    expect(bootstrapChrome(state, { trackCount: tracks.length })).toBe('strip')
+    expect(tracks.some((track) => track.status === 'ready')).toBe(true)
+    expect(isBootstrapInProgress(state)).toBe(false)
     expect(isRuntimeActionAllowed(state)).toBe(false)
   })
 
-  it('runtime이 ready면 배너를 숨기고 작업을 허용한다', () => {
-    const state = bootstrap({ status: 'ready', message: '준비 완료' })
-    expect(bootstrapChrome(state, { trackCount: 0 })).toBe('hidden')
-    expect(isRuntimeActionAllowed(state)).toBe(true)
+  it('ready와 model-prep의 runtime 가용성을 구분한다', () => {
+    const ready = bootstrap({ status: 'ready', message: '준비 완료' })
+    const modelPrep = bootstrap({ status: 'model-prep', stage: 'model-prep' })
+    expect(isBootstrapInProgress(ready)).toBe(false)
+    expect(bootstrapStatusMessage(ready)).toBeNull()
+    expect(isRuntimeActionAllowed(ready)).toBe(true)
+    expect(isBootstrapInProgress(modelPrep)).toBe(true)
+    expect(isRuntimeActionAllowed(modelPrep)).toBe(true)
+    expect(bootstrapStatusMessage(modelPrep)).toBe('모델 준비 중')
   })
 })

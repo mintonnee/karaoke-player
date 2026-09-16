@@ -56,7 +56,19 @@
   gap: 6px;
 }
 
-/* 알림(오류) 버튼 배지 */
+.a11y-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 알림 버튼: 준비 진행과 읽지 않은 오류를 서로 다른 표식으로 유지한다 */
 .icon-btn-badge-host {
   position: relative;
 }
@@ -83,29 +95,184 @@
   pointer-events: none;
 }
 
-/* 오류 센터 모달 */
-.error-center-actions {
+/* 종 아래의 준비 진행 표식. 숫자 배지와 겹치지 않게 왼쪽에 둔다 */
+.notification-progress-mark {
+  position: absolute;
+  left: -4px;
+  bottom: -4px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #6b9fd8;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: notification-spin 1s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes notification-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 알림 센터 모달: 외곽은 고정하고 오류 목록만 남는 높이를 스크롤한다 */
+.notification-center {
+  width: min(520px, calc(100vw - 48px));
+  height: min(480px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+}
+
+.notification-center > .modal-header {
+  flex-shrink: 0;
+}
+
+.notification-center-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  gap: 14px;
+  padding: 14px 16px 16px;
+  overflow: hidden;
+}
+
+.notification-status {
+  flex-shrink: 0;
+  padding: 12px;
+  border: 1px solid var(--ev-c-gray-3);
+  border-radius: 8px;
+  background-color: var(--ev-c-black-mute);
+}
+
+.notification-status.is-failed {
+  border-color: #633;
+}
+
+.notification-status-head,
+.notification-errors-head,
+.notification-error-actions {
+  display: flex;
+  align-items: center;
+}
+
+.notification-status-head,
+.notification-errors-head {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notification-section-label {
+  margin: 0 0 5px;
+  font-size: 11px;
+  color: var(--ev-c-text-3);
+}
+
+.notification-status-title {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin: 0;
+  font-size: 14px;
+  color: var(--ev-c-text-1);
 }
 
-.error-center .text-btn {
+.notification-status.is-failed .notification-status-title,
+.notification-retry-error,
+.notification-technical-error {
+  color: #e66;
+}
+
+.notification-status-progress {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 2px solid #6b9fd8;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: notification-spin 1s linear infinite;
+}
+
+.notification-status-note,
+.notification-retry-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+.notification-status-note {
+  color: var(--ev-c-text-2);
+}
+
+.notification-status-details {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ev-c-text-3);
+}
+
+.notification-status-details summary {
+  width: max-content;
+  cursor: pointer;
+}
+
+.notification-status-detail-body {
+  max-height: 92px;
+  margin-top: 7px;
+  padding: 8px;
+  overflow: auto;
+  border-radius: 6px;
+  background-color: var(--ev-c-black-soft);
+  word-break: break-all;
+}
+
+.notification-status-detail-body p,
+.notification-status-detail-body pre {
+  margin: 0 0 5px;
+  font: inherit;
+  white-space: pre-wrap;
+}
+
+.notification-status-detail-body > :last-child {
+  margin-bottom: 0;
+}
+
+.notification-errors {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.notification-errors-head {
+  flex-shrink: 0;
+  margin-bottom: 6px;
+}
+
+.notification-errors-head h3 {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.notification-error-actions {
+  gap: 6px;
+}
+
+.notification-center .text-btn {
   width: auto;
   padding: 0 8px;
   gap: 4px;
   font-size: 12px;
 }
 
-.error-center-empty {
+.notification-center-empty {
+  margin: auto;
   color: var(--ev-c-text-2);
 }
 
 .error-list {
+  flex: 1;
+  min-height: 0;
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 50vh;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--ev-c-gray-2) transparent;
@@ -149,7 +316,8 @@
 }
 
 .error-center-note {
-  margin-top: 12px;
+  flex-shrink: 0;
+  margin: 8px 0 0;
   font-size: 12px;
   color: var(--ev-c-text-3);
 }
@@ -1420,92 +1588,17 @@
 }
 
 .track-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 24px 8px;
   color: var(--ev-c-text-3);
   text-align: center;
 }
 
-/* 런타임 준비 배너 (스펙 008 기준 10): 라이브러리를 가리지 않는다 */
-.bootstrap-banner {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--ev-c-gray-3);
-  border-radius: 8px;
-  background-color: var(--ev-c-black-mute);
-}
-
-.bootstrap-banner.bootstrap-strip {
-  padding: 8px 12px;
-  gap: 6px;
-}
-
-.bootstrap-banner.bootstrap-failed {
-  border-color: #633;
-}
-
-.bootstrap-banner-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.bootstrap-stage {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  color: var(--ev-c-text-1);
-}
-
-.bootstrap-meta {
-  font-size: 11px;
-  color: var(--ev-c-text-3);
-}
-
-.bootstrap-stage-error {
-  color: #e66;
-}
-
-.bootstrap-error {
-  font-size: 13px;
-  color: #e66;
-  word-break: break-all;
-}
-
-.bootstrap-note {
+.track-empty-runtime {
   font-size: 12px;
-  color: var(--ev-c-text-3);
-}
-
-/* 불확정 진행 표시: 막대가 좌우로 흐른다 */
-.bootstrap-progress {
-  position: relative;
-  height: 6px;
-  border-radius: 3px;
-  background-color: var(--ev-c-black-mute);
-  overflow: hidden;
-}
-
-.bootstrap-progress > span {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 35%;
-  border-radius: 3px;
-  background-color: #4a7dbd;
-  animation: bootstrap-slide 1.4s ease-in-out infinite;
-}
-
-@keyframes bootstrap-slide {
-  0% {
-    left: -35%;
-  }
-  100% {
-    left: 100%;
-  }
+  color: #e6a23c;
 }
 
 .bootstrap-retry {
@@ -1523,17 +1616,12 @@
   border-color: var(--ev-c-gray-1);
 }
 
-.bootstrap-log {
-  max-height: 160px;
-  overflow: auto;
-  padding: 10px 12px;
-  border-radius: 6px;
-  background-color: var(--ev-c-black-mute);
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--ev-c-text-2);
+@media (prefers-reduced-motion: reduce) {
+  .notification-progress-mark,
+  .notification-status-progress {
+    animation: none;
+    border-color: #6b9fd8;
+  }
 }
 
 /* URL 임포트 입력 줄 (스펙 001 §4.3). yt-dlp 동봉 실행에서만 렌더링된다 */

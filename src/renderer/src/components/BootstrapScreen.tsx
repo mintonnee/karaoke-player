@@ -2,86 +2,88 @@ import { MdErrorOutline } from 'react-icons/md'
 import {
   BOOTSTRAP_STAGE_LABEL,
   bootstrapDisplayStage,
+  bootstrapStatusMessage,
   isBootstrapRetryable
 } from '../../../shared/bootstrap'
 import type { BootstrapState } from '../../../shared/types'
 
-export type BootstrapBannerVariant = 'panel' | 'strip'
-
 interface BootstrapScreenProps {
-  state: BootstrapState
+  state: BootstrapState | null
+  retrying: boolean
+  retryError: string | null
   onRetry: () => void
-  variant?: BootstrapBannerVariant
 }
 
-function stageText(state: BootstrapState): string {
+function statusTitle(state: BootstrapState | null): string {
+  if (!state) return '준비 상태 확인 중'
   const stage = bootstrapDisplayStage(state)
-  const label = stage ? BOOTSTRAP_STAGE_LABEL[stage] : null
-  if (label && state.message && !state.message.includes(label)) {
-    return `${label} — ${state.message}`
-  }
-  return state.message || label || '준비 중'
+  const label = stage ? BOOTSTRAP_STAGE_LABEL[stage] : '실행 환경'
+  return state.status === 'error' ? `${label} 실패` : (bootstrapStatusMessage(state) ?? label)
 }
 
-/** 라이브러리를 막지 않는 준비 배너/상태 줄 (스펙 008 기준 10) */
+/** 알림 센터 상단의 현재 준비 상태 카드. ready 상태에서는 호출자가 숨긴다. */
 function BootstrapScreen({
   state,
-  onRetry,
-  variant = 'panel'
+  retrying,
+  retryError,
+  onRetry
 }: BootstrapScreenProps): React.JSX.Element {
-  const failed = state.status === 'error'
-  const retryable = isBootstrapRetryable(state)
+  const failed = state?.status === 'error'
   const stage = bootstrapDisplayStage(state)
-  const logicalId = state.logicalId
+  const runtimeFailure = failed && stage !== 'model-prep'
+  const retryable = runtimeFailure && isBootstrapRetryable(state)
+  const title = statusTitle(state)
 
   return (
-    <div
-      className={`bootstrap-banner bootstrap-${variant}${failed ? ' bootstrap-failed' : ''}`}
-      role="status"
-    >
-      <div className="bootstrap-banner-body">
-        <p className={`bootstrap-stage${failed ? ' bootstrap-stage-error' : ''}`}>
-          {failed && <MdErrorOutline />}
-          {stageText(state)}
-        </p>
-        {(logicalId || stage) && (
-          <p className="bootstrap-meta">
-            {logicalId ? `id=${logicalId}` : null}
-            {logicalId && stage ? ' · ' : null}
-            {stage ? `stage=${stage}` : null}
-            {failed ? ` · retryable=${retryable}` : null}
+    <section className={`notification-status${failed ? ' is-failed' : ''}`}>
+      <div className="notification-status-head">
+        <div>
+          <p className="notification-section-label">현재 상태</p>
+          <p
+            className="notification-status-title"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {failed && <MdErrorOutline aria-hidden="true" />}
+            {title}
           </p>
-        )}
-        {failed ? (
-          <>
-            {state.error && <p className="bootstrap-error">{state.error}</p>}
-            <p className="bootstrap-note">
-              네트워크 연결을 확인한 뒤 다시 시도하세요. 이미 받은 파일은 재사용됩니다.
-            </p>
-            {retryable && (
-              <button type="button" className="bootstrap-retry" onClick={onRetry}>
-                다시 시도
-              </button>
-            )}
-          </>
-        ) : (
-          <>
-            <div className="bootstrap-progress">
-              <span />
-            </div>
-            {variant === 'panel' && (
-              <p className="bootstrap-note">
-                Python 환경을 준비하는 동안 기존 곡은 재생할 수 있습니다. 가져오기·가사 정렬은 준비
-                후에 사용할 수 있습니다.
-              </p>
-            )}
-          </>
-        )}
+        </div>
+        {!failed && <span className="notification-status-progress" aria-hidden="true" />}
       </div>
-      {state.log.length > 0 && variant === 'panel' && (
-        <pre className="bootstrap-log">{state.log.join('\n')}</pre>
+
+      {failed && (
+        <p className="notification-status-note">
+          실행 환경이 필요한 작업은 사용할 수 없습니다. 기존 곡 재생은 계속할 수 있습니다.
+        </p>
       )}
-    </div>
+
+      {retryable && (
+        <button type="button" className="bootstrap-retry" disabled={retrying} onClick={onRetry}>
+          {retrying ? '다시 시도 중…' : '다시 시도'}
+        </button>
+      )}
+      {retryError && (
+        <p className="notification-retry-error" role="alert">
+          {retryError}
+        </p>
+      )}
+
+      {state && (
+        <details className="notification-status-details">
+          <summary>상세 보기</summary>
+          <div className="notification-status-detail-body">
+            <p>
+              id={state.logicalId ?? 'runtime'} · stage={stage ?? state.status} · retryable=
+              {String(state.retryable === true)}
+            </p>
+            {state.message && <p>{state.message}</p>}
+            {state.error && <p className="notification-technical-error">{state.error}</p>}
+            {state.log.length > 0 && <pre>{state.log.join('\n')}</pre>}
+          </div>
+        </details>
+      )}
+    </section>
   )
 }
 

@@ -164,6 +164,7 @@ describe('SidecarBootstrap', () => {
     const state = await bootstrap.start()
 
     expect(state.status).toBe('ready')
+    expect(state.retryable).toBe(false)
     expect(statuses[0]).toBe('checking')
     expect(statuses).toContain('download')
     expect(statuses).toContain('env-prep')
@@ -226,6 +227,7 @@ describe('SidecarBootstrap', () => {
     const state = await bootstrap.start()
     expect(state.status).toBe('error')
     expect(state.error).toContain('env prep failed')
+    expect(state.retryable).toBe(true)
     expect(statuses).toContain('error')
     expect((await readPointer(root))?.runtimeId).toBe('previous')
     expect(await readFile(join(prevDir, 'keep'), 'utf-8')).toBe('cached')
@@ -322,10 +324,11 @@ describe('SidecarBootstrap', () => {
     release()
     const state = await pending
     expect(state.status).toBe('error')
+    expect(state.retryable).toBe(false)
     expect((await readPointer(root))?.runtimeId).toBe('previous')
   })
 
-  it('manifest 없이 start하면 error (크래시 없음)', async () => {
+  it('manifest 없이 start하면 재시도 불가능한 error이고 retry는 no-op이다', async () => {
     const bootstrap = new SidecarBootstrap({
       bundledSidecarDir: bundled,
       targetSidecarDir: target,
@@ -335,6 +338,18 @@ describe('SidecarBootstrap', () => {
     const state = await bootstrap.start()
     expect(state.status).toBe('error')
     expect(state.error).toContain('runtime manifest가 필요합니다')
+    expect(state.retryable).toBe(false)
+    await expect(bootstrap.retry()).resolves.toBe(state)
+  })
+
+  it('검증되지 않은 manifest는 재구성 전에 실패하므로 재시도 불가능하다', async () => {
+    const { bootstrap } = createBootstrap('ok', {
+      manifest: { ...manifest, runtimeId: 'invalid-runtime-id' }
+    })
+    const state = await bootstrap.start()
+    expect(state.status).toBe('error')
+    expect(state.error).toContain('runtimeId does not match execution inputs')
+    expect(state.retryable).toBe(false)
   })
 
   it('.python-version 변경은 프로젝트 해시를 바꾼다', async () => {

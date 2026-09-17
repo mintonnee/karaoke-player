@@ -44,6 +44,41 @@ export interface LyricsServiceOptions {
 export class LyricsService {
   constructor(private readonly options: LyricsServiceOptions) {}
 
+  async search(query: string): Promise<LrclibRecord[]> {
+    if (typeof query !== 'string' || !query.trim()) return []
+    const params = new URLSearchParams({ q: query.trim() })
+    return (await this.request<LrclibRecord[]>(`/search?${params}`)) ?? []
+  }
+
+  /** 수동 선택은 길이 차이로 후보를 제외하지 않는다. */
+  async select(trackId: string, recordId: number): Promise<LyricsPayload> {
+    this.mustGetReadyTrack(trackId)
+    if (!Number.isSafeInteger(recordId) || recordId <= 0) {
+      throw new Error('잘못된 LRCLIB 가사 ID입니다')
+    }
+    const record = await this.request<LrclibRecord>(`/get/${recordId}`)
+    if (
+      !record ||
+      record.instrumental ||
+      (!record.syncedLyrics?.trim() && !record.plainLyrics?.trim())
+    ) {
+      throw new Error('적용할 가사가 없습니다')
+    }
+    this.mustGetReadyTrack(trackId)
+    const dir = this.trackDir(trackId)
+    const lrc = record.syncedLyrics?.trim() || null
+    const plain = record.plainLyrics?.trim() || null
+    if (lrc) await writeFile(join(dir, 'lyrics.lrc'), lrc, 'utf-8')
+    if (plain) await writeFile(join(dir, 'lyrics.txt'), plain, 'utf-8')
+    // 이전 정렬과 발음 정보가 새로 선택한 가사를 덮지 않도록 제거한다.
+    const obsolete = ['align.json', 'pronunciation.json']
+    if (!lrc) obsolete.push('lyrics.lrc')
+    if (!plain) obsolete.push('lyrics.txt')
+    await Promise.all(obsolete.map((name) => rm(join(dir, name), { force: true })))
+    this.updateSource(trackId, lrc ? 'lrclib_synced' : 'none')
+    return this.getLyrics(trackId)
+  }
+
   /** 저장된 가사 읽기 (정렬 결과 conf 포함) */
   async getLyrics(trackId: string): Promise<LyricsPayload> {
     const track = this.options.store.getTrack(trackId)

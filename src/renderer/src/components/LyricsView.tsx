@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import { currentLineIndex, lineProgress } from '../../../shared/lrc'
-import LyricsSetup from './LyricsSetup'
+import LyricsSetupDialog from './LyricsSetupDialog'
 import { lyricIndexAtY, takeLyricDrag, type LyricDragSel } from './lyricsGesture'
 import { CONF_WARN_THRESHOLD, useLyricsStore } from '../stores/lyricsStore'
 import { usePlayerStore } from '../stores/playerStore'
@@ -167,7 +167,7 @@ function LyricsView(): React.JSX.Element | null {
     return (
       <div className="lyrics-pane">
         {arWarn && <ArLyricsWarn />}
-        <LyricsSetup trackId={track.id} noGuide={track.guideKind === 'none'} />
+        <LyricsSetupDialog key={track.id} track={track} />
       </div>
     )
   }

@@ -110,6 +110,10 @@ export function registerIpcHandlers({
   ipcMain.handle(IPC_CHANNELS.lyricsGet, (_event, trackId: string) =>
     lyricsService.getLyrics(trackId)
   )
+  ipcMain.handle(IPC_CHANNELS.lyricsSearch, (_event, query: string) => lyricsService.search(query))
+  ipcMain.handle(IPC_CHANNELS.lyricsSelect, (_event, trackId: string, recordId: number) =>
+    lyricsService.select(trackId, recordId)
+  )
 
   ipcMain.handle(IPC_CHANNELS.lyricsRefetch, (_event, trackId: string) => {
     const track = store.getTrack(trackId)

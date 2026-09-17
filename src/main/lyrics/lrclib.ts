@@ -1,15 +1,7 @@
 /** LRCLIB API 응답 및 후보 선택 로직 (§4.4). 네트워크와 무관한 순수 부분. */
 
-export interface LrclibRecord {
-  id: number
-  trackName: string
-  artistName: string
-  albumName: string
-  duration: number
-  instrumental: boolean
-  plainLyrics: string | null
-  syncedLyrics: string | null
-}
+import type { LrclibRecord } from '../../shared/lrclib'
+export type { LrclibRecord } from '../../shared/lrclib'
 
 /** /api/search 결과에서 duration이 가장 근접한 사용 가능 후보를 고른다 */
 export function chooseSearchResult(

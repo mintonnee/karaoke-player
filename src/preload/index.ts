@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { LrclibRecord } from '../shared/lrclib'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { PreviewAnalysisRequest, PreviewAnalysisResult } from '../shared/previewAnalysis'
 import type { CoverPreviewResult, TrackEditSaveRequest } from '../shared/trackEdit'
@@ -61,6 +62,10 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.previewTrackAnalysis, req),
   getLyrics: (trackId: string): Promise<LyricsPayload> =>
     ipcRenderer.invoke(IPC_CHANNELS.lyricsGet, trackId),
+  searchLyrics: (query: string): Promise<LrclibRecord[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.lyricsSearch, query),
+  selectLyrics: (trackId: string, recordId: number): Promise<LyricsPayload> =>
+    ipcRenderer.invoke(IPC_CHANNELS.lyricsSelect, trackId, recordId),
   refetchLyrics: (trackId: string): Promise<LyricsPayload> =>
     ipcRenderer.invoke(IPC_CHANNELS.lyricsRefetch, trackId),
   alignLyrics: (

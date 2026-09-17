@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { isRuntimeActionAllowed } from '../../../shared/bootstrap'
 import { useBootstrapStore } from '../stores/bootstrapStore'
 import { useLyricsStore } from '../stores/lyricsStore'
-import type { AlignLang } from '../../../shared/types'
+import type { AlignLang, Track } from '../../../shared/types'
+import LrclibSearchDialog from './LrclibSearchDialog'
 
 function guessLang(text: string): AlignLang {
   if (/[가-힣]/.test(text)) return 'ko'
@@ -12,13 +13,17 @@ function guessLang(text: string): AlignLang {
 }
 
 interface LyricsSetupProps {
-  trackId: string
+  track: Track
   noGuide?: boolean
 }
 
 /** S5.2/S5.4: 동기 가사가 없을 때 — 붙여넣기(또는 전사) → 정렬 실행 */
-function LyricsSetup({ trackId, noGuide = false }: LyricsSetupProps): React.JSX.Element {
-  const { plain, working, progress, workError, refetch, align, transcribe } = useLyricsStore()
+function LyricsSetup({ track, noGuide = false }: LyricsSetupProps): React.JSX.Element {
+  const trackId = track.id
+  const { plain, working, progress, workError, applySelection, align, transcribe } =
+    useLyricsStore()
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [browserError, setBrowserError] = useState<string | null>(null)
   const bootstrap = useBootstrapStore((s) => s.state)
   const runtimeReady = isRuntimeActionAllowed(bootstrap)
   const runtimeBlockedMessage =
@@ -39,6 +44,16 @@ function LyricsSetup({ trackId, noGuide = false }: LyricsSetupProps): React.JSX.
     if (transcript) onTextChange(transcript)
   }
 
+  const searchGoogle = async (): Promise<void> => {
+    setBrowserError(null)
+    try {
+      const params = new URLSearchParams({ q: `${track.title} lyrics` })
+      await window.api.openExternal(`https://www.google.com/search?${params}`)
+    } catch (error) {
+      setBrowserError(`브라우저를 열지 못했습니다: ${String(error)}`)
+    }
+  }
+
   if (working) {
     return (
       <div className="lyrics lyrics-empty">
@@ -55,42 +70,66 @@ function LyricsSetup({ trackId, noGuide = false }: LyricsSetupProps): React.JSX.
 
   return (
     <div className="lyrics lyrics-empty lyrics-setup">
-      <p className="lyrics-note">
-        {noGuide
-          ? '가이드 보컬이 없어 자동 정렬·받아쓰기를 사용할 수 없습니다. LRCLIB에서 동기 가사를 찾아보세요.'
-          : !runtimeReady
-            ? `${runtimeBlockedMessage}. LRCLIB 조회는 지금 가능합니다.`
-            : '동기 가사가 없습니다. 가사를 붙여넣고 정렬하거나, LRCLIB에서 다시 찾아보세요.'}
-      </p>
-      {workError && <p className="lyrics-error">실패: {workError}</p>}
-      <textarea
-        disabled={alignDisabled}
-        value={text}
-        placeholder="여기에 가사를 붙여넣으세요 (한 줄 = 한 하이라이트)"
-        onChange={(e) => onTextChange(e.target.value)}
-        rows={8}
-      />
-      <div className="lyrics-setup-actions">
-        <select
+      <button className="lyrics-setup-primary" onClick={() => setSearchOpen(true)}>
+        LRCLIB에서 찾기
+      </button>
+      <section className="lyrics-setup-section">
+        <h3>가사 붙여넣고 정렬</h3>
+        <p className="lyrics-note">
+          {noGuide
+            ? '가이드 보컬이 없어 자동 정렬·받아쓰기를 사용할 수 없습니다. LRCLIB에서 동기 가사를 찾아보세요.'
+            : !runtimeReady
+              ? `${runtimeBlockedMessage}. LRCLIB 조회는 지금 가능합니다.`
+              : '가사를 붙여넣고 재생 시간에 맞춰 정렬하세요.'}
+        </p>
+        {workError && <p className="lyrics-error">실패: {workError}</p>}
+        {browserError && (
+          <p className="lyrics-error" role="alert">
+            {browserError}
+          </p>
+        )}
+        <textarea
+          aria-label="정렬할 가사"
           disabled={alignDisabled}
-          value={lang}
-          onChange={(e) => setPickedLang(e.target.value as AlignLang)}
-        >
-          <option value="ko">한국어</option>
-          <option value="ja">일본어</option>
-          <option value="en">영어</option>
-        </select>
-        <button
-          disabled={alignDisabled || !text.trim()}
-          onClick={() => void align(trackId, text, lang, text === (plain ?? ''))}
-        >
-          정렬 실행
-        </button>
-        <button onClick={() => void refetch(trackId)}>LRCLIB 재조회</button>
-        <button disabled={alignDisabled} onClick={() => void runTranscribe()}>
-          가사가 없어요 (받아쓰기)
-        </button>
-      </div>
+          value={text}
+          placeholder="여기에 가사를 붙여넣으세요 (한 줄 = 한 하이라이트)"
+          onChange={(e) => onTextChange(e.target.value)}
+          rows={8}
+        />
+        <div className="lyrics-setup-actions">
+          <select
+            aria-label="가사 언어"
+            disabled={alignDisabled}
+            value={lang}
+            onChange={(e) => setPickedLang(e.target.value as AlignLang)}
+          >
+            <option value="ko">한국어</option>
+            <option value="ja">일본어</option>
+            <option value="en">영어</option>
+          </select>
+          <button
+            disabled={alignDisabled || !text.trim()}
+            onClick={() => void align(trackId, text, lang, text === (plain ?? ''))}
+          >
+            정렬 실행
+          </button>
+          <button onClick={() => void searchGoogle()}>가사 구글 검색</button>
+          <button disabled={alignDisabled} onClick={() => void runTranscribe()}>
+            보컬 듣고 받아쓰기
+          </button>
+        </div>
+      </section>
+      {searchOpen && (
+        <LrclibSearchDialog
+          track={track}
+          onClose={() => setSearchOpen(false)}
+          onApply={(payload) => {
+            setEditedText(null)
+            setPickedLang(null)
+            applySelection(payload)
+          }}
+        />
+      )}
     </div>
   )
 }

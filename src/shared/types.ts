@@ -593,6 +593,8 @@ export const IPC_CHANNELS = {
   previewTrackAnalysis: 'library:preview-track-analysis',
   reorderTracks: 'library:reorder',
   lyricsGet: 'lyrics:get',
+  lyricsSearch: 'lyrics:search',
+  lyricsSelect: 'lyrics:select',
   lyricsRefetch: 'lyrics:refetch',
   lyricsAlign: 'lyrics:align',
   lyricsTranscribe: 'lyrics:transcribe',

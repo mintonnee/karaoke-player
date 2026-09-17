@@ -43,6 +43,7 @@ interface LyricsState {
   selectedIndex: number
 
   load: (trackId: string) => Promise<void>
+  applySelection: (payload: LyricsPayload) => void
   refetch: (trackId: string) => Promise<void>
   align: (trackId: string, text: string, lang: AlignLang, fromLrclibPlain: boolean) => Promise<void>
   transcribe: (trackId: string) => Promise<string>
@@ -110,6 +111,11 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
     workError: null,
     correcting: false,
     selectedIndex: 0,
+
+    applySelection: (payload) => {
+      apply(payload)
+      set({ workError: null, correcting: false, selectedIndex: 0 })
+    },
 
     load: async (trackId) => {
       set({ loading: true, correcting: false, workError: null })

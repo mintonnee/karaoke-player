@@ -15,6 +15,22 @@ export class JobQueue {
     void this.pump()
   }
 
+  /**
+   * 결과를 기다리는 작업. 실패는 호출자에게만 전달하고 onJobError는 부르지 않는다.
+   * 대기 시간에는 워커 타임아웃을 걸지 않는다 (스펙 011 §4.2).
+   */
+  enqueueAndWait<T>(job: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.enqueue(async () => {
+        try {
+          resolve(await job())
+        } catch (error) {
+          reject(error)
+        }
+      })
+    })
+  }
+
   /** 실행 대기 중인 잡 수 (실행 중인 잡 제외) */
   get pending(): number {
     return this.queue.length

@@ -18,27 +18,67 @@ if (!input || !existsSync(input)) {
   process.exit(1)
 }
 
-switch (mode) {
-  case 'ok':
-    emit({ type: 'progress', stage: 'analyze', pct: 30, msg: 'bpm' })
-    emit({ type: 'progress', stage: 'analyze', pct: 70, msg: 'key' })
-    emit({
-      type: 'done',
-      result: { bpm: 128.0, bpm_conf: 0.72, key: 'C#m', key_conf: 0.41, version }
-    })
-    break
-  case 'partial':
-    process.stderr.write('checkpoint download failed\n')
-    emit({
-      type: 'done',
-      result: { bpm: null, bpm_conf: null, key: 'Am', key_conf: 0.55, version }
-    })
-    break
-  case 'error':
-    emit({ type: 'error', code: 'UNSUPPORTED_FORMAT', msg: 'not a wav file' })
-    process.exit(1)
-    break
-  default:
-    process.stderr.write(`unknown mode: ${mode}\n`)
-    process.exit(2)
+const okResult = { bpm: 128.0, bpm_conf: 0.72, key: 'C#m', key_conf: 0.41, version }
+
+async function run() {
+  switch (mode) {
+    case 'ok':
+      emit({ type: 'progress', stage: 'analyze', pct: 30, msg: 'bpm' })
+      emit({ type: 'progress', stage: 'analyze', pct: 70, msg: 'key' })
+      emit({ type: 'done', result: okResult })
+      return
+    case 'partial':
+      process.stderr.write('checkpoint download failed\n')
+      emit({
+        type: 'done',
+        result: { bpm: null, bpm_conf: null, key: 'Am', key_conf: 0.55, version }
+      })
+      return
+    case 'error':
+      emit({ type: 'error', code: 'UNSUPPORTED_FORMAT', msg: 'not a wav file' })
+      process.exit(1)
+      return
+    case 'low-conf':
+      emit({
+        type: 'done',
+        result: { bpm: 128.0, bpm_conf: 0.2, key: 'C#m', key_conf: 0.41, version }
+      })
+      return
+    case 'null-key':
+      emit({
+        type: 'done',
+        result: { bpm: 128.0, bpm_conf: 0.72, key: null, key_conf: null, version }
+      })
+      return
+    case 'invalid-bpm':
+      emit({
+        type: 'done',
+        result: { bpm: 12, bpm_conf: 0.9, key: 'C#m', key_conf: 0.41, version }
+      })
+      return
+    case 'invalid-key':
+      emit({
+        type: 'done',
+        result: { bpm: 128.0, bpm_conf: 0.72, key: 'Db', key_conf: 0.41, version }
+      })
+      return
+    case 'delay': {
+      const ms = Number(process.env.FAKE_ANALYZE_DELAY_MS ?? 200)
+      await new Promise((r) => setTimeout(r, Number.isFinite(ms) ? ms : 200))
+      emit({ type: 'done', result: okResult })
+      return
+    }
+    case 'hang':
+      // Promise만으로는 이벤트 루프가 비어 프로세스가 바로 끝난다
+      setInterval(() => {}, 1000)
+      return
+    default:
+      process.stderr.write(`unknown mode: ${mode}\n`)
+      process.exit(2)
+  }
 }
+
+run().catch((error) => {
+  process.stderr.write(`${error}\n`)
+  process.exit(2)
+})

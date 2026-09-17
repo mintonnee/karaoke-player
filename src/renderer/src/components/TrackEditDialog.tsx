@@ -1,8 +1,16 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
-import { MdClose, MdInfoOutline, MdMusicNote } from 'react-icons/md'
+import {
+  MdCheckCircle,
+  MdClose,
+  MdInfoOutline,
+  MdMusicNote,
+  MdSync,
+  MdWarning
+} from 'react-icons/md'
 import { BPM_MAX, BPM_MIN } from '../../../shared/types'
 import type { Track } from '../../../shared/types'
+import type { PreviewAnalysisField } from '../../../shared/previewAnalysis'
 import {
   applySaveError,
   buildSaveRequest,
@@ -23,6 +31,26 @@ import {
   type TrackEditErrors,
   type TrackEditFields
 } from '../trackEdit/form'
+import {
+  applyPreviewAnalysisResult,
+  applyPreviewSuccess,
+  areIdentityInputsLockedByPreview,
+  canDismissTrackEditDuringPreview,
+  emptyPreviewDraftHints,
+  hintsAfterManualEdit,
+  hintsAfterPreviewSuccess,
+  isSaveBlockedByPreview,
+  PREVIEW_ANALYSIS_HINT,
+  PREVIEW_ANALYSIS_IN_FLIGHT,
+  PREVIEW_BPM_BUTTON_LABEL,
+  PREVIEW_KEY_BUTTON_LABEL,
+  previewButtonDisableCause,
+  previewButtonDisableReason,
+  previewFieldStatus,
+  type PreviewDraftHints,
+  type PreviewInputStatus
+} from '../trackEdit/preview'
+import { useBootstrapStore } from '../stores/bootstrapStore'
 import { useLibraryStore } from '../stores/libraryStore'
 import CoverArt from './CoverArt'
 
@@ -33,7 +61,32 @@ interface TrackEditDialogProps {
 }
 
 const FOCUSABLE =
-  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+  'button:not([disabled]), input:not([disabled]):not([readonly]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+
+function PreviewInputStatusIcon({
+  id,
+  status
+}: {
+  id: string
+  status: PreviewInputStatus | null
+}): React.JSX.Element | null {
+  if (!status) return null
+  const Icon =
+    status.kind === 'pending' ? MdSync : status.kind === 'uncertain' ? MdWarning : MdCheckCircle
+  return (
+    <span
+      id={id}
+      className={`track-edit-status-icon is-${status.kind}`}
+      title={status.message}
+      data-tooltip={status.message}
+      aria-label={status.message}
+      role="img"
+      tabIndex={0}
+    >
+      <Icon size={16} aria-hidden="true" />
+    </span>
+  )
+}
 
 function droppedPaths(event: DragEvent): string[] {
   return Array.from(event.dataTransfer.files).map((file) => window.api.getPathForFile(file))
@@ -45,16 +98,29 @@ function TrackEditDialog({
   fallbackFocus
 }: TrackEditDialogProps): React.JSX.Element {
   const saveTrackEdit = useLibraryStore((s) => s.saveTrackEdit)
-  const snapshot = snapshotFromTrack(track)
-  const [fields, setFields] = useState<TrackEditFields>(() => fieldsFromSnapshot(snapshot))
+  const bootstrap = useBootstrapStore((s) => s.state)
+  const [openedTrack] = useState(track)
+  const [snapshot] = useState(() => snapshotFromTrack(track))
+  const [fields, setFields] = useState<TrackEditFields>(() =>
+    fieldsFromSnapshot(snapshotFromTrack(track))
+  )
   const [cover, setCover] = useState<CoverDraft>(keepCoverDraft)
   const [originalHasCover, setOriginalHasCover] = useState<boolean | null>(null)
   const [serverErrors, setServerErrors] = useState<TrackEditErrors>(emptyTrackEditErrors)
   const [saving, setSaving] = useState(false)
   const [notFound, setNotFound] = useState(false)
+  const [previewInFlight, setPreviewInFlight] = useState<PreviewAnalysisField | null>(null)
+  const [previewHints, setPreviewHints] = useState<PreviewDraftHints>(emptyPreviewDraftHints)
+  const [analysisEpoch, setAnalysisEpoch] = useState(0)
   /** 연속 미리보기에서 마지막 선택만 반영 */
   const previewGen = useRef(0)
+  const analysisGen = useRef(0)
+  const analysisAlive = useRef(true)
+  const analysisInFlightRef = useRef(false)
   const savingRef = useRef(false)
+  const notFoundRef = useRef(false)
+  const fieldsRef = useRef(fields)
+  const hintsRef = useRef(previewHints)
   const closeRef = useRef(onClose)
   const fallbackRef = useRef(fallbackFocus)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -64,6 +130,7 @@ function TrackEditDialog({
   const bpmId = useId()
   const keyId = useId()
   const headingId = useId()
+  const previewStatusId = useId()
   const fieldErrors = validateTrackEditFields(fields)
   const displayed: TrackEditErrors = {
     title: serverErrors.title ?? fieldErrors.title,
@@ -72,7 +139,18 @@ function TrackEditDialog({
     cover: serverErrors.cover,
     general: serverErrors.general
   }
-  const saveReady = canSaveTrackEdit(snapshot, fields, cover) && !saving && !notFound
+  const previewBusy = previewInFlight !== null
+  const saveBlocked = saving || notFound || isSaveBlockedByPreview(previewBusy)
+  const saveReady = canSaveTrackEdit(snapshot, fields, cover) && !saveBlocked
+  const previewCause = previewButtonDisableCause({
+    trackStatus: openedTrack.status,
+    bootstrap,
+    inFlight: previewBusy,
+    saving,
+    notFound
+  })
+  const previewReason = previewButtonDisableReason(previewCause, { field: 'bpm', bootstrap })
+  const identityLocked = saving || areIdentityInputsLockedByPreview(previewBusy)
 
   useEffect(() => {
     closeRef.current = onClose
@@ -87,6 +165,26 @@ function TrackEditDialog({
   }, [saving])
 
   useEffect(() => {
+    fieldsRef.current = fields
+  }, [fields])
+
+  useEffect(() => {
+    hintsRef.current = previewHints
+  }, [previewHints])
+
+  useEffect(() => {
+    notFoundRef.current = notFound
+  }, [notFound])
+
+  useEffect(() => {
+    analysisAlive.current = true
+    return () => {
+      analysisAlive.current = false
+      analysisGen.current += 1
+    }
+  }, [])
+
+  useEffect(() => {
     const previouslyFocused =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     const panel = panelRef.current
@@ -98,7 +196,7 @@ function TrackEditDialog({
       if (event.key === 'Escape') {
         event.preventDefault()
         event.stopImmediatePropagation()
-        if (!savingRef.current) closeRef.current()
+        if (canDismissTrackEditDuringPreview(savingRef.current)) closeRef.current()
         return
       }
       if (event.key !== 'Tab' || !panel) return
@@ -136,6 +234,7 @@ function TrackEditDialog({
   const setField = (patch: Partial<TrackEditFields>): void => {
     if (savingRef.current) return
     setFields((current) => ({ ...current, ...patch }))
+    setPreviewHints((current) => hintsAfterManualEdit(current, patch))
     setServerErrors((current) => {
       const next = { ...current }
       if (patch.title !== undefined) next.title = null
@@ -203,25 +302,106 @@ function TrackEditDialog({
     applyCoverPath(classified.path)
   }
 
+  const requestPreview = (field: PreviewAnalysisField): void => {
+    if (
+      previewButtonDisableCause({
+        trackStatus: openedTrack.status,
+        bootstrap: useBootstrapStore.getState().state,
+        inFlight: analysisInFlightRef.current,
+        saving: savingRef.current,
+        notFound: notFoundRef.current
+      }) !== null
+    ) {
+      return
+    }
+
+    const gen = ++analysisGen.current
+    analysisInFlightRef.current = true
+    setPreviewInFlight(field)
+    setServerErrors((current) => ({
+      ...current,
+      general: null,
+      ...(field === 'bpm' ? { bpm: null } : { musicKey: null })
+    }))
+
+    const finish = (raw: unknown): void => {
+      const outcome = applyPreviewAnalysisResult({
+        fields: fieldsRef.current,
+        hints: hintsRef.current,
+        requestedField: field,
+        result: raw,
+        guard: {
+          alive: analysisAlive.current,
+          generation: analysisGen.current,
+          responseGeneration: gen
+        }
+      })
+      if (outcome.status === 'stale') return
+      analysisInFlightRef.current = false
+      setPreviewInFlight(null)
+      if (outcome.status === 'applied') {
+        setFields((current) => applyPreviewSuccess(current, outcome.result))
+        setPreviewHints((current) => hintsAfterPreviewSuccess(current, outcome.result))
+        setAnalysisEpoch((current) => current + 1)
+        setServerErrors((current) => ({
+          ...current,
+          general: null,
+          ...(field === 'bpm' ? { bpm: null } : { musicKey: null })
+        }))
+        return
+      }
+      setServerErrors((current) => {
+        const next: TrackEditErrors = { ...current, general: null }
+        next[outcome.error.target] = outcome.error.message
+        return next
+      })
+      if (outcome.error.notFound) {
+        notFoundRef.current = true
+        setNotFound(true)
+      }
+    }
+
+    void window.api.previewTrackAnalysis({ trackId: openedTrack.id, field }).then(
+      (raw) => finish(raw),
+      () => finish(null)
+    )
+  }
+
   const submit = async (): Promise<void> => {
-    if (savingRef.current || !saveReady) return
+    if (savingRef.current || analysisInFlightRef.current || !saveReady) return
     savingRef.current = true
     setSaving(true)
     setServerErrors(emptyTrackEditErrors())
     try {
-      await saveTrackEdit(buildSaveRequest(track.id, snapshot, fields, cover))
+      await saveTrackEdit(buildSaveRequest(openedTrack.id, snapshot, fields, cover))
       closeRef.current()
     } catch (error) {
       const classified = classifySaveError(error)
       setServerErrors(applySaveError(classified))
-      if (classified.notFound) setNotFound(true)
+      if (classified.notFound) {
+        notFoundRef.current = true
+        setNotFound(true)
+      }
       savingRef.current = false
       setSaving(false)
     }
   }
 
-  const blocked = saving || notFound
-  const inputsLocked = saving
+  const bpmStatus = previewFieldStatus('bpm', previewInFlight, previewHints)
+  const keyStatus = previewFieldStatus('key', previewInFlight, previewHints)
+  const bpmDescribedBy = [
+    displayed.bpm ? `${bpmId}-error` : null,
+    bpmStatus ? `${bpmId}-status` : null
+  ]
+    .filter((id): id is string => id !== null)
+    .join(' ')
+  const keyDescribedBy = [
+    `${keyId}-notice`,
+    displayed.musicKey ? `${keyId}-error` : null,
+    keyStatus ? `${keyId}-status` : null
+  ]
+    .filter((id): id is string => id !== null)
+    .join(' ')
 
   return (
     <div
@@ -278,26 +458,26 @@ function TrackEditDialog({
                   <MdMusicNote />
                 ) : (
                   <CoverArt
-                    trackId={track.id}
-                    version={track.updatedAt}
+                    trackId={openedTrack.id}
+                    version={openedTrack.updatedAt}
                     className="track-edit-cover-art"
                     onAvailability={setOriginalHasCover}
                   />
                 )}
               </div>
               <div className="track-edit-cover-actions">
-                <button type="button" disabled={inputsLocked} onClick={() => void pickCover()}>
+                <button type="button" disabled={identityLocked} onClick={() => void pickCover()}>
                   {coverSelectLabel(cover, originalHasCover)}
                 </button>
                 <button
                   type="button"
-                  disabled={inputsLocked || !canRemoveCoverDraft(cover, originalHasCover)}
+                  disabled={identityLocked || !canRemoveCoverDraft(cover, originalHasCover)}
                   onClick={removeCover}
                 >
                   커버 제거
                 </button>
                 {isCoverDraftChanged(cover) && (
-                  <button type="button" disabled={inputsLocked} onClick={revertCover}>
+                  <button type="button" disabled={identityLocked} onClick={revertCover}>
                     변경 취소
                   </button>
                 )}
@@ -318,7 +498,7 @@ function TrackEditDialog({
                 spellCheck={false}
                 required
                 value={fields.title}
-                disabled={inputsLocked}
+                disabled={identityLocked}
                 aria-invalid={displayed.title !== null}
                 aria-describedby={displayed.title ? `${titleId}-error` : undefined}
                 onChange={(event) => setField({ title: event.target.value })}
@@ -335,27 +515,42 @@ function TrackEditDialog({
                 type="text"
                 spellCheck={false}
                 value={fields.artist}
-                disabled={inputsLocked}
+                disabled={identityLocked}
                 onChange={(event) => setField({ artist: event.target.value })}
               />
 
               <div className="track-edit-bpm-key">
                 <div className="track-edit-field">
                   <label htmlFor={bpmId}>BPM</label>
-                  <input
-                    id={bpmId}
-                    type="number"
-                    min={BPM_MIN}
-                    max={BPM_MAX}
-                    step={1}
-                    value={fields.bpm}
-                    disabled={inputsLocked}
-                    placeholder={`${BPM_MIN}–${BPM_MAX}`}
-                    title={`BPM (${BPM_MIN}–${BPM_MAX}, 비우면 값 없음)`}
-                    aria-invalid={displayed.bpm !== null}
-                    aria-describedby={displayed.bpm ? `${bpmId}-error` : undefined}
-                    onChange={(event) => setField({ bpm: event.target.value })}
-                  />
+                  <div className="track-edit-field-row">
+                    <div className="track-edit-input-wrap">
+                      <input
+                        key={`${bpmId}-${analysisEpoch}`}
+                        id={bpmId}
+                        type="number"
+                        min={BPM_MIN}
+                        max={BPM_MAX}
+                        step={1}
+                        value={fields.bpm}
+                        disabled={saving}
+                        readOnly={previewBusy}
+                        placeholder={`${BPM_MIN}–${BPM_MAX}`}
+                        title={`BPM (${BPM_MIN}–${BPM_MAX}, 비우면 값 없음)`}
+                        aria-invalid={displayed.bpm !== null}
+                        aria-describedby={bpmDescribedBy || undefined}
+                        onChange={(event) => setField({ bpm: event.target.value })}
+                      />
+                      <PreviewInputStatusIcon id={`${bpmId}-status`} status={bpmStatus} />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={previewCause !== null}
+                      title={previewReason ?? PREVIEW_ANALYSIS_HINT}
+                      onClick={() => requestPreview('bpm')}
+                    >
+                      {PREVIEW_BPM_BUTTON_LABEL}
+                    </button>
+                  </div>
                   {displayed.bpm && (
                     <p id={`${bpmId}-error`} className="track-edit-field-error" role="alert">
                       {displayed.bpm}
@@ -364,20 +559,33 @@ function TrackEditDialog({
                 </div>
                 <div className="track-edit-field">
                   <label htmlFor={keyId}>원키</label>
-                  <input
-                    id={keyId}
-                    type="text"
-                    spellCheck={false}
-                    value={fields.musicKey}
-                    disabled={inputsLocked}
-                    placeholder="C#m"
-                    title="원키 (예: C, F#, Am, C#m. 비우면 값 없음)"
-                    aria-invalid={displayed.musicKey !== null}
-                    aria-describedby={
-                      displayed.musicKey ? `${keyId}-hint ${keyId}-error` : `${keyId}-hint`
-                    }
-                    onChange={(event) => setField({ musicKey: event.target.value })}
-                  />
+                  <div className="track-edit-field-row">
+                    <div className="track-edit-input-wrap">
+                      <input
+                        key={`${keyId}-${analysisEpoch}`}
+                        id={keyId}
+                        type="text"
+                        spellCheck={false}
+                        value={fields.musicKey}
+                        disabled={saving}
+                        readOnly={previewBusy}
+                        placeholder="C#m"
+                        title="원키 (예: C, F#, Am, C#m. 비우면 값 없음)"
+                        aria-invalid={displayed.musicKey !== null}
+                        aria-describedby={keyDescribedBy}
+                        onChange={(event) => setField({ musicKey: event.target.value })}
+                      />
+                      <PreviewInputStatusIcon id={`${keyId}-status`} status={keyStatus} />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={previewCause !== null}
+                      title={previewReason ?? PREVIEW_ANALYSIS_HINT}
+                      onClick={() => requestPreview('key')}
+                    >
+                      {PREVIEW_KEY_BUTTON_LABEL}
+                    </button>
+                  </div>
                   {displayed.musicKey && (
                     <p id={`${keyId}-error`} className="track-edit-field-error" role="alert">
                       {displayed.musicKey}
@@ -385,7 +593,10 @@ function TrackEditDialog({
                   )}
                 </div>
               </div>
-              <aside id={`${keyId}-hint`} className="track-edit-notice" aria-label="원키 안내">
+              <p id={previewStatusId} className="a11y-only" role="status" aria-live="polite">
+                {previewBusy ? PREVIEW_ANALYSIS_IN_FLIGHT : null}
+              </p>
+              <aside id={`${keyId}-notice`} className="track-edit-notice" aria-label="원키 안내">
                 <span className="track-edit-notice-icon" aria-hidden="true">
                   <MdInfoOutline />
                 </span>
@@ -416,7 +627,7 @@ function TrackEditDialog({
             >
               {notFound ? '닫기' : '취소'}
             </button>
-            <button type="submit" className="track-edit-submit" disabled={!saveReady || blocked}>
+            <button type="submit" className="track-edit-submit" disabled={!saveReady}>
               {saving ? '저장 중…' : '저장'}
             </button>
           </div>

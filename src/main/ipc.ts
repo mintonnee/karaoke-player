@@ -4,6 +4,13 @@ import { join } from 'path'
 import { ALLOWED_COVER_EXT } from '../shared/trackEdit'
 import type { CoverPreviewResult, TrackEditSaveRequest } from '../shared/trackEdit'
 import { isRuntimeActionAllowed, runtimeActionRejection } from '../shared/bootstrap'
+import {
+  previewAnalysisFailure,
+  previewAnalysisFieldOf,
+  previewAnalysisRuntimeRejection,
+  sanitizePreviewAnalysisRequest,
+  type PreviewAnalysisResult
+} from '../shared/previewAnalysis'
 import { IPC_CHANNELS, isRegisteredDemucsModel, sanitizeImportUserMeta } from '../shared/types'
 import type {
   AlignLang,
@@ -24,6 +31,7 @@ import type {
 } from '../shared/types'
 import { parseYoutubeVideoUrl } from '../shared/youtubeUrl'
 import { inspectCoverImage } from './library/coverImage'
+import type { AnalysisService } from './library/AnalysisService'
 import type { CoverService } from './library/CoverService'
 import { ImportRequestGate } from './library/ImportRequestGate'
 import { precheckImportUrl, URL_IMPORT_DISABLED_REASON } from './library/importUrlPrecheck'
@@ -60,6 +68,7 @@ export interface IpcDeps {
   previewService: YoutubePreviewService | null
   trackEditService: TrackEditService
   coverService: CoverService
+  analysisService: AnalysisService
   /** 런타임 준비 상태. sidecar가 필요한 IPC는 ready 전에는 거부한다 */
   getBootstrapState: () => BootstrapState
 }
@@ -77,6 +86,7 @@ export function registerIpcHandlers({
   previewService,
   trackEditService,
   coverService,
+  analysisService,
   getBootstrapState
 }: IpcDeps): void {
   const importGate = new ImportRequestGate()
@@ -180,6 +190,24 @@ export function registerIpcHandlers({
 
   ipcMain.handle(IPC_CHANNELS.saveTrackEdit, (_event, req: TrackEditSaveRequest): Promise<Track> =>
     trackEditService.save(req)
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.previewTrackAnalysis,
+    (_event, raw: unknown): Promise<PreviewAnalysisResult> => {
+      const request = sanitizePreviewAnalysisRequest(raw)
+      const field = request?.field ?? previewAnalysisFieldOf(raw)
+      if (!request) {
+        return Promise.resolve(previewAnalysisFailure(field, 'INVALID_REQUEST'))
+      }
+      const blocked = requireRuntime()
+      if (blocked) {
+        return Promise.resolve(previewAnalysisRuntimeRejection(request.field, blocked))
+      }
+      return analysisService
+        .preview(request)
+        .catch(() => previewAnalysisFailure(request.field, 'ANALYZE_FAILED'))
+    }
   )
 
   ipcMain.handle(IPC_CHANNELS.trackFiles, (_event, trackId: string): TrackFiles => {

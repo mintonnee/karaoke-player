@@ -597,6 +597,7 @@ function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapCont
     previewService,
     trackEditService,
     coverService,
+    analysisService,
     getBootstrapState: () => bootstrap.getState()
   })
   // 부트스트랩 IPC. 서비스들은 lazy spawn이라 먼저 만들어도 되지만,

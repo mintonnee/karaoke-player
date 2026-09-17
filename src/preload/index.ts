@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { PreviewAnalysisRequest, PreviewAnalysisResult } from '../shared/previewAnalysis'
 import type { CoverPreviewResult, TrackEditSaveRequest } from '../shared/trackEdit'
 import { DEFAULT_GUIDE_VOCAL_DB, IPC_CHANNELS } from '../shared/types'
 import type {
@@ -56,6 +57,8 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.updateTrackMeta, trackId, meta),
   saveTrackEdit: (req: TrackEditSaveRequest): Promise<Track> =>
     ipcRenderer.invoke(IPC_CHANNELS.saveTrackEdit, req),
+  previewTrackAnalysis: (req: PreviewAnalysisRequest): Promise<PreviewAnalysisResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.previewTrackAnalysis, req),
   getLyrics: (trackId: string): Promise<LyricsPayload> =>
     ipcRenderer.invoke(IPC_CHANNELS.lyricsGet, trackId),
   refetchLyrics: (trackId: string): Promise<LyricsPayload> =>

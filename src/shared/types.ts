@@ -589,6 +589,8 @@ export const IPC_CHANNELS = {
   updateTrackMeta: 'library:update-meta',
   /** 메타 변경분과 커버 동작을 한 번에 저장 (스펙 005 §4.3) */
   saveTrackEdit: 'library:save-track-edit',
+  /** 곡 수정 창의 BPM·원키 재측정 미리보기 (스펙 011). 저장하지 않는다 */
+  previewTrackAnalysis: 'library:preview-track-analysis',
   reorderTracks: 'library:reorder',
   lyricsGet: 'lyrics:get',
   lyricsRefetch: 'lyrics:refetch',

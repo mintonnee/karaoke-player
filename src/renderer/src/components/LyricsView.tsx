@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { normalizeLoop } from '../audio/audioMath'
+import type { PointerEvent } from 'react'
 import { currentLineIndex, lineProgress } from '../../../shared/lrc'
 import LyricsSetup from './LyricsSetup'
+import { lyricIndexAtY, takeLyricDrag, type LyricDragSel } from './lyricsGesture'
 import { CONF_WARN_THRESHOLD, useLyricsStore } from '../stores/lyricsStore'
 import { usePlayerStore } from '../stores/playerStore'
 
@@ -61,7 +62,9 @@ function LyricsView(): React.JSX.Element | null {
   const containerRef = useRef<HTMLDivElement>(null)
   const lineRefs = useRef<(HTMLParagraphElement | null)[]>([])
   /** 가사 줄 드래그 선택 (루프 설정). 한 줄에서 떼면 시크로 처리 */
-  const [dragSel, setDragSel] = useState<{ start: number; end: number } | null>(null)
+  const [dragSel, setDragSel] = useState<LyricDragSel | null>(null)
+  /** 제스처당 한 번만 커밋. window pointerup effect는 같은 클릭이 두 번 시크할 수 있다 */
+  const dragRef = useRef<(LyricDragSel & { pointerId: number }) | null>(null)
   /** 가사 초기화 2단계 확인 (실수 클릭 방지). 확인을 띄운 트랙 id를 들고 있어 트랙이 바뀌면 자연히 해제된다 */
   const [resetArmedFor, setResetArmedFor] = useState<string | null>(null)
   const confirmReset = track !== null && resetArmedFor === track.id
@@ -85,23 +88,60 @@ function LyricsView(): React.JSX.Element | null {
     container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
   }, [index, lines, correcting])
 
-  // 드래그 종료: 여러 줄이면 [시작 줄 시각, 끝 줄 다음 줄 시각) 루프 설정, 한 줄이면 시크
-  useEffect(() => {
-    if (!dragSel) return
-    const onPointerUp = (): void => {
-      const lo = Math.min(dragSel.start, dragSel.end)
-      const hi = Math.max(dragSel.start, dragSel.end)
-      if (lo === hi) {
-        seek(lines[lo].time)
-      } else {
-        const end = hi + 1 < lines.length ? lines[hi + 1].time : duration
-        setLoop(normalizeLoop(lines[lo].time, end, duration))
-      }
-      setDragSel(null)
+  const lineBands = (): { top: number; bottom: number }[] => {
+    const bands: { top: number; bottom: number }[] = []
+    for (let i = 0; i < lines.length; i++) {
+      const el = lineRefs.current[i]
+      if (!el) break
+      const rect = el.getBoundingClientRect()
+      bands.push({ top: rect.top, bottom: rect.bottom })
     }
-    window.addEventListener('pointerup', onPointerUp)
-    return () => window.removeEventListener('pointerup', onPointerUp)
-  }, [dragSel, lines, duration, seek, setLoop])
+    return bands
+  }
+
+  const extendLyricDrag = (clientY: number, clamp: boolean): void => {
+    const drag = dragRef.current
+    if (!drag) return
+    const index = lyricIndexAtY(clientY, lineBands(), clamp)
+    if (index === null || drag.end === index) return
+    drag.end = index
+    setDragSel({ start: drag.start, end: index })
+  }
+
+  const commitLyricDrag = (): void => {
+    const gesture = takeLyricDrag(dragRef, lines, duration)
+    if (!gesture) return
+    setDragSel(null)
+    if (gesture.type === 'seek') seek(gesture.time)
+    else setLoop(gesture.range)
+  }
+
+  const cancelLyricDrag = (pointerId: number): void => {
+    if (dragRef.current?.pointerId !== pointerId) return
+    dragRef.current = null
+    setDragSel(null)
+  }
+
+  const onLyricsPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0 || dragRef.current) return
+    const index = lyricIndexAtY(event.clientY, lineBands())
+    if (index === null) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = { pointerId: event.pointerId, start: index, end: index }
+    setDragSel({ start: index, end: index })
+  }
+
+  const onLyricsPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
+    if (dragRef.current?.pointerId !== event.pointerId) return
+    extendLyricDrag(event.clientY, true)
+  }
+
+  const onLyricsPointerUp = (event: PointerEvent<HTMLDivElement>): void => {
+    if (dragRef.current?.pointerId !== event.pointerId) return
+    extendLyricDrag(event.clientY, true)
+    commitLyricDrag()
+  }
 
   // 보정 모드: Space로 탭
   useEffect(() => {
@@ -172,7 +212,14 @@ function LyricsView(): React.JSX.Element | null {
   return (
     <div className="lyrics-pane">
       {arWarn && <ArLyricsWarn />}
-      <div ref={containerRef} className="lyrics">
+      <div
+        ref={containerRef}
+        className="lyrics"
+        onPointerDown={onLyricsPointerDown}
+        onPointerMove={onLyricsPointerMove}
+        onPointerUp={onLyricsPointerUp}
+        onPointerCancel={(event) => cancelLyricDrag(event.pointerId)}
+      >
         <div className={`lyrics-intro${waitingIntro ? ' active' : ''}`}>
           <span className="lyrics-intro-dot" />
           <span className="lyrics-intro-dot" />
@@ -202,11 +249,6 @@ function LyricsView(): React.JSX.Element | null {
               className={`lyrics-line ${state}${selected ? ' drag-select' : ''}${
                 inLoop ? ' in-loop' : ''
               }`}
-              onPointerDown={(e) => {
-                e.preventDefault()
-                setDragSel({ start: i, end: i })
-              }}
-              onPointerEnter={() => setDragSel((sel) => (sel ? { ...sel, end: i } : sel))}
             >
               {confs && confs[i] < CONF_WARN_THRESHOLD && (
                 <span className="line-warn" title={`정렬 신뢰도 낮음 (${confs[i].toFixed(2)})`}>

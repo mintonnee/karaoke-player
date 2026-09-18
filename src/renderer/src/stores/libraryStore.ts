@@ -34,6 +34,7 @@ interface LibraryState {
   importUrl: (url: string, userMeta?: ImportUserMeta) => Promise<ImportFilesResponse>
   importPair: (req: PairImportRequest) => Promise<ImportFilesResponse>
   deleteTrack: (trackId: string) => Promise<void>
+  openTrackFolder: (trackId: string) => Promise<void>
   /** 드래그 정렬 저장. ids는 검색 필터 없는 전체 순서. 화면은 즉시 반영하고 저장은 뒤따른다 */
   reorderTracks: (ids: string[]) => Promise<void>
   updateTrackMeta: (trackId: string, meta: TrackMetaInput) => Promise<void>
@@ -130,6 +131,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     deleteTrack: async (trackId) => {
       await window.api.deleteTrack(trackId)
       set((state) => ({ tracks: state.tracks.filter((t) => t.id !== trackId) }))
+    },
+    openTrackFolder: async (trackId) => {
+      await window.api.openTrackFolder(trackId)
     },
     reorderTracks: async (ids) => {
       const byId = new Map(get().tracks.map((t) => [t.id, t]))

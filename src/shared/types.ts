@@ -607,6 +607,7 @@ export const IPC_CHANNELS = {
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   tracksDir: 'library:tracks-dir',
+  openTrackFolder: 'library:open-track-folder',
   bootstrapGet: 'bootstrap:get',
   bootstrapRetry: 'bootstrap:retry',
   bootstrapState: 'bootstrap:state',

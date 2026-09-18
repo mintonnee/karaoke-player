@@ -7,6 +7,7 @@ import {
   MdDragIndicator,
   MdEdit,
   MdErrorOutline,
+  MdFolderOpen,
   MdHelpOutline,
   MdNotificationsNone,
   MdSchedule,
@@ -24,7 +25,7 @@ import ShortcutHelp from './components/ShortcutHelp'
 import TrackEditDialog from './components/TrackEditDialog'
 import Transport from './components/Transport'
 import { connectBootstrap, useBootstrapStore } from './stores/bootstrapStore'
-import { useErrorStore } from './stores/errorStore'
+import { reportError, useErrorStore } from './stores/errorStore'
 import { useLibraryStore } from './stores/libraryStore'
 import { useLyricsStore } from './stores/lyricsStore'
 import { usePlayerStore } from './stores/playerStore'
@@ -80,6 +81,7 @@ interface TrackRowProps {
   onLoad: () => void
   onDelete: () => void
   onEdit: (opener: HTMLButtonElement) => void
+  onOpenFolder: () => void
 }
 
 function TrackRow({
@@ -93,7 +95,8 @@ function TrackRow({
   dropHint,
   onLoad,
   onDelete,
-  onEdit
+  onEdit,
+  onOpenFolder
 }: TrackRowProps): React.JSX.Element {
   const playable = track.status === 'ready'
   const bpmText = formatBpmDisplay(track.bpm, track.bpmConf)
@@ -159,6 +162,17 @@ function TrackRow({
         )}
         <button
           className="icon-btn"
+          title={track.status === 'separating' ? '분리 중에는 폴더를 열 수 없습니다' : '저장 폴더 열기'}
+          disabled={track.status === 'separating'}
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpenFolder()
+          }}
+        >
+          <MdFolderOpen />
+        </button>
+        <button
+          className="icon-btn"
           title="편집"
           onClick={(event) => {
             event.stopPropagation()
@@ -193,6 +207,7 @@ function App(): React.JSX.Element {
     setSearch,
     loadCapabilities,
     deleteTrack,
+    openTrackFolder,
     reorderTracks,
     dismissRejections
   } = useLibraryStore()
@@ -496,6 +511,15 @@ function App(): React.JSX.Element {
                 onLoad={() => void loadTrack(track)}
                 onDelete={() => void onDelete(track)}
                 onEdit={() => openEdit(track)}
+                onOpenFolder={() => {
+                  void openTrackFolder(track.id).catch((err) => {
+                    reportError(
+                      'player',
+                      `저장 폴더 열기 실패: ${err instanceof Error ? err.message : String(err)}`,
+                      track.id
+                    )
+                  })
+                }}
               />
             ))}
             {tracks.length === 0 && (

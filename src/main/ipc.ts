@@ -1,4 +1,5 @@
 import { app, dialog, ipcMain, nativeImage, shell } from 'electron'
+import { existsSync } from 'fs'
 import { rm } from 'fs/promises'
 import { join } from 'path'
 import { ALLOWED_COVER_EXT } from '../shared/trackEdit'
@@ -180,6 +181,24 @@ export function registerIpcHandlers({
       if (!store.deleteTrack(trackId)) return
       await rm(join(tracksDir, trackId), { recursive: true, force: true })
     })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.openTrackFolder, async (_event, trackId: string): Promise<void> => {
+    if (typeof trackId !== 'string' || !trackId.trim()) {
+      throw new Error('invalid trackId')
+    }
+    const track = store.getTrack(trackId)
+    if (!track) {
+      throw new Error(`track not found: ${trackId}`)
+    }
+    const dir = join(tracksDir, track.id)
+    if (!existsSync(dir)) {
+      throw new Error(`track directory not found: ${track.id}`)
+    }
+    const errMsg = await shell.openPath(dir)
+    if (errMsg) {
+      throw new Error(`failed to open track directory: ${errMsg}`)
+    }
   })
 
   ipcMain.handle(

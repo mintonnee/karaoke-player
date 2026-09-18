@@ -97,6 +97,8 @@ const api = {
     return Number.isFinite(parsed) ? parsed : DEFAULT_GUIDE_VOCAL_DB
   })(),
   getTracksDir: (): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.tracksDir),
+  openTrackFolder: (trackId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.openTrackFolder, trackId),
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
   setSettings: (patch: Partial<AppSettings>): Promise<AppSettings> =>
     ipcRenderer.invoke(IPC_CHANNELS.settingsSet, patch),

@@ -1,13 +1,20 @@
 /**
- * 패키징 시 runtime-manifest.json 생성 (스펙 008 L4).
- * lock digest는 L1 scripts/runtime-lock, sidecar digest는 L2 computeSidecarSourceDigest와 동일한 규칙.
+ * 배포 타깃별 runtime staging/manifest 생성과 최종 app-directory 검증.
+ * runtimeId 입력은 schema v1 때와 동일하고, 배포 정책만 manifest schema v2에 추가한다.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
+import {
+  digestCanonical,
+  getDistributionPolicy,
+  isRuntimeDistribution,
+  lockDigest
+} from './scripts/runtime-lock/schema.mjs'
+import { verifyPackage } from './scripts/runtime-lock/package.mjs'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)))
+const ROOT = dirname(fileURLToPath(import.meta.url))
 const SIDECAR_DIGEST_ROOTS = ['.python-version', 'pyproject.toml', 'uv.lock', 'src']
 const EXCLUDED_DIRS = new Set(['.venv', '__pycache__', '.git', '.mypy_cache', '.ruff_cache'])
 
@@ -18,20 +25,18 @@ function posixDest(relPath) {
 function shouldHashSidecarPath(relPath) {
   if (relPath === '' || relPath === '.') return true
   const segments = relPath.split(/[\\/]/)
-  for (const segment of segments) {
-    if (EXCLUDED_DIRS.has(segment)) return false
-    if (segment.endsWith('.egg-info')) return false
+  if (segments.some((segment) => EXCLUDED_DIRS.has(segment) || segment.endsWith('.egg-info'))) {
+    return false
   }
-  const name = segments[segments.length - 1]
-  if (name.endsWith('.pyc') || name === '.ready') return false
-  return true
+  const name = segments.at(-1)
+  return !name.endsWith('.pyc') && name !== '.ready'
 }
 
 function hashFileHex(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex')
 }
 
-function computeSidecarSourceDigest(projectDir, digestCanonical) {
+function computeSidecarSourceDigest(projectDir) {
   const entries = []
   const visit = (rel) => {
     if (!shouldHashSidecarPath(rel)) return
@@ -43,8 +48,7 @@ function computeSidecarSourceDigest(projectDir, digestCanonical) {
       return
     }
     if (info.isDirectory()) {
-      const names = readdirSync(path).sort()
-      for (const name of names) {
+      for (const name of readdirSync(path).sort()) {
         visit(rel === '' || rel === '.' ? name : `${rel}/${name}`)
       }
     } else {
@@ -56,59 +60,65 @@ function computeSidecarSourceDigest(projectDir, digestCanonical) {
   return digestCanonical(entries)
 }
 
-function wheelListDigest(wheels, digestCanonical) {
-  const list = (wheels.artifacts ?? [])
-    .filter((a) => a.kind === 'wheel' || a.kind === 'file' || a.kind === 'sdist-build')
-    .map((a) => ({ id: a.id, sha256: a.sha256, dest: posixDest(a.dest) }))
-    .sort((a, b) => a.id.localeCompare(b.id))
-  return digestCanonical(list)
+function wheelListDigest(wheels) {
+  return digestCanonical(
+    (wheels.artifacts ?? [])
+      .filter((artifact) => ['wheel', 'file', 'sdist-build'].includes(artifact.kind))
+      .map((artifact) => ({
+        id: artifact.id,
+        sha256: artifact.sha256,
+        dest: posixDest(artifact.dest)
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+  )
 }
 
 function readLock(locksDir, name) {
   return JSON.parse(readFileSync(join(locksDir, name), 'utf8'))
 }
 
+export function runtimeStagingDir(target, root = ROOT) {
+  if (!isRuntimeDistribution(target)) throw new Error(`unknown runtime target: ${String(target)}`)
+  return join(root, 'dist', 'runtime-staging', target)
+}
+
 export function extraResourcesFor(target) {
-  const bin = [{ from: 'resources/bin/uv.exe', to: 'bin/uv.exe' }]
-  if (target === 'zip') {
-    bin.push({ from: 'resources/bin/yt-dlp.exe', to: 'bin/yt-dlp.exe' })
+  const staging = posixDest(join('dist', 'runtime-staging', target))
+  const policy = getDistributionPolicy(target)
+  const resources = []
+  for (const [id, delivery] of Object.entries(policy.toolDelivery)) {
+    if (delivery !== 'bundled') continue
+    resources.push({ from: `${staging}/resources/bin/${id}.exe`, to: `bin/${id}.exe` })
   }
-  bin.push({ from: 'resources/bin/deno.exe', to: 'bin/deno.exe' })
-  return [
-    ...bin,
-    { from: 'resources/sidecar', to: 'sidecar' },
-    { from: 'build/locks', to: 'locks' },
-    { from: 'build/runtime-manifest.json', to: 'runtime-manifest.json' }
-  ]
+  resources.push(
+    { from: `${staging}/sidecar`, to: 'sidecar' },
+    { from: `${staging}/locks`, to: 'locks' },
+    { from: `${staging}/runtime-manifest.json`, to: 'runtime-manifest.json' }
+  )
+  return resources
 }
 
 export async function writeRuntimeManifest(opts = {}) {
   const root = opts.root ?? ROOT
-  const locksDir = opts.locksDir ?? join(root, 'build', 'locks')
-  const staged = join(root, 'resources', 'sidecar')
-  const sidecarDir =
-    opts.sidecarDir ?? (existsSync(join(staged, 'pyproject.toml')) ? staged : join(root, 'sidecar'))
-  const outPath = opts.outPath ?? join(root, 'build', 'runtime-manifest.json')
-
-  const { digestCanonical, lockDigest } = await import(
-    pathToFileURL(join(root, 'scripts', 'runtime-lock', 'index.mjs')).href
-  )
+  const target = opts.target ?? 'zip'
+  if (!isRuntimeDistribution(target)) throw new Error(`unknown runtime target: ${String(target)}`)
+  const staging = opts.stagingDir ?? runtimeStagingDir(target, root)
+  const locksDir = opts.locksDir ?? join(staging, 'locks')
+  const sidecarDir = opts.sidecarDir ?? join(staging, 'sidecar')
+  const outPath = opts.outPath ?? join(staging, 'runtime-manifest.json')
 
   const tools = readLock(locksDir, 'tools.lock.json')
   const python = readLock(locksDir, 'python.lock.json')
   const wheels = readLock(locksDir, 'wheels.lock.json')
   const models = readLock(locksDir, 'models.lock.json')
-
-  const uv = tools.artifacts.find((a) => a.id === 'uv')
+  const uv = tools.artifacts.find((artifact) => artifact.id === 'uv')
   if (!uv?.sha256) throw new Error('tools.lock missing uv artifact')
   const patch = python.python?.patch
   const distributionBuild = python.python?.distributionBuild
-  if (!patch || !distributionBuild) {
-    throw new Error('python.lock missing patch/distributionBuild')
-  }
+  if (!patch || !distributionBuild) throw new Error('python.lock missing patch/distributionBuild')
 
-  const sidecarSourceDigest = computeSidecarSourceDigest(sidecarDir, digestCanonical)
-  const wheelsDigest = wheelListDigest(wheels, digestCanonical)
+  const sidecarSourceDigest = computeSidecarSourceDigest(sidecarDir)
+  const wheelsDigest = wheelListDigest(wheels)
   const lockDigests = {
     tools: lockDigest(tools),
     python: lockDigest(python),
@@ -122,9 +132,13 @@ export async function writeRuntimeManifest(opts = {}) {
     uvToolDigest: uv.sha256,
     sidecarSourceDigest
   })
+  const policy = getDistributionPolicy(target)
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     platform: 'win32-x64',
+    distribution: target,
+    capabilities: { ...policy.capabilities },
+    toolDelivery: { ...policy.toolDelivery },
     runtimeId,
     lockDigests,
     interpreter: { patch, distributionBuild },
@@ -136,4 +150,16 @@ export async function writeRuntimeManifest(opts = {}) {
   mkdirSync(dirname(outPath), { recursive: true })
   writeFileSync(outPath, `${JSON.stringify(manifest, null, 2)}\n`)
   return { outPath, manifest }
+}
+
+export async function verifyPackagedApp(target, context) {
+  const result = await verifyPackage({
+    target,
+    input: context.appOutDir,
+    locksDir: join(ROOT, 'build', 'locks')
+  })
+  if (!result.ok) {
+    throw new Error(result.errors.map((error) => `${error.code} ${error.message}`).join('\n'))
+  }
+  return context.appOutDir
 }

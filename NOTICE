@@ -10,5 +10,20 @@ Copyright (c) Steve 'Cutter' Blades
 This product includes Pretendard JP:
 Copyright (c) 2021 Kil Hyung-jin
 
+Runtime tool licensing:
+
+- uv is licensed under MIT OR Apache-2.0.
+- Deno is licensed under MIT.
+- The yt-dlp source project is released under the Unlicense. The official
+  Windows standalone executable is a PyInstaller combined work that includes
+  GPL-3.0-or-later and other third-party components, and the combined binary is
+  distributed under GPL-3.0-or-later. The exact-version notices and source are:
+  https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/THIRD_PARTY_LICENSES.txt
+  https://github.com/yt-dlp/yt-dlp/releases/tag/2026.08.19
+
+The ZIP channel bundles the locked runtime tools. The NSIS channel does not
+contain their binaries; it downloads the same locked versions after app launch.
+The notices apply in both cases.
+
 See LICENSE_SCOPE.md for licensing scope and exceptions, and
 THIRD-PARTY-NOTICES.txt in the distribution for third-party notices.

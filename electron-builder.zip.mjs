@@ -2,7 +2,11 @@
  * zip(포터블·무서명) 타깃 — 스펙 001 §4.2, 008 기준 9.
  * uv / yt-dlp / deno 와 sidecar, lock, runtime-manifest 를 동봉한다.
  */
-import { extraResourcesFor, writeRuntimeManifest } from './electron-builder.manifest.mjs'
+import {
+  extraResourcesFor,
+  verifyPackagedApp,
+  writeRuntimeManifest
+} from './electron-builder.manifest.mjs'
 
 export default {
   extends: 'file:electron-builder.yml',
@@ -12,6 +16,9 @@ export default {
   },
   extraResources: extraResourcesFor('zip'),
   beforePack: async () => {
-    await writeRuntimeManifest()
+    await writeRuntimeManifest({ target: 'zip' })
+  },
+  afterPack: async (context) => {
+    await verifyPackagedApp('zip', context)
   }
 }

@@ -3,7 +3,7 @@
 - 작성일: 2026-09-18
 - 연관 스펙: `001-packaging-distribution.md`, `008-runtime-dependency-lock.md`, `010-notification-center.md`, `007-db-schema-safety.md`
 - 대상: 001 S7 패키징의 NSIS 채널 추가와 008 uv·Deno·yt-dlp 배포 방식 확장
-- 상태: 설계 완료, 구현 미착수
+- 상태: 코드 구현·자동 검증·NSIS 빌드 완료, Windows VM·실제 설치 앱 인수 시험 대기
 
 이 문서는 001의 패키징 범위에서 Windows x64 NSIS `.exe` 설치 파일과, 008의 lock을 이용한 첫 앱 실행 시 도구 다운로드를 다룬다. 기존 ZIP/APPX의 번들 구성, Python·wheel·모델 준비 계약과 자동 업데이트는 변경하지 않는다.
 
@@ -44,7 +44,7 @@
 10. 최종 패키지 검증은 NSIS 정책·lock digest·sidecar digest·manifest와 실제 payload를 대조한다. 누락/불일치/금지 바이너리를 주입한 fixture는 exit 1, 정상 fixture는 exit 0이다. 기존 ZIP/APPX 구성·capability 회귀 검증도 통과한다.
 11. 실제 설치된 앱에서 로컬 파일 가져오기 → 분리 → 재생, YouTube 미리보기 → 가져오기가 성공한다. 설치/도구 검증, Python/모델 검증, 실제 YouTube·GPU 동작의 결과를 각각 기록한다.
 
-## 3. 전제 조건
+## 3. 설계 당시 전제 조건
 
 | 현재 상태 / 전제                                            | source of truth / 확인 방법                                                                     |
 | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -171,15 +171,15 @@ Python bootstrap 상태와 URL 도구 준비 상태를 별도로 보관하고, �
 
 ### 4.7 구현 슬라이스
 
-경로는 구현 소유권이며 이 스펙 작성에서 생성/변경된 코드라는 뜻이 아니다. 성공 기준이 우선이고 표의 신규 내부 파일명은 구현 시 역할을 유지하며 조정할 수 있다.
+경로는 구현 소유권이다. N3는 감독자가 main·IPC·sidecar·서비스를, 별도 에이전트가 preload·renderer를 맡아 비중첩으로 진행했다. N1의 notice 생성기와 생성된 고지도 추가 배정했다. 성공 기준이 우선이고 표의 신규 내부 파일명은 구현 시 역할을 유지하며 조정할 수 있다.
 
-| 슬라이스 | 산출물                                           | 소유(수정 가능) 경로                                                                                                                                                                                                                                                                      | 수정 금지 경로                             | 선행 조건                        | 상태   |
-| -------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | -------------------------------- | ------ |
-| N0       | manifest v2·도구 상태·IPC 계약, 양쪽 schema 일치 | `src/shared/**`, `src/main/runtime/manifest.ts`, `src/main/runtime/schema.ts`, `scripts/runtime-lock/schema.mjs`, `src/main/__tests__/runtime/manifest.test.ts`, `scripts/__tests__/runtime-lock/schema.test.mjs`                                                                         | 나머지 N1–N4 소유 경로                     | 없음                             | 미착수 |
-| N1       | NSIS 설정·타깃 staging·payload 검증·명령         | `package.json`, `electron-builder*`, `scripts/prepare-resources.mjs`, `scripts/runtime-lock/{prepare,package,cli}.mjs`, `scripts/__tests__/runtime-lock/{prepare,package}.test.mjs`, `src/main/__tests__/packaging/**`, `build/locks/tools.provenance.json`, `NOTICE`, `LICENSE_SCOPE.md` | N0/N2/N3/N4 경로, lock 버전·hash 무단 갱신 | N0                               | 미착수 |
-| N2       | 검증 도구 resolver·다운로드·활성화               | `src/main/runtime/` 중 `manifest.ts`·`schema.ts` 제외, `src/main/__tests__/runtime/` 중 `manifest.test.ts` 제외                                                                                                                                                                           | N0/N1/N3/N4 경로                           | N0                               | 미착수 |
-| N3       | 앱 초기화·서비스·IPC·알림 UI 연결 및 회귀        | `src/main/index.ts`, `src/main/ipc.ts`, `src/main/sidecar/**`, `src/main/library/{YtDlpService,YoutubePreviewService}.ts`, 대응 library 테스트, `src/preload/**`, `src/renderer/**`, 신규 `src/main/__tests__/toolBootstrap.test.ts`                                                      | N0/N1/N2/N4 경로                           | N0, N2 계약 확정; 완료는 N2 의존 | 미착수 |
-| N4       | 실제 패키지·VM 인수 시험과 운영 문서             | `scripts/nsis-acceptance/**`, `docs/runtime-lock.md`, `README.md`, `docs/specs/{README,001-packaging-distribution,008-runtime-dependency-lock,012-nsis-installer}.md`                                                                                                                     | N0–N3 코드 경로                            | N1–N3                            | 미착수 |
+| 슬라이스 | 산출물                                           | 소유(수정 가능) 경로                                                                                                                                                                                                                                                                      | 수정 금지 경로                             | 선행 조건                        | 상태                   |
+| -------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | -------------------------------- | ---------------------- |
+| N0       | manifest v2·도구 상태·IPC 계약, 양쪽 schema 일치 | `src/shared/**`, `src/main/runtime/manifest.ts`, `src/main/runtime/schema.ts`, `scripts/runtime-lock/schema.mjs`, `src/main/__tests__/runtime/manifest.test.ts`, `scripts/__tests__/runtime-lock/schema.test.mjs`                                                                         | 나머지 N1–N4 소유 경로                     | 없음                             | 완료                   |
+| N1       | NSIS 설정·타깃 staging·payload 검증·명령         | `package.json`, `electron-builder*`, `scripts/prepare-resources.mjs`, `scripts/runtime-lock/{prepare,package,cli}.mjs`, `scripts/__tests__/runtime-lock/{prepare,package}.test.mjs`, `src/main/__tests__/packaging/**`, `build/locks/tools.provenance.json`, `NOTICE`, `LICENSE_SCOPE.md` | N0/N2/N3/N4 경로, lock 버전·hash 무단 갱신 | N0                               | 완료                   |
+| N2       | 검증 도구 resolver·다운로드·활성화               | `src/main/runtime/` 중 `manifest.ts`·`schema.ts` 제외, `src/main/__tests__/runtime/` 중 `manifest.test.ts` 제외                                                                                                                                                                           | N0/N1/N3/N4 경로                           | N0                               | 완료                   |
+| N3       | 앱 초기화·서비스·IPC·알림 UI 연결 및 회귀        | `src/main/index.ts`, `src/main/ipc.ts`, `src/main/sidecar/**`, `src/main/library/{YtDlpService,YoutubePreviewService}.ts`, 대응 library 테스트, `src/preload/**`, `src/renderer/**`, 신규 `src/main/__tests__/toolBootstrap.test.ts`                                                      | N0/N1/N2/N4 경로                           | N0, N2 계약 확정; 완료는 N2 의존 | 완료                   |
+| N4       | 실제 패키지·VM 인수 시험과 운영 문서             | `scripts/nsis-acceptance/**`, `docs/runtime-lock.md`, `README.md`, `docs/specs/{README,001-packaging-distribution,008-runtime-dependency-lock,012-nsis-installer}.md`                                                                                                                     | N0–N3 코드 경로                            | N1–N3                            | 자동 검증 완료·VM 대기 |
 
 완료 판정: N0 = 기준 7·10의 정책/schema fixture, N1 = 기준 1·2·10, N2 = 기준 4–6, N3 = 기준 7·8, N4 = 기준 3·9·11 및 최종 설치 payload 검증이다. N1과 N2는 N0 이후 병렬 가능하고, N3는 확정된 N2 계약으로 작업하되 통합 완료는 N2 이후다. 추가 공유 파일은 감독자가 소유권을 한 슬라이스에 배정한 다음 수정한다. 완료된 슬라이스는 감독자의 명시적 재개 없이 재작업하지 않는다.
 
@@ -187,7 +187,7 @@ Python bootstrap 상태와 URL 도구 준비 상태를 별도로 보관하고, �
 
 ## 5. 검증 방법
 
-아래 새 NSIS 명령·시험 파일은 **구현할 계약**이며 현재 실행 가능한 기능으로 보고하지 않는다. fixture 시험은 격리 경로와 mock 네트워크를 사용하고 실제 GitHub·설치 프로그램·모델은 인수 시험에서 구분한다.
+아래 NSIS 명령·시험 파일은 구현되었다. 실제 수행 결과와 미실행 범위는 §6에 기록한다. fixture 시험은 격리 경로와 mock 네트워크를 사용하고 실제 GitHub·설치 프로그램·모델은 인수 시험에서 구분한다.
 
 ```bash
 # 문서 형식·diff 검증
@@ -220,4 +220,45 @@ node scripts/runtime-lock/cli.mjs verify-package --target appx --input dist/win-
 - 기준 3·9: 격리 Windows VM의 일반 사용자로 네트워크 차단 설치, 첫 실행 실패/복구, 다음 버전 재설치, 실행 중 재설치, 제거/재설치를 수행한다. 전후 DB·곡·설정 파일 inventory를 비교하고 제거 항목·바로가기·사용자 경로 보존을 확인한다.
 - 기준 10: 실제 NSIS exe에서 추출한 payload inventory와 manifest를 검사하고, 설치 후 앱 디렉터리도 같은 검증기에 통과시킨다. 패키지에 금지 exe/ZIP·잘못된 manifest·변조 sidecar를 넣은 fixture는 exit 1이어야 한다.
 - 기준 11: 실제 설치 앱에서 lock의 세 버전 확인, 로컬 가져오기·분리·재생, YouTube 미리보기·가져오기를 수행한다. 네트워크 차단 재실행은 필요한 Python·wheel·모델까지 준비된 상태에서 로컬 작업과 기존 곡 재생으로 검증한다. YouTube 작업은 네트워크가 필요하다.
-- 실자산 체크섬 채택 기록, fixture 결과, 최종 설치 바이트 검사, VM 설치 동작, 실제 GPU·YouTube 결과를 나누어 기록한다. 이번 문서 작성에서는 구현·빌드·설치·실자산 실행 검증을 수행하지 않는다.
+- 실자산 체크섬 채택 기록, fixture 결과, 최종 설치 바이트 검사, VM 설치 동작, 실제 GPU·YouTube 결과를 나누어 기록한다. Windows VM의 설치·제거와 실제 GPU·YouTube 작업은 아직 수행하지 않았다.
+
+## 6. 구현 결과 (2026-09-18)
+
+N0–N3 코드는 구현했고, N4의 빌드·최종 바이트·실자산 도구 검증을 수행했다. **VM과 실제 설치 앱의 성공 기준이 남아 있으므로 전체 인수 완료로 판정하지 않는다.**
+
+| 기준 | 결과와 증거                                                                                            | 남은 검증                                          |
+| ---- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| 1    | NSIS build·타깃별 staging·lock 불변성 검증, 도구 fetch 0회 fixture                                     | 아래 실행 기록 참조                                |
+| 2    | stale resources/bin을 둔 실제 NSIS payload 189개 파일 대조, 빈 디렉터리·asar/ZIP/변조 바이트 fixture   | 빈 도구 디렉터리에서 실제 재빌드는 미실행          |
+| 3    | oneClick/per-user/runAfterFinish=false 설정                                                            | 깨끗한 일반 사용자 VM의 오프라인 설치              |
+| 4    | 실제 resolver로 GitHub lock 자산 다운로드 후 uv 0.12.9·Deno 2.9.6·yt-dlp 2026.08.19 실행 확인          | 설치된 Electron 앱에서 첫 초기화                   |
+| 5    | 같은 격리 캐시의 새 controller에서 다운로드 0건, 변조·잘린 응답·안전한 추출 fixture                    | 설치 앱 오프라인 재시작                            |
+| 6    | HTTP 403/404/429/500·취소·ENOSPC/EPERM·rollback·잠금 회수 fixture                                      | 실제 프로세스 강제 종료·디스크 부족·실행 파일 잠금 |
+| 7    | IPC late service/retry·APPX 거부·renderer snapshot 경합 및 자동 미리보기 fixture                       | 설치 앱 UI 재시도                                  |
+| 8    | Python과 URL readiness 독립, 로컬 작업/미리보기 게이트 fixture                                         | 실제 기존 곡 재생·로컬 작업                        |
+| 9    | 새 digest와 이전 파일 보존 fixture, 제거 데이터 보존 설정                                              | VM 업그레이드·제거·재설치 inventory                |
+| 10   | 실제 NSIS 내장 앱과 unpacked 크기/SHA-256 전수 대조, manifest/lock/sidecar 검사, ZIP/APPX 정책 fixture | 아래 채널별 실행 기록 참조                         |
+| 11   | 도구 실제 버전 실행만 완료                                                                             | 설치 앱 GPU 분리·재생·YouTube 미리보기/가져오기    |
+
+검증 명령과 현재 결과:
+
+- 전체 Vitest: 69 files / 703 tests, exit 0.
+- Node runtime-lock·inventory: 55 tests, exit 0. null/falsy manifest와 필수 도구 lock 누락 거부 포함.
+- Node/Web typecheck, 변경 소스 ESLint, runtime-lock 원본 검증: exit 0.
+- 전체 ESLint는 기존 `src/main/__tests__/openTrackFolder.test.ts`의 explicit-any 11건 때문에 exit 1. 이번 변경 파일의 lint는 통과했고 해당 기존 테스트는 수정하지 않았다.
+- `pnpm build:nsis`: exit 0. 최종 exe 내장 payload 189개 파일의 byte inventory 대조와 NSIS 정책 검증 통과.
+- `pnpm build:unpack:nsis`, `pnpm build:zip`, `pnpm build:msix`: 모두 exit 0. 각 채널의 실제 앱 디렉터리에 `verify-package`를 실행해 통과했고 ZIP의 세 도구 번들·APPX의 uv/Deno 번들 및 yt-dlp 제외를 확인했다.
+- `node scripts/nsis-acceptance/runtime-tools-smoke.mjs`: exit 0. 빈 격리 캐시에서 6 HTTP 요청(3개 자산과 redirect), 실제 세 버전 확인, warm offline 요청 0건.
+- 실제 설치·제거와 GPU·YouTube 작업은 자동 검증 결과에 포함하지 않았다. 세부 절차와 실행 스크립트는 [NSIS 인수 검증](../../scripts/nsis-acceptance/README.md)을 따른다.
+
+잠금은 완성된 owner 파일을 hard-link로 원자적으로 게시한다. Windows 11 기본 NTFS에서 검증했으며 hard-link를 지원하지 않는 사용자 데이터 파일시스템은 명시적 오류로 중단한다. 기존 내용 없는 비정상 잠금은 임의 삭제하지 않고 timeout 오류로 보고한다.
+
+구현 편성 및 결과:
+
+| 슬라이스           | 난이도    | 모델        | 추론 수준 | 결과                                 |
+| ------------------ | --------- | ----------- | --------- | ------------------------------------ |
+| N0 계약            | 높음      | gpt-5.6-sol | xhigh     | 완료                                 |
+| N1 패키징          | 높음      | gpt-5.6-sol | xhigh     | 완료, 실제 빌드는 감독자 검증        |
+| N2 다운로드·동시성 | 매우 높음 | gpt-6-astra | high      | 완료                                 |
+| N3 UI·preload      | 높음      | gpt-5.6-sol | xhigh     | 완료, main 통합은 감독자 구현        |
+| N4 인수·문서       | 높음      | 감독자      | 해당 없음 | 자동 검증 완료, VM·설치 앱 인수 대기 |

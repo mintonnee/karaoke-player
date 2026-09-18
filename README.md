@@ -94,9 +94,15 @@ pnpm typecheck && pnpm lint && pnpm test
 ```bash
 pnpm build:zip    # dist/karaoke-player-<ver>-win-x64.zip (uv + yt-dlp + deno 동봉)
 pnpm build:msix   # dist/karaoke-player-<ver>-win-x64.appx (yt-dlp 제외)
+pnpm build:nsis   # dist/nsis/karaoke-player-<ver>-win-x64-setup.exe (도구는 첫 실행 다운로드)
+pnpm build:unpack:nsis # dist/nsis/win-unpacked (설치 전 앱 검증)
 ```
 
-두 스크립트 모두 `prepare:resources`를 먼저 돌려 uv / yt-dlp / deno 바이너리를 GitHub 릴리즈에서 받고 `sidecar/`를 `resources/sidecar/`에 스테이징한다. 버전은 `scripts/prepare-resources.mjs` 상단 상수로 고정돼 있다.
+ZIP/APPX 빌드는 `prepare:resources`에서 도구를 준비한다. NSIS 빌드는 도구 바이너리를 받거나 포함하지 않고 sidecar·lock·manifest를 배치한다. 버전·고정 URL·크기·SHA-256은 `build/locks/tools.lock.json`으로 관리한다.
+
+NSIS 설치는 네트워크 없이 끝나며 앱은 자동 실행되지 않는다. 첫 앱 실행에서 uv·Deno·yt-dlp를 검증 다운로드하므로 최초 실행 환경 준비에는 네트워크가 필요하다. 도구별 준비 상태와 재시도는 알림에서 확인한다. 제거 시 라이브러리·설정·런타임 캐시는 보존한다. ZIP/NSIS는 URL 가져오기를 지원하고 APPX는 지원하지 않는다.
+
+NSIS 패키지의 도구 제외·manifest·payload 검증은 빌드 과정에 포함한다. Windows 설치·업그레이드·제거 및 실제 GPU·YouTube 검증은 [NSIS 인수 절차](scripts/nsis-acceptance/README.md)를 따른다. 상세 설계는 [012 NSIS 스펙](docs/specs/012-nsis-installer.md), 의존성 관리 방법은 [런타임 lock 운영](docs/runtime-lock.md)을 참고한다.
 
 MSIX identity는 환경 변수로 주입한다. 미설정 시 placeholder로 빌드된다.
 

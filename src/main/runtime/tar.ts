@@ -10,7 +10,7 @@ import {
 import type { ArchiveAllowSpec } from './zip'
 
 function parseOctal(buf: Buffer): number {
-  const text = buf.toString('utf8').replace(/\0/g, '').trim()
+  const text = buf.toString('utf8').split('\0', 1)[0].trim()
   if (!text) return 0
   return Number.parseInt(text, 8)
 }
@@ -33,15 +33,15 @@ export function listTarEntries(tarBytes: Buffer): TarListEntry[] {
     const header = tarBytes.subarray(offset, offset + 512)
     if (header.every((b) => b === 0)) break
     const typeflag = String.fromCharCode(header[156] || 48)
-    const rawName = header.subarray(0, 100).toString('utf8').replace(/\0/g, '')
-    const prefix = header.subarray(345, 500).toString('utf8').replace(/\0/g, '')
+    const rawName = header.subarray(0, 100).toString('utf8').split('\0', 1)[0]
+    const prefix = header.subarray(345, 500).toString('utf8').split('\0', 1)[0]
     const size = parseOctal(header.subarray(124, 136))
     const mode = parseOctal(header.subarray(100, 108))
     const dataStart = offset + 512
     const dataEnd = dataStart + size
     const padded = Math.ceil(size / 512) * 512
     if (typeflag === 'L') {
-      pendingLongName = tarBytes.subarray(dataStart, dataEnd).toString('utf8').replace(/\0/g, '')
+      pendingLongName = tarBytes.subarray(dataStart, dataEnd).toString('utf8').split('\0', 1)[0]
       offset = dataStart + padded
       continue
     }

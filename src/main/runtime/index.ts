@@ -19,6 +19,13 @@ export {
   normalizeDigest,
   validateLockShape,
   validateArtifactShape,
+  getDistributionPolicy,
+  validateDistributionPolicy,
+  isRuntimeDistribution,
+  isToolId,
+  TOOL_IDS,
+  RUNTIME_DISTRIBUTIONS,
+  TOOL_DELIVERIES,
   formatErrors,
   type Artifact,
   type ArtifactKind,
@@ -26,7 +33,11 @@ export {
   type LockFile,
   type LockKind,
   type Capability,
-  type ModelBinding
+  type ModelBinding,
+  type ToolId,
+  type RuntimeDistribution,
+  type ToolDelivery,
+  type DistributionPolicy
 } from './schema'
 
 export {
@@ -70,6 +81,7 @@ export {
   computeManifestInputs,
   buildRuntimeManifest,
   verifyManifest,
+  validateRuntimeManifestShape,
   wheelListDigest,
   uvToolDigest,
   interpreterDigest,
@@ -121,3 +133,5 @@ export {
   type RuntimeSidecarLaunch,
   type SpawnImpl
 } from './env'
+
+export { ToolReadinessController, type ToolReadinessControllerOptions } from './tools'

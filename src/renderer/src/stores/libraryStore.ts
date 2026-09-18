@@ -20,7 +20,7 @@ interface LibraryState {
   rejections: ImportRejection[]
   importing: boolean
   search: string
-  /** yt-dlp 동봉 여부 (스펙 001 §4.3). false면 URL 임포트 UI를 그리지 않는다 */
+  /** 배포판의 URL 지원 capability. false면 URL 임포트 UI를 그리지 않는다 */
   urlImportAvailable: boolean
   urlImporting: boolean
   /** 진행 중인 URL 다운로드 진행률. 요청 밖에서는 null */

@@ -2,7 +2,7 @@ import { existsSync } from 'fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BootstrapState, BootstrapStatus } from '../../../shared/types'
 import {
   READY_MARKER_FILE,
@@ -344,7 +344,7 @@ describe('SidecarBootstrap', () => {
 
   it('검증되지 않은 manifest는 재구성 전에 실패하므로 재시도 불가능하다', async () => {
     const { bootstrap } = createBootstrap('ok', {
-      manifest: { ...manifest, runtimeId: 'invalid-runtime-id' }
+      manifest: { ...manifest, runtimeId: '0'.repeat(64) }
     })
     const state = await bootstrap.start()
     expect(state.status).toBe('error')
@@ -358,5 +358,56 @@ describe('SidecarBootstrap', () => {
     expect(await computeProjectHash(bundled)).toBe(initial)
     await writeFile(join(bundled, '.python-version'), '3.13\n')
     expect(await computeProjectHash(bundled)).not.toBe(initial)
+  })
+
+  it('manifest 검증 실패 시 도구 준비도 시작하지 않는다', async () => {
+    const prepareUv = vi.fn(async () => process.execPath)
+    const onManifestVerified = vi.fn()
+    const { bootstrap } = createBootstrap('ok', {
+      manifest: { ...manifest, runtimeId: '0'.repeat(64) },
+      prepareUv,
+      onManifestVerified
+    })
+    expect((await bootstrap.start()).status).toBe('error')
+    expect(prepareUv).not.toHaveBeenCalled()
+    expect(onManifestVerified).not.toHaveBeenCalled()
+  })
+
+  it('uv 준비 실패 후 재시도하고 URL 도구 완료를 기다리지 않는다', async () => {
+    const prepareUv = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error('uv download failed'))
+      .mockResolvedValue(process.execPath)
+    const onManifestVerified = vi.fn()
+    const { bootstrap } = createBootstrap('ok', { prepareUv, onManifestVerified })
+    expect((await bootstrap.start()).status).toBe('error')
+    expect(await readPointer(root)).toBeNull()
+    expect((await bootstrap.retry()).status).toBe('ready')
+    expect(prepareUv).toHaveBeenCalledTimes(2)
+    expect(onManifestVerified).toHaveBeenCalledTimes(2)
+  })
+
+  it('uv 다운로드 중 종료한 뒤 늦게 완료되어도 ready를 게시하지 않는다', async () => {
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let release!: (value: string) => void
+    const pendingUv = new Promise<string>((resolve) => {
+      release = resolve
+    })
+    const { bootstrap, statuses } = createBootstrap('ok', {
+      prepareUv: async () => {
+        entered()
+        return pendingUv
+      }
+    })
+    const pending = bootstrap.start()
+    await started
+    bootstrap.dispose()
+    release(process.execPath)
+    expect((await pending).status).toBe('error')
+    expect(statuses).not.toContain('ready')
+    expect(await readPointer(root)).toBeNull()
   })
 })

@@ -149,7 +149,7 @@ export async function miniManifest(
   sidecarDir: string,
   locks: RuntimeLockSet = miniLocks()
 ): Promise<{ manifest: RuntimeManifest; locks: RuntimeLockSet }> {
-  const manifest = await buildRuntimeManifest(locks, sidecarDir)
+  const manifest = await buildRuntimeManifest(locks, sidecarDir, 'zip')
   return { manifest, locks }
 }
 

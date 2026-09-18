@@ -8,7 +8,7 @@
 
 후속 [`008-runtime-dependency-lock.md`](008-runtime-dependency-lock.md)가 §4.1–4.3의 Python·모델·외부 실행 파일 다운로드를 hash lock과 검증 후 활성화로 대체한다. 파일 존재 기반 캐시 skip, 기존 `<userData>/sidecar` venv 직접 sync, 라이브러리 임의 모델 다운로드, 준비 실패 시 전체 화면 차단은 008 구현 이후 사용하지 않는다. 아래 §4.5 기록은 001 당시 동작이다. 운영 절차는 `docs/runtime-lock.md`. CI·릴리즈·자동 업데이트는 계속 별도 범위로 둔다.
 
-후속 [`012-nsis-installer.md`](012-nsis-installer.md)는 Windows x64 NSIS `.exe` 채널을 추가하고, 해당 채널의 uv·Deno·yt-dlp를 번들 대신 첫 앱 실행에서 고정 lock으로 다운로드하도록 정의한다. URL 임포트도 NSIS 채널로 확장하며, 구현 후에는 파일 존재와 채널 지원 여부를 분리한다. 아래 ZIP/APPX 번들 계약은 유지한다. 012는 현재 설계 완료·구현 미착수다.
+후속 [`012-nsis-installer.md`](012-nsis-installer.md)는 Windows x64 NSIS `.exe` 채널을 추가하고, 해당 채널의 uv·Deno·yt-dlp를 번들 대신 첫 앱 실행에서 고정 lock으로 다운로드하도록 정의한다. URL 임포트도 NSIS 채널로 확장하며, 파일 존재와 채널 지원 여부를 분리한다. 아래 ZIP/APPX 번들 계약은 유지한다. 012의 코드·NSIS 빌드 검증은 완료했고 VM·설치 앱 인수 시험은 대기 중이다.
 
 ## 1. 목표와 비목표
 

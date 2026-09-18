@@ -1,6 +1,7 @@
+import * as fs from 'fs'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ERROR_CODES,
   createZip,
@@ -8,15 +9,117 @@ import {
   hashFile,
   redactUrl,
   resetInflightForTests,
-  sha256Hex
+  sha256Hex,
+  downloadVerified
 } from '../../runtime'
 import { fileArtifact, startStaticServer, tempDir } from './helpers'
 
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>()
+  return {
+    ...actual,
+    copyFileSync: vi.fn(actual.copyFileSync),
+    readFileSync: vi.fn(actual.readFileSync)
+  }
+})
+
 afterEach(() => {
+  vi.restoreAllMocks()
   resetInflightForTests()
 })
 
 describe('ensureArtifact', () => {
+  it.each(['http://github.com/a', 'https://evil.example/a'])(
+    'rejects redirect to %s before fetching it',
+    async (location) => {
+      const artifact = fileArtifact({ data: 'safe', url: 'https://github.com/a' })
+      const fetchImpl = vi.fn(
+        async () => new Response(null, { status: 302, headers: { location } })
+      )
+      await expect(
+        ensureArtifact({ artifact, destRoot: tempDir(), cacheRoot: tempDir(), fetchImpl })
+      ).rejects.toMatchObject({ code: ERROR_CODES.DISALLOWED_HOST })
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+      expect(fetchImpl.mock.calls[0]).toEqual([
+        'https://github.com/a',
+        expect.objectContaining({ redirect: 'manual' })
+      ])
+    }
+  )
+
+  it('follows allowed CDN redirect, bounds loops, and publishes byte progress', async () => {
+    const artifact = fileArtifact({ data: 'safe', url: 'https://github.com/a' })
+    let calls = 0
+    const progress = vi.fn()
+    const fetchImpl = vi.fn(async () =>
+      ++calls === 1
+        ? new Response(null, {
+            status: 302,
+            headers: { location: 'https://release-assets.githubusercontent.com/a?signature=secret' }
+          })
+        : new Response('safe')
+    )
+    await ensureArtifact({
+      artifact,
+      destRoot: tempDir(),
+      cacheRoot: tempDir(),
+      fetchImpl,
+      onProgress: progress
+    })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(progress).toHaveBeenLastCalledWith(4, 4)
+    const loop = vi.fn(
+      async () => new Response(null, { status: 302, headers: { location: '/loop' } })
+    )
+    await expect(
+      ensureArtifact({ artifact, destRoot: tempDir(), cacheRoot: tempDir(), fetchImpl: loop })
+    ).rejects.toMatchObject({ code: ERROR_CODES.DISALLOWED_HOST })
+    expect(loop).toHaveBeenCalledTimes(6)
+  })
+
+  it('separates same-digest flights across cache roots', async () => {
+    const artifact = fileArtifact({ data: 'safe', url: 'https://github.com/a' })
+    const roots = [tempDir(), tempDir()]
+    const fetchImpl = vi.fn(async () => new Response('safe'))
+    const paths = await Promise.all(
+      roots.map((cacheRoot) => downloadVerified({ artifact, cacheRoot, fetchImpl }))
+    )
+    expect(paths[0]).not.toBe(paths[1])
+    expect(paths.every((p, i) => p.startsWith(roots[i]))).toBe(true)
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('times out a stalled response and leaves no completed cache', async () => {
+    const artifact = fileArtifact({ data: 'safe', url: 'https://github.com/a' })
+    const cacheRoot = tempDir()
+    const fetchImpl = vi.fn(() => new Promise<Response>(() => {}))
+    await expect(
+      downloadVerified({ artifact, cacheRoot, fetchImpl, timeoutMs: 20 })
+    ).rejects.toMatchObject({ code: 'ETIMEDOUT' })
+    expect(existsSync(join(cacheRoot, 'sha256', artifact.sha256, 'complete'))).toBe(false)
+  })
+
+  it('a cancelled waiter rejects before the surviving transfer completes', async () => {
+    const artifact = fileArtifact({ data: 'safe', url: 'https://github.com/a' })
+    const cacheRoot = tempDir()
+    let finish!: () => void
+    const fetchImpl = vi.fn(async () => {
+      await new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      return new Response('safe')
+    })
+    const ac = new AbortController()
+    const first = downloadVerified({ artifact, cacheRoot, fetchImpl, signal: ac.signal })
+    const second = downloadVerified({ artifact, cacheRoot, fetchImpl })
+    const rejection = expect(first).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1))
+    ac.abort()
+    await rejection
+    finish()
+    await expect(second).resolves.toContain(artifact.sha256)
+  })
+
   it('matching dest hash is reused without download', async () => {
     const data = Buffer.from('reuse-me')
     const root = tempDir()
@@ -274,4 +377,42 @@ describe('ensureArtifact', () => {
     expect(hashFile(join(root, 'resources', 'bin', 'uv.exe'))).toBe(sha256Hex(payload))
     await srv.close()
   })
+})
+
+it('publishes cached wheels without a whole-file read and preserves the old file on copy failure', async () => {
+  const artifact = fileArtifact({ data: 'new wheel', url: 'https://github.com/a' })
+  const cacheRoot = tempDir()
+  const destRoot = tempDir()
+  const cacheDir = join(cacheRoot, 'sha256', artifact.sha256)
+  mkdirSync(cacheDir, { recursive: true })
+  const blob = join(cacheDir, 'blob')
+  writeFileSync(blob, 'new wheel')
+  writeFileSync(join(cacheDir, 'complete'), '1')
+  const dest = join(destRoot, artifact.dest)
+  mkdirSync(join(dest, '..'), { recursive: true })
+  writeFileSync(dest, 'old wheel')
+  const actualFs = await vi.importActual<typeof import('fs')>('fs')
+  const originalRead = actualFs.readFileSync
+  vi.spyOn(fs, 'readFileSync').mockImplementation((...args: Parameters<typeof fs.readFileSync>) => {
+    if (String(args[0]) === blob) throw new Error('whole-file read forbidden')
+    return originalRead(...args)
+  })
+  const copy = vi.spyOn(fs, 'copyFileSync').mockImplementationOnce((_source, temp) => {
+    writeFileSync(temp, 'partial')
+    throw new Error('copy failed')
+  })
+  const fetchImpl = vi.fn(async () => {
+    throw new Error('unexpected download')
+  })
+  await expect(ensureArtifact({ artifact, cacheRoot, destRoot, fetchImpl })).rejects.toThrow(
+    'copy failed'
+  )
+  expect(readFileSync(dest, 'utf8')).toBe('old wheel')
+  expect(fs.readdirSync(join(dest, '..'))).not.toEqual(
+    expect.arrayContaining([expect.stringMatching(/\.tmp$/)])
+  )
+  copy.mockImplementation(actualFs.copyFileSync)
+  await ensureArtifact({ artifact, cacheRoot, destRoot, fetchImpl })
+  expect(readFileSync(dest, 'utf8')).toBe('new wheel')
+  expect(fetchImpl).not.toHaveBeenCalled()
 })

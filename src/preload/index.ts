@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { LrclibRecord } from '../shared/lrclib'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { PreviewAnalysisRequest, PreviewAnalysisResult } from '../shared/previewAnalysis'
+import type { ToolId, ToolReadinessSnapshot, ToolReadinessState } from '../shared/runtimeTools'
 import type { CoverPreviewResult, TrackEditSaveRequest } from '../shared/trackEdit'
 import { DEFAULT_GUIDE_VOCAL_DB, IPC_CHANNELS } from '../shared/types'
 import type {
@@ -128,6 +129,12 @@ const api = {
   retryBootstrap: (): Promise<BootstrapState> => ipcRenderer.invoke(IPC_CHANNELS.bootstrapRetry),
   onBootstrapState: (callback: (state: BootstrapState) => void): (() => void) =>
     subscribe(IPC_CHANNELS.bootstrapState, callback),
+  getToolReadiness: (): Promise<ToolReadinessSnapshot> =>
+    ipcRenderer.invoke(IPC_CHANNELS.toolReadinessGet),
+  onToolReadiness: (callback: (state: ToolReadinessState) => void): (() => void) =>
+    subscribe(IPC_CHANNELS.toolReadinessState, callback),
+  retryToolReadiness: (toolId: ToolId): Promise<ToolReadinessSnapshot> =>
+    ipcRenderer.invoke(IPC_CHANNELS.toolReadinessRetry, toolId),
   /** 배포 채널별 기능 플래그 (스펙 001 §4.3). urlImport가 false면 URL UI를 그리지 않는다 */
   getCapabilities: (): Promise<AppCapabilities> => ipcRenderer.invoke(IPC_CHANNELS.capabilities),
   importUrl: (url: string, userMeta?: ImportUserMeta): Promise<ImportFilesResponse> =>

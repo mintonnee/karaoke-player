@@ -45,10 +45,10 @@ if (command === 'propose') {
 if (command === 'verify-package') {
   const target = argValue(args, '--target')
   const input = argValue(args, '--input')
-  if ((target !== 'zip' && target !== 'appx') || !input) {
+  if ((target !== 'nsis' && target !== 'zip' && target !== 'appx') || !input) {
     fail(
       [],
-      'usage: node scripts/runtime-lock/cli.mjs verify-package --target zip|appx --input <dir>'
+      'usage: node scripts/runtime-lock/cli.mjs verify-package --target nsis|zip|appx --input <app-directory>'
     )
   }
   const result = verifyPackage({

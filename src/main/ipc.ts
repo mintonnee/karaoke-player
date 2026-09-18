@@ -6,13 +6,24 @@ import { ALLOWED_COVER_EXT } from '../shared/trackEdit'
 import type { CoverPreviewResult, TrackEditSaveRequest } from '../shared/trackEdit'
 import { isRuntimeActionAllowed, runtimeActionRejection } from '../shared/bootstrap'
 import {
+  isToolId,
+  isToolReady,
+  type ToolId,
+  type ToolReadinessSnapshot
+} from '../shared/runtimeTools'
+import {
   previewAnalysisFailure,
   previewAnalysisFieldOf,
   previewAnalysisRuntimeRejection,
   sanitizePreviewAnalysisRequest,
   type PreviewAnalysisResult
 } from '../shared/previewAnalysis'
-import { IPC_CHANNELS, isRegisteredDemucsModel, sanitizeImportUserMeta } from '../shared/types'
+import {
+  IPC_CHANNELS,
+  isRegisteredDemucsModel,
+  sanitizeImportUserMeta,
+  youtubePreviewMessage
+} from '../shared/types'
 import type {
   AlignLang,
   AlignedLine,
@@ -67,6 +78,13 @@ export interface IpcDeps {
   /** URL 임포트가 꺼진 실행(MSIX판·리소스 미배치)에서는 null */
   ytDlpService: YtDlpService | null
   previewService: YoutubePreviewService | null
+  /** 준비·재시도 후 생성된 서비스를 요청 시점에 조회한다. */
+  getUrlServices?: () => {
+    ytDlpService: YtDlpService | null
+    previewService: YoutubePreviewService | null
+  }
+  getToolReadiness?: () => ToolReadinessSnapshot
+  retryToolReadiness?: (toolId: ToolId) => Promise<ToolReadinessSnapshot>
   trackEditService: TrackEditService
   coverService: CoverService
   analysisService: AnalysisService
@@ -85,6 +103,9 @@ export function registerIpcHandlers({
   capabilities,
   ytDlpService,
   previewService,
+  getUrlServices = () => ({ ytDlpService, previewService }),
+  getToolReadiness,
+  retryToolReadiness,
   trackEditService,
   coverService,
   analysisService,
@@ -96,6 +117,22 @@ export function registerIpcHandlers({
     const state = getBootstrapState()
     return isRuntimeActionAllowed(state) ? null : state
   }
+
+  const urlToolsReady = (): boolean => {
+    if (!getToolReadiness) return true
+    const snapshot = getToolReadiness()
+    return isToolReady(snapshot, 'deno') && isToolReady(snapshot, 'yt-dlp')
+  }
+
+  ipcMain.handle(IPC_CHANNELS.toolReadinessGet, (): ToolReadinessSnapshot => {
+    if (!getToolReadiness) throw new Error('도구 준비 상태를 확인할 수 없습니다')
+    return getToolReadiness()
+  })
+  ipcMain.handle(IPC_CHANNELS.toolReadinessRetry, (_event, raw: unknown) => {
+    if (!isToolId(raw)) throw new Error('지원하지 않는 도구입니다')
+    if (!retryToolReadiness) throw new Error('도구를 다시 준비할 수 없습니다')
+    return retryToolReadiness(raw)
+  })
 
   // 렌더러가 cover.jpg 등 트랙 파일의 media:// URL을 만들 때 쓴다
   ipcMain.handle(IPC_CHANNELS.tracksDir, (): string => tracksDir)
@@ -360,7 +397,13 @@ export function registerIpcHandlers({
           rejected: [runtimeActionRejection(blocked, filePath)]
         })
       }
-      const service = ytDlpService
+      if (capabilities.urlImport && !urlToolsReady()) {
+        return Promise.resolve({
+          imported: [],
+          rejected: [{ filePath, reason: youtubePreviewMessage('TOOLS_NOT_READY') }]
+        })
+      }
+      const { ytDlpService: service, previewService: currentPreview } = getUrlServices()
       const precheck = precheckImportUrl(url, Boolean(capabilities.urlImport && service))
       if (precheck.action === 'reject') return Promise.resolve(precheck.response)
       if (!service) {
@@ -369,15 +412,27 @@ export function registerIpcHandlers({
           rejected: [{ filePath, reason: URL_IMPORT_DISABLED_REASON }]
         })
       }
-      previewService?.abortActive(event.sender)
+      currentPreview?.abortActive(event.sender)
       return importGate.run(async () => {
-        if (previewService) {
-          const confirmed = await previewService.confirmReadyForImport(event.sender, precheck.url)
+        if (!urlToolsReady()) {
+          return {
+            imported: [],
+            rejected: [{ filePath, reason: youtubePreviewMessage('TOOLS_NOT_READY') }]
+          }
+        }
+        if (currentPreview) {
+          const confirmed = await currentPreview.confirmReadyForImport(event.sender, precheck.url)
           if (!confirmed.ok) {
             return {
               imported: [],
               rejected: [{ filePath, reason: confirmed.reason }]
             }
+          }
+        }
+        if (!urlToolsReady()) {
+          return {
+            imported: [],
+            rejected: [{ filePath, reason: youtubePreviewMessage('TOOLS_NOT_READY') }]
           }
         }
         return service.importUrl(precheck.url, sanitizeImportUserMeta(userMeta))
@@ -389,20 +444,24 @@ export function registerIpcHandlers({
     IPC_CHANNELS.previewYoutube,
     (event, raw: unknown): Promise<YoutubePreviewResult> => {
       const { requestId, url } = previewRequestFields(raw)
-      if (!capabilities.urlImport || !previewService) {
+      if (!capabilities.urlImport) {
         return Promise.resolve(previewErrorResult(requestId, 'DISABLED'))
+      }
+      const currentPreview = getUrlServices().previewService
+      if (!urlToolsReady() || !currentPreview) {
+        return Promise.resolve(previewErrorResult(requestId, 'TOOLS_NOT_READY'))
       }
       const parsed = parseYoutubeVideoUrl(url)
       if (!parsed.ok) {
         return Promise.resolve(previewErrorResult(requestId, 'INVALID_URL'))
       }
-      return previewService.preview(event.sender, { requestId, url: parsed.canonicalUrl })
+      return currentPreview.preview(event.sender, { requestId, url: parsed.canonicalUrl })
     }
   )
 
   ipcMain.handle(IPC_CHANNELS.cancelYoutubePreview, (event, raw: unknown): Promise<void> => {
     const { requestId } = previewRequestFields(raw)
-    if (requestId !== '') previewService?.cancel(event.sender, requestId)
+    if (requestId !== '') getUrlServices().previewService?.cancel(event.sender, requestId)
     return Promise.resolve()
   })
 }
@@ -420,7 +479,7 @@ function previewRequestFields(raw: unknown): { requestId: string; url: unknown }
 
 function previewErrorResult(
   requestId: string,
-  code: 'DISABLED' | 'INVALID_URL'
+  code: 'DISABLED' | 'INVALID_URL' | 'TOOLS_NOT_READY'
 ): YoutubePreviewResult {
   return buildYoutubePreviewResult({
     requestId,

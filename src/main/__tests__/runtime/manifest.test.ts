@@ -8,6 +8,12 @@ import {
   computeSidecarSourceDigest,
   verifyManifest
 } from '../../runtime'
+import {
+  MANIFEST_SCHEMA_VERSION,
+  buildRuntimeManifest,
+  validateRuntimeManifestShape
+} from '../../runtime/manifest'
+import { getDistributionPolicy } from '../../runtime/schema'
 import { miniLocks, miniManifest, writeMiniSidecar } from './helpers'
 
 let root: string
@@ -122,4 +128,69 @@ describe('verifyManifest / runtimeId', () => {
     expect(result.ok).toBe(false)
     expect(result.errors.some((e) => e.code === ERROR_CODES.HASH_MISMATCH)).toBe(true)
   })
+
+  it('interpreter와 modelsDigest 입력 불일치를 거부한다', async () => {
+    const { manifest, locks } = await miniManifest(sidecar)
+    const broken = {
+      ...manifest,
+      interpreter: { ...manifest.interpreter, patch: '3.12.15' },
+      modelsDigest: '0'.repeat(64)
+    }
+
+    const result = await verifyManifest(broken, locks, sidecar)
+    expect(result.ok).toBe(false)
+    expect(result.errors.some((error) => error.id === 'interpreter.patch')).toBe(true)
+    expect(result.errors.some((error) => error.id === 'modelsDigest')).toBe(true)
+  })
+
+  it.each([
+    ['nsis', true, { uv: 'download', deno: 'download', 'yt-dlp': 'download' }],
+    ['zip', true, { uv: 'bundled', deno: 'bundled', 'yt-dlp': 'bundled' }],
+    ['appx', false, { uv: 'bundled', deno: 'bundled', 'yt-dlp': 'disabled' }]
+  ] as const)(
+    '%s manifest에 정확한 배포 정책을 기록한다',
+    async (distribution, urlImport, delivery) => {
+      const locks = miniLocks()
+      const manifest = await buildRuntimeManifest(locks, sidecar, distribution)
+
+      expect(manifest.schemaVersion).toBe(MANIFEST_SCHEMA_VERSION)
+      expect(manifest.distribution).toBe(distribution)
+      expect(manifest.capabilities).toEqual({ urlImport })
+      expect(manifest.toolDelivery).toEqual(delivery)
+      expect(validateRuntimeManifestShape(manifest)).toEqual([])
+    }
+  )
+
+  it('배포 정책은 runtimeId를 바꾸지 않는다', async () => {
+    const locks = miniLocks()
+    const nsis = await buildRuntimeManifest(locks, sidecar, 'nsis')
+    const zip = await buildRuntimeManifest(locks, sidecar, 'zip')
+    const appx = await buildRuntimeManifest(locks, sidecar, 'appx')
+
+    expect(nsis.runtimeId).toBe(zip.runtimeId)
+    expect(appx.runtimeId).toBe(zip.runtimeId)
+  })
+
+  it('배포 채널과 다른 capability·delivery를 거부한다', async () => {
+    const { manifest, locks } = await miniManifest(sidecar)
+    const broken = {
+      ...manifest,
+      capabilities: { urlImport: false },
+      toolDelivery: { ...manifest.toolDelivery, uv: 'download' }
+    }
+
+    const result = await verifyManifest(broken, locks, sidecar)
+    expect(result.ok).toBe(false)
+    expect(result.errors.some((error) => error.id === 'capabilities.urlImport')).toBe(true)
+    expect(result.errors.some((error) => error.id === 'toolDelivery.uv')).toBe(true)
+  })
+
+  it.each([null, {}, { schemaVersion: 2 }, { ...getDistributionPolicy('zip'), schemaVersion: 2 }])(
+    'malformed manifest를 예외 없이 거부한다',
+    async (malformed) => {
+      const result = await verifyManifest(malformed, miniLocks(), sidecar)
+      expect(result.ok).toBe(false)
+      expect(result.errors.some((error) => error.code === ERROR_CODES.SCHEMA_ERROR)).toBe(true)
+    }
+  )
 })

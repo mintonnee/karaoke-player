@@ -1,11 +1,45 @@
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ToolId, ToolReadinessSnapshot } from '../../../shared/runtimeTools'
 import type { BootstrapState } from '../../../shared/types'
 import type { AppErrorEntry } from '../stores/errorStore'
 
 function bootstrap(patch: Partial<BootstrapState> = {}): BootstrapState {
   return { status: 'checking', message: '확인 중', error: null, log: [], ...patch }
+}
+
+function toolSnapshot(
+  patch: Partial<Record<ToolId, Partial<ToolReadinessSnapshot['tools'][ToolId]>>> = {}
+): ToolReadinessSnapshot {
+  const state = (toolId: ToolId): ToolReadinessSnapshot['tools'][ToolId] => ({
+    toolId,
+    status: 'ready',
+    downloadedBytes: null,
+    totalBytes: null,
+    error: null,
+    retryable: false,
+    ...patch[toolId]
+  })
+  return { tools: { uv: state('uv'), deno: state('deno'), 'yt-dlp': state('yt-dlp') } }
+}
+
+function readyToolProps(): {
+  toolSnapshot: ToolReadinessSnapshot
+  toolsLoaded: boolean
+  toolLoadError: null
+  toolRetrying: Record<ToolId, boolean>
+  toolRetryErrors: Record<ToolId, string | null>
+  onToolRetry: (toolId: ToolId) => void
+} {
+  return {
+    toolSnapshot: toolSnapshot(),
+    toolsLoaded: true,
+    toolLoadError: null,
+    toolRetrying: { uv: false, deno: false, 'yt-dlp': false },
+    toolRetryErrors: { uv: null, deno: null, 'yt-dlp': null },
+    onToolRetry: vi.fn<(toolId: ToolId) => void>()
+  }
 }
 
 describe('notification center rendering', () => {
@@ -28,6 +62,7 @@ describe('notification center rendering', () => {
 
     const html = renderToStaticMarkup(
       React.createElement(NotificationCenter, {
+        ...readyToolProps(),
         onClose: vi.fn(),
         entries: [],
         state: bootstrap({ status: 'ready', message: '준비 완료' }),
@@ -56,6 +91,7 @@ describe('notification center rendering', () => {
 
     const html = renderToStaticMarkup(
       React.createElement(NotificationCenter, {
+        ...readyToolProps(),
         onClose: vi.fn(),
         entries: [],
         state,
@@ -85,6 +121,7 @@ describe('notification center rendering', () => {
 
     const html = renderToStaticMarkup(
       React.createElement(NotificationCenter, {
+        ...readyToolProps(),
         onClose: vi.fn(),
         entries: [entry],
         state: bootstrap({
@@ -120,6 +157,7 @@ describe('notification center rendering', () => {
 
     const html = renderToStaticMarkup(
       React.createElement(NotificationCenter, {
+        ...readyToolProps(),
         onClose: vi.fn(),
         entries,
         state: bootstrap({ status: 'ready', message: '준비 완료' }),
@@ -133,5 +171,44 @@ describe('notification center rendering', () => {
     expect(html.match(/class="error-item"/g)).toHaveLength(50)
     expect(html).toContain(longMessage)
     expect(html.match(/class="error-list"/g)).toHaveLength(1)
+  })
+
+  it('도구별 진행률과 실패 단계, 실행 가능한 재시도를 표시한다', async () => {
+    const { NotificationCenter } = await import('./ErrorCenter')
+    const onToolRetry = vi.fn<(toolId: ToolId) => void>()
+    const html = renderToStaticMarkup(
+      React.createElement(NotificationCenter, {
+        ...readyToolProps(),
+        onClose: vi.fn(),
+        entries: [],
+        state: bootstrap({ status: 'ready', message: '준비 완료' }),
+        retrying: false,
+        retryError: null,
+        toolSnapshot: toolSnapshot({
+          deno: {
+            status: 'downloading',
+            downloadedBytes: 1024,
+            totalBytes: 2048
+          },
+          'yt-dlp': {
+            status: 'error',
+            error: 'HTTP 429',
+            retryable: true
+          }
+        }),
+        toolRetrying: { uv: false, deno: false, 'yt-dlp': false },
+        onToolRetry,
+        remove: vi.fn(),
+        clear: vi.fn(),
+        onRetry: vi.fn()
+      })
+    )
+
+    expect(html).toContain('도구 준비 상태')
+    expect(html).toContain('1.0 KB / 2.0 KB')
+    expect(html).toContain('yt-dlp')
+    expect(html).toContain('stage=error')
+    expect(html).toContain('HTTP 429')
+    expect(html).toContain('>다시 시도</button>')
   })
 })

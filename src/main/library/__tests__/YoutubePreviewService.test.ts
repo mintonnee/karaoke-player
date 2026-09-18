@@ -558,6 +558,31 @@ describe('YoutubePreviewService', () => {
     preview.dispose()
   })
 
+  it('이전 실행 성공 후에도 다음 spawn 직전에 바이너리를 재검증한다', async () => {
+    let tampered = false
+    const preview = new YoutubePreviewService({
+      command: process.execPath,
+      baseArgs: [FAKE_YTDLP],
+      denoPath: join(root, 'deno.exe'),
+      fetchImpl: okFetch(),
+      onLog: () => {},
+      ytDlpHash: { sha256: 'a'.repeat(64), size: 1, id: 'yt-dlp' },
+      verifyCommand: () => {
+        if (tampered) throw new Error('sha256 mismatch')
+      }
+    })
+    try {
+      const s = sender()
+      expect((await preview.preview(s, req('readyM4a000', 'verify:1'))).code).toBe('READY')
+      const count = preview.spawnCount()
+      tampered = true
+      expect((await preview.preview(s, req('readyM4a000', 'verify:2'))).status).toBe('error')
+      expect(preview.spawnCount()).toBe(count)
+    } finally {
+      preview.dispose()
+    }
+  })
+
   it('60초 캐시를 재사용하고 만료·정책·바이너리 불일치는 재검사한다', async () => {
     let now = 1_700_000_000_000
     const options: YoutubePreviewServiceOptions = {

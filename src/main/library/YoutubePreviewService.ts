@@ -282,7 +282,6 @@ export class YoutubePreviewService {
   private readonly lastRequestId = new Map<number, string>()
   private readonly running = new Set<ChildProcess>()
   private disposed = false
-  private binariesVerified = false
   private spawns = 0
 
   constructor(private readonly options: YoutubePreviewServiceOptions) {}
@@ -756,7 +755,6 @@ export class YoutubePreviewService {
   }
 
   private verifyBinaries(): void {
-    if (this.binariesVerified) return
     const verify = this.options.verifyCommand
     if (verify) {
       if (this.options.ytDlpHash) verify(this.options.command, this.options.ytDlpHash)
@@ -764,7 +762,6 @@ export class YoutubePreviewService {
     } else if (this.options.ytDlpHash || this.options.denoHash) {
       throw new Error('yt-dlp hash spec requires verifyCommand')
     }
-    this.binariesVerified = true
   }
 
   private formatPolicy(): string {

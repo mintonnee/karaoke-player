@@ -413,4 +413,34 @@ describe('YtDlpService', () => {
     expect(response.rejected[0].reason).toContain('종료 중')
     expect(imported).toEqual([])
   })
+
+  it('성공한 뒤 바이너리가 변조되어도 다음 실행 전에 다시 검증한다', async () => {
+    let tampered = false
+    const service = new YtDlpService({
+      command: process.execPath,
+      baseArgs: [FAKE_YTDLP],
+      denoPath: join(root, 'deno.exe'),
+      scratchRoot,
+      tracksDir,
+      ytDlpHash: { sha256: 'a'.repeat(64), size: 1, id: 'yt-dlp' },
+      verifyCommand: () => {
+        if (tampered) throw new Error('sha256 mismatch')
+      },
+      importFiles: async (files) => {
+        imported.push(files)
+        return importResult
+      },
+      notify: () => {},
+      onLog: () => {}
+    })
+    try {
+      expect((await service.importUrl('https://youtu.be/okM4aAudio0')).imported).toHaveLength(1)
+      tampered = true
+      const result = await service.importUrl('https://youtu.be/okM4aAudio0')
+      expect(result.rejected[0].reason).toContain('sha256 mismatch')
+      expect(imported).toHaveLength(1)
+    } finally {
+      service.dispose()
+    }
+  })
 })

@@ -1,3 +1,14 @@
+export {
+  TOOL_IDS,
+  TOOL_READINESS_STATUSES,
+  isToolId,
+  isToolReady,
+  type ToolId,
+  type ToolReadinessSnapshot,
+  type ToolReadinessState,
+  type ToolReadinessStatus
+} from './runtimeTools'
+
 /** §4.2 probe 결과. 사이드카 done.result와 1:1 대응 */
 export interface ProbeResult {
   duration: number
@@ -225,6 +236,7 @@ export const YOUTUBE_PREVIEW_ERROR_CODES = [
   'EXTRACTOR_ERROR',
   'UNKNOWN',
   'INVALID_URL',
+  'TOOLS_NOT_READY',
   'DISABLED'
 ] as const
 
@@ -309,6 +321,7 @@ export const YOUTUBE_PREVIEW_MESSAGES: Record<YoutubePreviewCode, string> = {
   EXTRACTOR_ERROR: '확인하지 못했습니다. 다시 시도해 주세요',
   UNKNOWN: '확인하지 못했습니다. 다시 시도해 주세요',
   INVALID_URL: '올바른 YouTube 동영상 URL을 입력하세요',
+  TOOLS_NOT_READY: 'YouTube 도구를 준비하고 있습니다. 잠시 후 다시 시도해 주세요',
   DISABLED: URL_IMPORT_DISABLED_REASON,
   CANCELLED: '확인이 취소되었습니다'
 }
@@ -611,6 +624,9 @@ export const IPC_CHANNELS = {
   bootstrapGet: 'bootstrap:get',
   bootstrapRetry: 'bootstrap:retry',
   bootstrapState: 'bootstrap:state',
+  toolReadinessGet: 'runtime-tools:get',
+  toolReadinessRetry: 'runtime-tools:retry',
+  toolReadinessState: 'runtime-tools:state',
   capabilities: 'app:capabilities',
   importUrl: 'library:import-url',
   previewYoutube: 'library:preview-youtube',

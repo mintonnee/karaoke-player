@@ -6,7 +6,14 @@
   },
   "yt-dlp": {
     "source": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/SHA2-256SUMS",
-    "line": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a  yt-dlp.exe"
+    "line": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a  yt-dlp.exe",
+    "projectLicense": "Unlicense",
+    "windowsBinaryBuild": "PyInstaller standalone executable",
+    "windowsBinaryCombinedLicense": "GPL-3.0-or-later",
+    "licensingEvidence": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/README.md#licensing",
+    "thirdPartyLicenses": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/THIRD_PARTY_LICENSES.txt",
+    "correspondingSource": "https://github.com/yt-dlp/yt-dlp/releases/tag/2026.08.19",
+    "reviewedAt": "2026-09-18"
   },
   "deno": {
     "source": "https://github.com/denoland/deno/releases/download/v2.9.6/deno-x86_64-pc-windows-msvc.zip.sha256sum",

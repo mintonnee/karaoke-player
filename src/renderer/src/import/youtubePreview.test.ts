@@ -103,7 +103,7 @@ interface Harness {
   >
 }
 
-function createHarness(): Harness {
+function createHarness(toolsReady = true): Harness {
   const pending = new Map<
     string,
     {
@@ -121,7 +121,7 @@ function createHarness(): Harness {
     previewYoutube: preview,
     cancelYoutubePreview: cancel
   }
-  const controller = createYoutubePreviewController({ sessionId: SESSION, api })
+  const controller = createYoutubePreviewController({ sessionId: SESSION, api, toolsReady })
   return { controller, preview, cancel, pending }
 }
 
@@ -389,6 +389,38 @@ describe('YoutubePreviewController', () => {
     expect(harness.controller.snapshot().description).toBe(youtubePreviewMessage('UNKNOWN'))
     harness.controller.retry()
     expect(harness.preview).toHaveBeenCalledTimes(2)
+    harness.controller.dispose()
+  })
+
+  it('도구 준비 전 입력은 IPC 없이 보존하고 준비 직후 자동 조회한다', async () => {
+    const harness = createHarness(false)
+    harness.controller.setMethod('url')
+    harness.controller.setUrl(URL_A)
+    await vi.advanceTimersByTimeAsync(YOUTUBE_PREVIEW_DEBOUNCE_MS)
+    expect(harness.preview).not.toHaveBeenCalled()
+    expect(harness.controller.snapshot()).toMatchObject({
+      status: 'error',
+      code: 'TOOLS_NOT_READY',
+      description: youtubePreviewMessage('TOOLS_NOT_READY'),
+      showRetry: false,
+      url: URL_A
+    })
+
+    harness.controller.setToolsReady(true)
+    expect(harness.controller.snapshot().status).toBe('debouncing')
+    await vi.advanceTimersByTimeAsync(YOUTUBE_PREVIEW_DEBOUNCE_MS)
+    expect(harness.preview).toHaveBeenCalledTimes(1)
+    expect(harness.preview).toHaveBeenCalledWith({ requestId: `${SESSION}:1`, url: URL_A })
+    harness.controller.dispose()
+  })
+
+  it('도구가 다시 준비되지 않으면 수동 재확인도 IPC를 호출하지 않는다', () => {
+    const harness = createHarness(false)
+    harness.controller.setMethod('url')
+    harness.controller.setUrl(URL_A)
+    harness.controller.retry()
+    expect(harness.preview).not.toHaveBeenCalled()
+    expect(harness.controller.snapshot().code).toBe('TOOLS_NOT_READY')
     harness.controller.dispose()
   })
 

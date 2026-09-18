@@ -534,6 +534,32 @@
   color: #e3922a;
 }
 
+.import-url-readiness {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(227, 146, 42, 0.35);
+  border-radius: 6px;
+  background-color: rgba(227, 146, 42, 0.07);
+  color: var(--ev-c-text-2);
+  font-size: 11px;
+}
+
+.import-url-readiness strong {
+  color: #e3922a;
+  font-weight: 600;
+}
+
+.import-url-readiness.is-ready {
+  border-color: rgba(51, 204, 153, 0.3);
+  background-color: rgba(51, 204, 153, 0.06);
+}
+
+.import-url-readiness.is-ready strong {
+  color: #3c9;
+}
+
 .import-url-retry {
   flex-shrink: 0;
   padding: 0 6px;

@@ -1,67 +1,75 @@
-import { execFileSync } from 'child_process'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs'
-import { tmpdir } from 'os'
+import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
 
 const repoRoot = process.cwd()
-const cli = join(repoRoot, 'scripts', 'runtime-lock', 'cli.mjs')
+const read = (name: string): string => readFileSync(join(repoRoot, name), 'utf8')
 
-function fixture(names: string[]): string {
-  const input = mkdtempSync(join(tmpdir(), 'karaoke-pkg-'))
-  mkdirSync(join(input, 'resources', 'bin'), { recursive: true })
-  mkdirSync(join(input, 'resources', 'sidecar'), { recursive: true })
-  writeFileSync(join(input, 'resources', 'sidecar', 'pyproject.toml'), '')
-  writeFileSync(join(input, 'resources', 'sidecar', 'uv.lock'), '')
-  for (const name of names) writeFileSync(join(input, 'resources', 'bin', name), 'x')
-  return input
-}
-
-function runVerifyPackage(target: 'zip' | 'appx', input: string): { ok: boolean; output: string } {
-  try {
-    const output = execFileSync(
-      process.execPath,
-      [cli, 'verify-package', '--target', target, '--input', input],
-      { encoding: 'utf8', cwd: repoRoot }
-    )
-    return { ok: true, output }
-  } catch (error) {
-    const err = error as { stdout?: string; stderr?: string; message?: string }
-    return { ok: false, output: `${err.stdout ?? ''}${err.stderr ?? err.message ?? ''}` }
-  }
-}
-
-describe('verify-package fixtures', () => {
-  it('ZIP fixture includes yt-dlp', () => {
-    const result = runVerifyPackage('zip', fixture(['uv.exe', 'yt-dlp.exe', 'deno.exe']))
-    expect(result.ok, result.output).toBe(true)
+describe('NSIS electron-builder policy', () => {
+  it('uses a per-user one-click installer that preserves user data', () => {
+    const config = read('electron-builder.nsis.mjs')
+    expect(config).toContain("target: [{ target: 'nsis', arch: ['x64'] }]")
+    expect(config).toContain('oneClick: true')
+    expect(config).toContain('perMachine: false')
+    expect(config).toContain('runAfterFinish: false')
+    expect(config).toContain('deleteAppDataOnUninstall: false')
+    expect(config).toContain('createDesktopShortcut: false')
+    expect(config).toContain('createStartMenuShortcut: true')
+    expect(config).not.toContain('useZip')
+    expect(config).not.toContain('allowElevation')
   })
 
-  it('APPX fixture without yt-dlp is OK', () => {
-    const result = runVerifyPackage('appx', fixture(['uv.exe', 'deno.exe']))
-    expect(result.ok, result.output).toBe(true)
-  })
-
-  it('missing uv.exe fails verify-package', () => {
-    const result = runVerifyPackage('zip', fixture(['yt-dlp.exe', 'deno.exe']))
-    expect(result.ok).toBe(false)
-    expect(result.output).toMatch(/uv/)
+  it('verifies both the unpacked app and the final embedded installer payload', () => {
+    const config = read('electron-builder.nsis.mjs')
+    expect(config).toContain("verifyPackagedApp('nsis', context)")
+    expect(config).toContain('afterAllArtifactBuild')
+    expect(config).toContain('verifyInstaller({')
+    expect(config).toContain("process.argv.includes('--dir')")
   })
 })
 
-describe('builder extraResources', () => {
-  it('zip includes yt-dlp and locks/manifest; appx omits yt-dlp', () => {
-    const zip = readFileSync(join(repoRoot, 'electron-builder.zip.mjs'), 'utf8')
-    const appx = readFileSync(join(repoRoot, 'electron-builder.msix.mjs'), 'utf8')
-    const shared = readFileSync(join(repoRoot, 'electron-builder.manifest.mjs'), 'utf8')
-    expect(zip).toContain("extraResourcesFor('zip')")
-    expect(appx).toContain("extraResourcesFor('appx')")
-    expect(shared).toContain("from: 'resources/bin/yt-dlp.exe'")
-    expect(shared).toContain("to: 'bin/yt-dlp.exe'")
-    expect(shared).toContain("from: 'build/locks'")
-    expect(shared).toContain("to: 'runtime-manifest.json'")
-    expect(shared).toMatch(/if \(target === 'zip'\)/)
-    expect(shared).not.toContain('uvw.exe')
-    expect(shared).not.toContain('uvx.exe')
+describe('target-isolated runtime staging', () => {
+  it('writes schema v2 policy manifests without adding distribution to runtimeId', () => {
+    const manifest = read('electron-builder.manifest.mjs')
+    expect(manifest).toContain("join(root, 'dist', 'runtime-staging', target)")
+    expect(manifest).toContain('schemaVersion: 2')
+    expect(manifest).toContain('distribution: target')
+    expect(manifest).toContain('capabilities: { ...policy.capabilities }')
+    expect(manifest).toContain('toolDelivery: { ...policy.toolDelivery }')
+    const runtimeIdBlock = manifest.slice(
+      manifest.indexOf('const runtimeId = digestCanonical'),
+      manifest.indexOf('const policy = getDistributionPolicy', manifest.indexOf('const runtimeId'))
+    )
+    expect(runtimeIdBlock).not.toContain('distribution: target')
+    expect(runtimeIdBlock).not.toContain('toolDelivery')
+  })
+
+  it('selects bundled tools only and keeps NSIS tool-free', () => {
+    const manifest = read('electron-builder.manifest.mjs')
+    expect(manifest).toContain("if (delivery !== 'bundled') continue")
+    expect(manifest).toContain('from: `${staging}/resources/bin/${id}.exe`')
+    expect(manifest).toContain("to: 'runtime-manifest.json'")
+    expect(manifest).toContain("to: 'locks'")
+    expect(manifest).toContain("to: 'sidecar'")
+  })
+
+  it('excludes source staging and caches from app.asar', () => {
+    const common = read('electron-builder.yml')
+    expect(common).toContain("'!resources/bin/**'")
+    expect(common).toContain("'!build/**'")
+    expect(common).toContain("'!dist/**'")
+    expect(common).toContain("'!resources/**/*.zip'")
+    expect(common).toContain("'!resources/**/.cache/**'")
+  })
+})
+
+describe('package commands', () => {
+  it('prepares every packaged target explicitly and keeps optionless prepare available', () => {
+    const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> }
+    expect(pkg.scripts['prepare:resources']).toBe('node scripts/prepare-resources.mjs')
+    expect(pkg.scripts['build:nsis']).toContain('prepare:resources -- --target nsis')
+    expect(pkg.scripts['build:unpack:nsis']).toContain('prepare:resources -- --target nsis')
+    expect(pkg.scripts['build:zip']).toContain('prepare:resources -- --target zip')
+    expect(pkg.scripts['build:msix']).toContain('prepare:resources -- --target appx')
   })
 })

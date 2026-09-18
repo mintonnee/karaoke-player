@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { posix as posixPath } from 'path'
+import { TOOL_IDS, isToolId, type ToolId } from '../../shared/runtimeTools'
 
 export const SCHEMA_VERSION = 1
 export const SUPPORTED_PLATFORM = 'win32-x64' as const
@@ -7,6 +8,10 @@ export const LOCK_KINDS = Object.freeze(['tools', 'python', 'models', 'wheels'] 
 export const ARTIFACT_KINDS = Object.freeze(['file', 'archive', 'wheel', 'sdist-build'] as const)
 export const ARCHIVE_FORMATS = Object.freeze(['zip', 'tar.gz'] as const)
 export const CAPABILITIES = Object.freeze(['always', 'zip-url-import'] as const)
+export const RUNTIME_DISTRIBUTIONS = Object.freeze(['nsis', 'zip', 'appx'] as const)
+export const TOOL_DELIVERIES = Object.freeze(['bundled', 'download', 'disabled'] as const)
+
+export { TOOL_IDS, isToolId, type ToolId }
 
 export const SHA256_RE = /^[0-9a-f]{64}$/
 export const GIT_SHA_RE = /^[0-9a-f]{40}$/
@@ -39,6 +44,31 @@ export type LockKind = (typeof LOCK_KINDS)[number]
 export type Capability = (typeof CAPABILITIES)[number]
 export type ArchiveFormat = (typeof ARCHIVE_FORMATS)[number]
 export type SupportedPlatform = typeof SUPPORTED_PLATFORM
+export type RuntimeDistribution = (typeof RUNTIME_DISTRIBUTIONS)[number]
+export type ToolDelivery = (typeof TOOL_DELIVERIES)[number]
+
+export interface DistributionPolicy {
+  readonly capabilities: {
+    readonly urlImport: boolean
+  }
+  readonly toolDelivery: Readonly<Record<ToolId, ToolDelivery>>
+}
+
+const DISTRIBUTION_POLICIES: Readonly<Record<RuntimeDistribution, DistributionPolicy>> =
+  Object.freeze({
+    nsis: Object.freeze({
+      capabilities: Object.freeze({ urlImport: true }),
+      toolDelivery: Object.freeze({ uv: 'download', deno: 'download', 'yt-dlp': 'download' })
+    }),
+    zip: Object.freeze({
+      capabilities: Object.freeze({ urlImport: true }),
+      toolDelivery: Object.freeze({ uv: 'bundled', deno: 'bundled', 'yt-dlp': 'bundled' })
+    }),
+    appx: Object.freeze({
+      capabilities: Object.freeze({ urlImport: false }),
+      toolDelivery: Object.freeze({ uv: 'bundled', deno: 'bundled', 'yt-dlp': 'disabled' })
+    })
+  })
 
 export interface ArchiveMember {
   path: string
@@ -135,6 +165,93 @@ export class LockError extends Error {
       message: this.message
     }
   }
+}
+
+export function isRuntimeDistribution(value: unknown): value is RuntimeDistribution {
+  return typeof value === 'string' && (RUNTIME_DISTRIBUTIONS as readonly string[]).includes(value)
+}
+
+export function getDistributionPolicy(distribution: unknown): DistributionPolicy {
+  if (!isRuntimeDistribution(distribution)) {
+    throw new LockError(
+      ERROR_CODES.SCHEMA_ERROR,
+      `unsupported runtime distribution: ${String(distribution)}`,
+      { id: 'distribution' }
+    )
+  }
+  return DISTRIBUTION_POLICIES[distribution]
+}
+
+export function validateDistributionPolicy(
+  distribution: unknown,
+  capabilities: unknown,
+  toolDelivery: unknown
+): LockError[] {
+  const errors: LockError[] = []
+  let expected: DistributionPolicy
+  try {
+    expected = getDistributionPolicy(distribution)
+  } catch (error) {
+    return [
+      error instanceof LockError
+        ? error
+        : new LockError(ERROR_CODES.SCHEMA_ERROR, 'invalid runtime distribution', {
+            id: 'distribution'
+          })
+    ]
+  }
+
+  if (!hasExactKeys(capabilities, ['urlImport'])) {
+    errors.push(
+      new LockError(ERROR_CODES.SCHEMA_ERROR, 'capabilities must contain only urlImport', {
+        id: 'capabilities'
+      })
+    )
+  } else if (capabilities.urlImport !== expected.capabilities.urlImport) {
+    errors.push(
+      new LockError(
+        ERROR_CODES.SCHEMA_ERROR,
+        `urlImport does not match ${String(distribution)} distribution policy`,
+        { id: 'capabilities.urlImport' }
+      )
+    )
+  }
+
+  if (!hasExactKeys(toolDelivery, TOOL_IDS)) {
+    errors.push(
+      new LockError(
+        ERROR_CODES.SCHEMA_ERROR,
+        'toolDelivery must contain exactly uv, deno, yt-dlp',
+        {
+          id: 'toolDelivery'
+        }
+      )
+    )
+  } else {
+    for (const toolId of TOOL_IDS) {
+      if (toolDelivery[toolId] !== expected.toolDelivery[toolId]) {
+        errors.push(
+          new LockError(
+            ERROR_CODES.SCHEMA_ERROR,
+            `${toolId} delivery does not match ${String(distribution)} distribution policy`,
+            { id: `toolDelivery.${toolId}` }
+          )
+        )
+      }
+    }
+  }
+
+  return errors
+}
+
+function hasExactKeys<T extends string>(
+  value: unknown,
+  keys: readonly T[]
+): value is Record<T, unknown> {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return false
+  const actual = Object.keys(value).sort()
+  const expected = [...keys].sort()
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index])
 }
 
 export function sha256Hex(data: string | Buffer | Uint8Array): string {

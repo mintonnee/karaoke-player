@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { MdClose, MdDeleteOutline, MdOpenInNew } from 'react-icons/md'
 import { buildIssueUrl, sourceLabel } from '../../../shared/issueReport'
+import { TOOL_IDS, type ToolId, type ToolReadinessSnapshot } from '../../../shared/runtimeTools'
 import type { AppInfo, BootstrapState } from '../../../shared/types'
 import { retryBootstrap, useBootstrapStore } from '../stores/bootstrapStore'
 import { useErrorStore } from '../stores/errorStore'
 import type { AppErrorEntry } from '../stores/errorStore'
+import { retryRuntimeTool, useToolReadinessStore } from '../stores/toolReadinessStore'
 import BootstrapScreen from './BootstrapScreen'
+import RuntimeToolsScreen from './RuntimeToolsScreen'
 
 export interface ErrorCenterProps {
   onClose: () => void
@@ -16,9 +19,15 @@ export interface NotificationCenterProps extends ErrorCenterProps {
   state: BootstrapState | null
   retrying: boolean
   retryError: string | null
+  toolSnapshot: ToolReadinessSnapshot
+  toolsLoaded: boolean
+  toolLoadError: string | null
+  toolRetrying: Record<ToolId, boolean>
+  toolRetryErrors: Record<ToolId, string | null>
   remove: (id: string) => void
   clear: () => void
   onRetry: () => void
+  onToolRetry: (toolId: ToolId) => void
 }
 
 const FOCUSABLE =
@@ -39,9 +48,15 @@ export function NotificationCenter({
   state,
   retrying,
   retryError,
+  toolSnapshot,
+  toolsLoaded,
+  toolLoadError,
+  toolRetrying,
+  toolRetryErrors,
   remove,
   clear,
-  onRetry
+  onRetry,
+  onToolRetry
 }: NotificationCenterProps): React.JSX.Element {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -94,6 +109,13 @@ export function NotificationCenter({
   }
 
   const showStatus = state?.status !== 'ready'
+  const showTools =
+    toolLoadError !== null ||
+    !toolsLoaded ||
+    TOOL_IDS.some((toolId) => {
+      const status = toolSnapshot.tools[toolId].status
+      return status !== 'ready' && status !== 'disabled'
+    })
 
   return (
     <div className="modal-overlay" onMouseDown={onClose}>
@@ -119,6 +141,17 @@ export function NotificationCenter({
               retrying={retrying}
               retryError={retryError}
               onRetry={onRetry}
+            />
+          )}
+
+          {showTools && (
+            <RuntimeToolsScreen
+              snapshot={toolSnapshot}
+              loaded={toolsLoaded}
+              loadError={toolLoadError}
+              retrying={toolRetrying}
+              retryErrors={toolRetryErrors}
+              onRetry={onToolRetry}
             />
           )}
 
@@ -174,7 +207,7 @@ export function NotificationCenter({
                 가려지며, 제출 전에 내용을 확인할 수 있습니다.
               </p>
             </section>
-          ) : !showStatus ? (
+          ) : !showStatus && !showTools ? (
             <p className="notification-center-empty">새로운 알림이 없습니다.</p>
           ) : null}
         </div>
@@ -186,6 +219,7 @@ export function NotificationCenter({
 function ErrorCenter({ onClose }: ErrorCenterProps): React.JSX.Element {
   const { entries, remove, clear } = useErrorStore()
   const { state, retrying, retryError } = useBootstrapStore()
+  const tools = useToolReadinessStore()
   return (
     <NotificationCenter
       onClose={onClose}
@@ -193,9 +227,15 @@ function ErrorCenter({ onClose }: ErrorCenterProps): React.JSX.Element {
       state={state}
       retrying={retrying}
       retryError={retryError}
+      toolSnapshot={tools.snapshot}
+      toolsLoaded={tools.loaded}
+      toolLoadError={tools.loadError}
+      toolRetrying={tools.retrying}
+      toolRetryErrors={tools.retryErrors}
       remove={remove}
       clear={clear}
       onRetry={() => void retryBootstrap()}
+      onToolRetry={(toolId) => void retryRuntimeTool(toolId)}
     />
   )
 }

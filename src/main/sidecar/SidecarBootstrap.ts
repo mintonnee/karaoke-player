@@ -29,7 +29,11 @@ export interface SidecarBootstrapOptions {
   /** 기존 경로 보존용. 보통 <userData>/sidecar. 준비 완료 판정에는 쓰지 않는다 */
   targetSidecarDir: string
   /** 패키징 앱의 uv 경로. 해시 검증 후에만 사용 */
-  uvCommand: string
+  uvCommand?: string
+  /** manifest 검증 이후 사용자 캐시의 uv를 준비한다. */
+  prepareUv?: (signal: AbortSignal) => Promise<string>
+  /** URL 도구 준비는 Python 준비와 독립적으로 시작한다. */
+  onManifestVerified?: () => void
   /** 하위 호환. 새 준비 경로에서는 무시한다 */
   syncArgs?: string[]
   env?: NodeJS.ProcessEnv
@@ -256,6 +260,7 @@ export class SidecarBootstrap implements BootstrapController {
 
   private setState(patch: Partial<BootstrapState>): void {
     this.state = { ...this.state, ...patch }
+    if (this.disposed) return
     for (const listener of this.listeners) listener(this.state)
   }
 
@@ -313,7 +318,18 @@ export class SidecarBootstrap implements BootstrapController {
       }
       canRebuild = true
 
+      if (this.disposed) throw new Error('bootstrap disposed')
+      this.options.onManifestVerified?.()
+      let uvCommand = this.options.uvCommand
+      if (this.options.prepareUv) {
+        this.setStage('download', 'uv 실행 도구 준비 중', { logicalId: 'uv' })
+        uvCommand = await this.options.prepareUv(this.prepareAbort.signal)
+      }
+      if (this.disposed) throw new Error('bootstrap disposed')
+      if (!uvCommand) throw new Error('검증된 uv 실행 경로가 필요합니다')
+
       if (await isSidecarReady({ userDataDir, manifest })) {
+        if (this.disposed) throw new Error('bootstrap disposed')
         return this.markReady()
       }
       if (this.disposed) throw new Error('bootstrap disposed')
@@ -334,7 +350,7 @@ export class SidecarBootstrap implements BootstrapController {
         fetchImpl: this.options.fetchImpl,
         skipHostCheck: this.options.skipHostCheck,
         hooks: this.options.envPrep,
-        uvCommand: this.options.uvCommand,
+        uvCommand,
         onLog: (line) => this.log(line)
       })
 
@@ -343,10 +359,13 @@ export class SidecarBootstrap implements BootstrapController {
         throw new Error(result.smoke.error ?? 'runtime smoke failed')
       }
 
+      if (this.disposed) throw new Error('bootstrap disposed')
+
       await writePointer(userDataDir, {
         runtimeId: manifest.runtimeId,
         inputDigests: result.inputDigests ?? runtimeInputDigests(manifest)
       })
+      if (this.disposed) throw new Error('bootstrap disposed')
       return this.markReady()
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

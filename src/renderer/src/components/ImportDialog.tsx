@@ -12,6 +12,7 @@ import {
   MdWarning
 } from 'react-icons/md'
 import { DEMUCS_MODELS, type AppSettings } from '../../../shared/types'
+import type { ToolReadinessStatus } from '../../../shared/runtimeTools'
 import {
   applyAudioTags,
   applyDropToForm,
@@ -50,6 +51,11 @@ import {
 import { isRuntimeActionAllowed } from '../../../shared/bootstrap'
 import { useBootstrapStore } from '../stores/bootstrapStore'
 import { useLibraryStore } from '../stores/libraryStore'
+import {
+  areUrlToolsReady,
+  isImportRuntimeReady,
+  useToolReadinessStore
+} from '../stores/toolReadinessStore'
 
 interface ImportDialogProps {
   initialPaths: string[]
@@ -64,6 +70,15 @@ const METHODS: Array<{ id: ImportMethod; title: string; hint: string; urlOnly?: 
   { id: 'pair', title: 'MR + 가이드 보컬', hint: '가이드 선택 · 스템 분리 안 함' },
   { id: 'url', title: 'YouTube URL', hint: '스템 분리 진행', urlOnly: true }
 ]
+
+const TOOL_STATUS_LABEL: Record<ToolReadinessStatus, string> = {
+  pending: '대기 중',
+  downloading: '다운로드 중',
+  verifying: '검증 중',
+  ready: '준비 완료',
+  error: '준비 실패',
+  disabled: '사용 안 함'
+}
 
 function droppedPaths(event: DragEvent): string[] {
   return Array.from(event.dataTransfer.files).map((file) => window.api.getPathForFile(file))
@@ -80,6 +95,7 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
   const importPair = useLibraryStore((s) => s.importPair)
   const importUrl = useLibraryStore((s) => s.importUrl)
   const bootstrap = useBootstrapStore((s) => s.state)
+  const toolSnapshot = useToolReadinessStore((s) => s.snapshot)
   const runtimeReady = isRuntimeActionAllowed(bootstrap)
   const runtimeBlockedMessage =
     bootstrap?.status === 'error'
@@ -112,7 +128,19 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
   const urlStatusId = useId()
   const urlErrorId = useId()
   const separates = form.method === 'general' || form.method === 'url'
-  const submitReady = canSubmit(form) && (!separates || settings !== null) && runtimeReady
+  const urlToolsReady = areUrlToolsReady(toolSnapshot)
+  const urlToolsFailed =
+    toolSnapshot.tools.deno.status === 'error' || toolSnapshot.tools['yt-dlp'].status === 'error'
+  const submissionRuntimeReady = isImportRuntimeReady(
+    runtimeReady,
+    form.method === 'url',
+    toolSnapshot
+  )
+  const submitBlockedMessage =
+    form.method === 'url' && !urlToolsReady
+      ? 'YouTube 도구 준비 중 · 알림에서 확인'
+      : runtimeBlockedMessage
+  const submitReady = canSubmit(form) && (!separates || settings !== null) && submissionRuntimeReady
   const youtubeThumbSrc = form.coverPath ? null : form.youtubeThumbnailDataUrl
   const youtubeThumbFailed = youtubeThumbSrc != null && failedYoutubeThumb === youtubeThumbSrc
   const youtubeThumb = youtubeThumbFailed ? null : youtubeThumbSrc
@@ -185,6 +213,10 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
   useEffect(() => {
     previewControllerRef.current?.setMethod(form.method)
   }, [form.method])
+
+  useEffect(() => {
+    previewControllerRef.current?.setToolsReady(urlToolsReady)
+  }, [urlToolsReady])
 
   useEffect(() => {
     const previouslyFocused =
@@ -324,7 +356,7 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
   }
 
   const submit = async (): Promise<void> => {
-    if (busyRef.current || !submitReady || !runtimeReady) return
+    if (busyRef.current || !submitReady || !submissionRuntimeReady) return
     const songMeta = songMetaFromForm(form)
     try {
       if (form.method === 'general' && form.generalPath) {
@@ -666,6 +698,26 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
                     <YoutubePreviewStatusIcon status={preview.status} />
                   </span>
                 </div>
+                <div
+                  className={`import-url-readiness${urlToolsReady ? ' is-ready' : ''}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <strong>YouTube 도구</strong>
+                  <span>
+                    Deno {TOOL_STATUS_LABEL[toolSnapshot.tools.deno.status]} · yt-dlp{' '}
+                    {TOOL_STATUS_LABEL[toolSnapshot.tools['yt-dlp'].status]}
+                  </span>
+                  {!urlToolsReady && !urlToolsFailed && (
+                    <span>준비가 끝나면 입력한 URL을 자동으로 확인합니다.</span>
+                  )}
+                  {urlToolsFailed && <span>알림에서 실패한 도구를 다시 시도할 수 있습니다.</span>}
+                  {urlToolsReady && !runtimeReady && (
+                    <span>
+                      미리보기는 가능하며, 가져오기는 실행 환경 준비 후 사용할 수 있습니다.
+                    </span>
+                  )}
+                </div>
                 {form.errors.url && (
                   <p id={urlErrorId} className="import-error" role="alert">
                     {form.errors.url}
@@ -836,7 +888,8 @@ function ImportDialog({ initialPaths, onClose }: ImportDialogProps): React.JSX.E
             <button
               type="submit"
               className="import-submit"
-              disabled={busy || !submitReady || !runtimeReady}
+              disabled={busy || !submitReady}
+              title={!submissionRuntimeReady ? submitBlockedMessage : undefined}
             >
               {submitLabel}
             </button>

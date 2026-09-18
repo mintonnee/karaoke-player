@@ -78,6 +78,7 @@ describe('YoutubePreviewResult 판별 유니온', () => {
     expect(CANCELLED.code).toBe('CANCELLED')
     expect(youtubePreviewStatusForCode('DRM_PROTECTED')).toBe('blocked')
     expect(youtubePreviewStatusForCode('INVALID_URL')).toBe('error')
+    expect(youtubePreviewStatusForCode('TOOLS_NOT_READY')).toBe('error')
     expect(youtubePreviewStatusForCode('DISABLED')).toBe('error')
     expect(youtubePreviewStatusForCode('CANCELLED')).toBe('cancelled')
     expect(youtubePreviewStatusForCode('READY')).toBe('ready')
@@ -171,6 +172,21 @@ describe('parseYoutubePreviewResult', () => {
     expect(disabled.code).toBe('DISABLED')
     expect(disabled.message).toBe(URL_IMPORT_DISABLED_REASON)
   })
+
+  it('지원되지만 도구 준비 전인 상태를 DISABLED와 구분한다', () => {
+    const notReady: YoutubePreviewResult = {
+      requestId: 'sess:10',
+      canonicalUrl: null,
+      status: 'error',
+      code: 'TOOLS_NOT_READY',
+      message: YOUTUBE_PREVIEW_MESSAGES.TOOLS_NOT_READY,
+      checkedAt: null,
+      metadata: null,
+      thumbnailWarning: null
+    }
+    expect(parseYoutubePreviewResult(notReady)).toEqual(notReady)
+    expect(notReady.message).not.toBe(URL_IMPORT_DISABLED_REASON)
+  })
 })
 
 describe('makeYoutubePreviewRequestId', () => {
@@ -194,6 +210,7 @@ describe('YOUTUBE_PREVIEW_MESSAGES', () => {
     )
     expect(YOUTUBE_PREVIEW_MESSAGES.NETWORK).toBe('확인하지 못했습니다. 다시 시도해 주세요')
     expect(YOUTUBE_PREVIEW_MESSAGES.INVALID_URL).toBe('올바른 YouTube 동영상 URL을 입력하세요')
+    expect(YOUTUBE_PREVIEW_MESSAGES.TOOLS_NOT_READY).toContain('준비')
     expect(YOUTUBE_PREVIEW_MESSAGES.DISABLED).toBe(URL_IMPORT_DISABLED_REASON)
   })
 })

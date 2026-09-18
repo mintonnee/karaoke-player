@@ -39,6 +39,17 @@ not covered by the project's Apache-2.0 grant. SoundTouch is the explicitly
 identified source-file exception; it is not a claim that all other dependencies
 are Apache-2.0. See the app's third-party notices for component information.
 
+The `Unlicense` value in `build/locks/tools.lock.json` identifies the yt-dlp
+source project's license. It does not describe the official `yt-dlp.exe` as a
+whole. The locked Windows executable is built with PyInstaller and contains
+GPL-3.0-or-later and other third-party components; upstream therefore licenses
+the combined executable under GPL-3.0-or-later. It is outside this project's
+Apache-2.0 grant. Exact-version licensing evidence, component notices, checksum
+provenance, and corresponding source links are recorded in
+`build/locks/tools.provenance.json`. This distinction applies when the ZIP
+channel bundles the executable and when the NSIS channel downloads it after
+installation.
+
 ## Non-code material
 
 This Apache-2.0 grant does not cover README or other prose documentation

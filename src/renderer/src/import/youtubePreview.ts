@@ -43,6 +43,7 @@ export interface YoutubePreviewLookupApi {
 export interface YoutubePreviewControllerOptions {
   sessionId?: string
   api: YoutubePreviewLookupApi
+  toolsReady?: boolean
   onChange?: (snapshot: YoutubePreviewSnapshot) => void
 }
 
@@ -134,11 +135,13 @@ export class YoutubePreviewController {
   private result: YoutubePreviewResult | null = null
   private timer: ReturnType<typeof setTimeout> | null = null
   private inFlight: InFlightLookup | null = null
+  private toolsReady: boolean
   private disposed = false
 
   constructor(options: YoutubePreviewControllerOptions) {
     this.sessionId = options.sessionId ?? createYoutubePreviewSessionId()
     this.api = options.api
+    this.toolsReady = options.toolsReady ?? true
     this.onChange = options.onChange
   }
 
@@ -158,7 +161,7 @@ export class YoutubePreviewController {
       result: this.result,
       code: this.code,
       invalidReason: this.invalidReason,
-      showRetry: this.status === 'error'
+      showRetry: this.status === 'error' && this.code !== 'TOOLS_NOT_READY'
     }
   }
 
@@ -208,9 +211,38 @@ export class YoutubePreviewController {
     this.reschedule()
   }
 
+  /** 배포 capability와 별개인 Deno/yt-dlp 실행 준비 상태를 반영한다. */
+  setToolsReady(ready: boolean): void {
+    if (this.disposed || this.toolsReady === ready) return
+    this.toolsReady = ready
+    this.clearTimer()
+    this.cancelInFlight()
+    if (ready) {
+      this.resetLookupVisual()
+      this.reschedule()
+      return
+    }
+    this.result = null
+    this.invalidReason = null
+    if (this.method === 'url' && parseYoutubeVideoUrl(this.url).ok) {
+      this.status = 'error'
+      this.code = 'TOOLS_NOT_READY'
+    } else {
+      this.resetLookupVisual()
+    }
+    this.emit()
+  }
+
   retry(): void {
     if (this.disposed || this.method !== 'url' || this.composing) return
     if (!parseYoutubeVideoUrl(this.url).ok) return
+    if (!this.toolsReady) {
+      this.status = 'error'
+      this.code = 'TOOLS_NOT_READY'
+      this.result = null
+      this.emit()
+      return
+    }
     this.clearTimer()
     this.cancelInFlight()
     this.startLookup()
@@ -271,6 +303,14 @@ export class YoutubePreviewController {
       this.emit()
       return
     }
+    if (!this.toolsReady) {
+      this.status = 'error'
+      this.invalidReason = null
+      this.code = 'TOOLS_NOT_READY'
+      this.result = null
+      this.emit()
+      return
+    }
     if (this.composing) {
       if (
         this.status !== 'checking' &&
@@ -323,7 +363,7 @@ export class YoutubePreviewController {
   }
 
   private startLookup(): void {
-    if (this.disposed || this.method !== 'url' || this.composing) return
+    if (this.disposed || this.method !== 'url' || this.composing || !this.toolsReady) return
     const parsed = parseYoutubeVideoUrl(this.url)
     if (!parsed.ok) {
       this.resetLookupVisual()

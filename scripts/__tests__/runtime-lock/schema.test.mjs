@@ -4,9 +4,12 @@ import {
   ERROR_CODES,
   canonicalizeLock,
   digestCanonical,
+  getDistributionPolicy,
   isMutableRevision,
+  isToolId,
   lockDigest,
   validateArtifactShape,
+  validateDistributionPolicy,
   validateLockShape
 } from '../../runtime-lock/schema.mjs'
 import { assertAllowedUrl, redactUrl } from '../../runtime-lock/hosts.mjs'
@@ -94,4 +97,41 @@ test('canonical digest is stable under key reorder', () => {
   const a = canonicalizeLock(baseLock('tools', [validFile]))
   const b = canonicalizeLock(baseLock('tools', [validFile]))
   assert.equal(lockDigest(a), digestCanonical(b))
+})
+
+test('distribution policy maps each target exactly', () => {
+  assert.deepEqual(getDistributionPolicy('nsis'), {
+    capabilities: { urlImport: true },
+    toolDelivery: { uv: 'download', deno: 'download', 'yt-dlp': 'download' }
+  })
+  assert.deepEqual(getDistributionPolicy('zip'), {
+    capabilities: { urlImport: true },
+    toolDelivery: { uv: 'bundled', deno: 'bundled', 'yt-dlp': 'bundled' }
+  })
+  assert.deepEqual(getDistributionPolicy('appx'), {
+    capabilities: { urlImport: false },
+    toolDelivery: { uv: 'bundled', deno: 'bundled', 'yt-dlp': 'disabled' }
+  })
+})
+
+test('distribution policy rejects mismatches and unknown targets', () => {
+  assert.equal(
+    validateDistributionPolicy(
+      'appx',
+      { urlImport: true },
+      { uv: 'bundled', deno: 'bundled', 'yt-dlp': 'bundled' }
+    ).length,
+    2
+  )
+  assert.throws(
+    () => getDistributionPolicy('portable'),
+    (error) => error.code === ERROR_CODES.SCHEMA_ERROR
+  )
+})
+
+test('tool ids are closed to the runtime tool set', () => {
+  assert.equal(isToolId('uv'), true)
+  assert.equal(isToolId('deno'), true)
+  assert.equal(isToolId('yt-dlp'), true)
+  assert.equal(isToolId('python'), false)
 })

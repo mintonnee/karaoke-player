@@ -148,6 +148,88 @@
   border-color: #633;
 }
 
+.notification-tools {
+  flex-shrink: 0;
+  padding: 12px;
+  border: 1px solid var(--ev-c-gray-3);
+  border-radius: 8px;
+  background-color: var(--ev-c-black-mute);
+}
+
+.notification-tools-head,
+.notification-tool-main {
+  display: flex;
+  align-items: center;
+}
+
+.notification-tools-head {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notification-tools-head h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ev-c-text-1);
+}
+
+.notification-tool-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.notification-tool {
+  padding: 9px 10px;
+  border-radius: 6px;
+  background-color: var(--ev-c-black-soft);
+}
+
+.notification-tool-main {
+  gap: 8px;
+}
+
+.notification-tool-icon {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  color: var(--ev-c-text-3);
+}
+
+.notification-tool-icon .notification-status-progress {
+  width: 12px;
+  height: 12px;
+}
+
+.notification-tool.is-ready .notification-tool-icon {
+  color: #64bb7a;
+}
+
+.notification-tool.is-error .notification-tool-icon,
+.notification-tool.is-error .notification-tool-status {
+  color: #e66;
+}
+
+.notification-tool-name {
+  min-width: 52px;
+  font-weight: 700;
+}
+
+.notification-tool-status {
+  flex: 1;
+  color: var(--ev-c-text-2);
+  font-size: 12px;
+}
+
+.notification-tool-stage {
+  margin: 7px 0 0 26px;
+  color: var(--ev-c-text-3);
+  font-family: monospace;
+  font-size: 11px;
+}
+
 .notification-status-head,
 .notification-errors-head,
 .notification-error-actions {

@@ -29,6 +29,12 @@ import { reportError, useErrorStore } from './stores/errorStore'
 import { useLibraryStore } from './stores/libraryStore'
 import { useLyricsStore } from './stores/lyricsStore'
 import { usePlayerStore } from './stores/playerStore'
+import {
+  connectToolReadiness,
+  isToolReadinessInProgress,
+  toolReadinessErrorCount,
+  useToolReadinessStore
+} from './stores/toolReadinessStore'
 import { formatBpmDisplay } from '../../shared/analysisFormat'
 import { isBootstrapInProgress, isRuntimeActionAllowed } from '../../shared/bootstrap'
 import { formatKeyDisplay } from '../../shared/musicKey'
@@ -162,7 +168,9 @@ function TrackRow({
         )}
         <button
           className="icon-btn"
-          title={track.status === 'separating' ? '분리 중에는 폴더를 열 수 없습니다' : '저장 폴더 열기'}
+          title={
+            track.status === 'separating' ? '분리 중에는 폴더를 열 수 없습니다' : '저장 폴더 열기'
+          }
           disabled={track.status === 'separating'}
           onClick={(event) => {
             event.stopPropagation()
@@ -202,6 +210,7 @@ function App(): React.JSX.Element {
     importing,
     urlImporting,
     pairImporting,
+    urlImportAvailable,
     search,
     refresh,
     setSearch,
@@ -240,21 +249,35 @@ function App(): React.JSX.Element {
   const otherModalOpen = showSettings || showHelp || showImport || editingTrack !== null
   const modalOpen = otherModalOpen || notificationOpen
   const bootstrap = useBootstrapStore((s) => s.state)
+  const toolSnapshot = useToolReadinessStore((s) => s.snapshot)
+  const toolLoadError = useToolReadinessStore((s) => s.loadError)
   const importBusy = importing || urlImporting || pairImporting
   const runtimeAllowed = isRuntimeActionAllowed(bootstrap)
   const bootstrapInProgress = isBootstrapInProgress(bootstrap)
+  const toolsInProgress = isToolReadinessInProgress(toolSnapshot)
+  const toolErrors = toolReadinessErrorCount(toolSnapshot) + (toolLoadError ? 1 : 0)
+  const notificationProgress = bootstrapInProgress || toolsInProgress
+  const notificationErrors = unseenErrors + toolErrors
+  const canOpenImport = runtimeAllowed || urlImportAvailable
   const runtimeBlockedMessage =
     bootstrap?.status === 'error'
       ? '실행 환경 준비 실패 · 알림에서 확인'
       : '환경 준비 중 · 알림에서 확인'
 
-  useEffect(() => connectBootstrap(), [])
+  useEffect(() => {
+    const disconnectBootstrap = connectBootstrap()
+    const disconnectTools = connectToolReadiness()
+    return () => {
+      disconnectTools()
+      disconnectBootstrap()
+    }
+  }, [])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
 
-  // yt-dlp 동봉 여부는 실행 중 바뀌지 않으므로 1회만 조회한다 (스펙 001 §4.3)
+  // 배포판의 URL 지원 capability는 실행 중 바뀌지 않으므로 1회만 조회한다.
   useEffect(() => {
     void loadCapabilities()
   }, [loadCapabilities])
@@ -361,7 +384,7 @@ function App(): React.JSX.Element {
   }
 
   const openImport = (): void => {
-    if (importBusy || modalOpen || !runtimeAllowed) return
+    if (importBusy || modalOpen || !canOpenImport) return
     setImportDropPaths([])
     setShowImport(true)
   }
@@ -462,8 +485,14 @@ function App(): React.JSX.Element {
               <button
                 type="button"
                 onClick={openImport}
-                disabled={importBusy || modalOpen || !runtimeAllowed}
-                title={runtimeAllowed ? undefined : runtimeBlockedMessage}
+                disabled={importBusy || modalOpen || !canOpenImport}
+                title={
+                  canOpenImport
+                    ? runtimeAllowed
+                      ? undefined
+                      : 'YouTube 미리보기만 사용할 수 있습니다'
+                    : runtimeBlockedMessage
+                }
               >
                 {importBusy ? '임포트 중…' : '+ 가져오기'}
               </button>
@@ -578,13 +607,13 @@ function App(): React.JSX.Element {
           <button
             ref={notificationButtonRef}
             type="button"
-            className={`icon-btn icon-btn-badge-host${unseenErrors > 0 ? ' has-badge' : ''}${
-              bootstrapInProgress ? ' has-progress' : ''
+            className={`icon-btn icon-btn-badge-host${notificationErrors > 0 ? ' has-badge' : ''}${
+              notificationProgress ? ' has-progress' : ''
             }`}
             aria-label="알림"
             aria-describedby="notification-button-status"
-            title={`알림${bootstrapInProgress ? ' · 환경 준비 중' : ''}${
-              unseenErrors > 0 ? ` · 읽지 않은 오류 ${unseenErrors}건` : ''
+            title={`알림${notificationProgress ? ' · 환경 준비 중' : ''}${
+              notificationErrors > 0 ? ` · 확인할 오류 ${notificationErrors}건` : ''
             }`}
             disabled={otherModalOpen}
             onClick={() => {
@@ -593,17 +622,18 @@ function App(): React.JSX.Element {
             }}
           >
             <MdNotificationsNone aria-hidden="true" />
-            {bootstrapInProgress && (
+            {notificationProgress && (
               <span className="notification-progress-mark" aria-hidden="true" />
             )}
-            {unseenErrors > 0 && (
+            {notificationErrors > 0 && (
               <span className="icon-btn-badge" aria-hidden="true">
-                {unseenErrors > 9 ? '9+' : unseenErrors}
+                {notificationErrors > 9 ? '9+' : notificationErrors}
               </span>
             )}
             <span id="notification-button-status" className="a11y-only">
               {unseenErrors > 0 ? `읽지 않은 오류 ${unseenErrors}건. ` : ''}
-              {bootstrapInProgress ? '환경 준비 중.' : ''}
+              {toolErrors > 0 ? `도구 준비 오류 ${toolErrors}건. ` : ''}
+              {notificationProgress ? '환경 준비 중.' : ''}
             </span>
           </button>
           <button

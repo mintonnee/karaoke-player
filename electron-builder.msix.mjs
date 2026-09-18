@@ -2,7 +2,11 @@
  * MSIX(appx, Store 제출용) 타깃 — 스펙 001 §4.2, 008 기준 9.
  * Store 정책상 yt-dlp.exe 만 제외한다. lock·runtime-manifest 는 포함한다.
  */
-import { extraResourcesFor, writeRuntimeManifest } from './electron-builder.manifest.mjs'
+import {
+  extraResourcesFor,
+  verifyPackagedApp,
+  writeRuntimeManifest
+} from './electron-builder.manifest.mjs'
 
 const env = process.env
 
@@ -25,6 +29,9 @@ export default {
   },
   extraResources: extraResourcesFor('appx'),
   beforePack: async () => {
-    await writeRuntimeManifest()
+    await writeRuntimeManifest({ target: 'appx' })
+  },
+  afterPack: async (context) => {
+    await verifyPackagedApp('appx', context)
   }
 }

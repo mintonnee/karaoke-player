@@ -4,15 +4,15 @@
 
 ## 파일
 
-| 경로                            | 역할                                                                  |
-| ------------------------------- | --------------------------------------------------------------------- |
-| `build/locks/tools.lock.json`   | uv·yt-dlp·Deno 자산 (archive면 외부 hash + 추출 파일 hash)            |
-| `build/locks/python.lock.json`  | CPython 3.12.x patch·배포 빌드·내부 파일 inventory                    |
-| `build/locks/wheels.lock.json`  | Windows x64 런타임 wheel. `uvLockDigest`가 `sidecar/uv.lock`에 묶인다 |
-| `build/locks/models.lock.json`  | 모델 ID → revision·필요 파일·loader                                   |
-| `build/locks/*.provenance.json` | 각 hash를 어디서 채택했는지                                           |
-| `build/runtime-manifest.json`   | 패키징 시 생성. lock digest + sidecar source digest + runtimeId       |
-| `sidecar/uv.lock`               | Python 해석의 원본. wheel lock과 불일치하면 `verify` 실패             |
+| 경로                                                  | 역할                                                                       |
+| ----------------------------------------------------- | -------------------------------------------------------------------------- |
+| `build/locks/tools.lock.json`                         | uv·yt-dlp·Deno 자산 (archive면 외부 hash + 추출 파일 hash)                 |
+| `build/locks/python.lock.json`                        | CPython 3.12.x patch·배포 빌드·내부 파일 inventory                         |
+| `build/locks/wheels.lock.json`                        | Windows x64 런타임 wheel. `uvLockDigest`가 `sidecar/uv.lock`에 묶인다      |
+| `build/locks/models.lock.json`                        | 모델 ID → revision·필요 파일·loader                                        |
+| `build/locks/*.provenance.json`                       | 각 hash를 어디서 채택했는지                                                |
+| `dist/runtime-staging/<target>/runtime-manifest.json` | 타깃별 생성 manifest v2. lock/sidecar digest·runtimeId·채널·도구 배치 정책 |
+| `sidecar/uv.lock`                                     | Python 해석의 원본. wheel lock과 불일치하면 `verify` 실패                  |
 
 lock은 코드 검토 대상이다. 일반 `verify`·빌드는 lock을 수정하지 않는다.
 
@@ -26,15 +26,20 @@ node scripts/runtime-lock/cli.mjs verify
 node scripts/runtime-lock/cli.mjs propose --output dist/lock-candidate
 
 # 패키징 산출물 검사
-node scripts/runtime-lock/cli.mjs verify-package --target zip --input dist
-node scripts/runtime-lock/cli.mjs verify-package --target appx --input dist
+node scripts/runtime-lock/cli.mjs verify-package --target zip --input dist/win-unpacked
+node scripts/runtime-lock/cli.mjs verify-package --target appx --input dist/win-unpacked
+node scripts/runtime-lock/cli.mjs verify-package --target nsis --input dist/nsis/win-unpacked
+
+# NSIS는 도구를 받지 않고 metadata·sidecar만 준비
+node scripts/prepare-resources.mjs --target nsis
+pnpm build:nsis
 
 # fixture 통합. 실자산은 opt-in
 node scripts/runtime-acceptance/run.mjs
 node scripts/runtime-acceptance/run.mjs --real-assets --data-dir dist/runtime-acceptance
 ```
 
-패키징 스크립트(`pnpm build:zip` / `build:msix`)는 pack 전에 `verify`를 실행한다.
+패키징 스크립트는 pack 전에 `verify`를 실행한다. ZIP/APPX는 각 빌드 직후 해당 unpacked 디렉터리를 검사한다. NSIS는 실제 설치 파일에 삽입된 앱 payload까지 대조하며 상세 절차는 [NSIS 인수 검증](../scripts/nsis-acceptance/README.md)을 따른다.
 
 ## 갱신 절차
 
@@ -61,6 +66,8 @@ Windows `userData`는 보통 `%APPDATA%\Karaoke Player`다.
 │     └─ smoke.json
 ├─ runtime-cache/
 │  └─ sha256/<digest>/      # 내용 주소 캐시. incomplete는 complete로 승격하지 않음
+├─ runtime-tools/
+│  └─ <id>/<digest>/        # NSIS에서 검증·활성화한 도구. 설치 디렉터리에 쓰지 않음
 ├─ sidecar/                 # 001 당시 경로. 보존하되 준비 완료로 신뢰하지 않음
 └─ library.sqlite
 ```
@@ -71,12 +78,16 @@ Windows `userData`는 보통 `%APPDATA%\Karaoke Player`다.
 
 ## 개발 vs 패키징
 
-|            | 개발 (`pnpm dev`)                           | 패키징                                        |
-| ---------- | ------------------------------------------- | --------------------------------------------- |
-| sidecar    | 레포 `sidecar/` + PATH의 `uv run`           | 검증된 CPython 절대경로 + offline wheelhouse  |
-| 부트스트랩 | 건너뜀 (`createReadyBootstrap`)             | hash 검증 후 포인터 선택                      |
-| 모델 lock  | 레포 `build/locks/models.lock.json`         | 번들 `resources/locks/`                       |
-| URL 임포트 | `resources/bin`에 yt-dlp·deno가 있으면 켜짐 | zip만 yt-dlp 포함. APPX는 기능 off(오류 아님) |
+|            | 개발 (`pnpm dev`)                           | 패키징                                          |
+| ---------- | ------------------------------------------- | ----------------------------------------------- |
+| sidecar    | 레포 `sidecar/` + PATH의 `uv run`           | 검증된 CPython 절대경로 + offline wheelhouse    |
+| 부트스트랩 | 건너뜀 (`createReadyBootstrap`)             | hash 검증 후 포인터 선택                        |
+| 모델 lock  | 레포 `build/locks/models.lock.json`         | 번들 `resources/locks/`                         |
+| URL 임포트 | `resources/bin`에 yt-dlp·deno가 있으면 켜짐 | ZIP 번들 / NSIS 첫 실행 다운로드. APPX 기능 off |
+
+NSIS는 배포 manifest의 `capabilities.urlImport`로 지원 여부를 정한다. 도구가 아직 없어도 지원 UI는 보이며 준비 완료 후 사용할 수 있다. Deno·yt-dlp 준비 실패는 Python 환경 준비 상태와 분리하므로 정상 로컬 작업을 막지 않는다. URL 미리보기에는 URL 도구, URL 가져오기에는 URL 도구와 Python 환경이 모두 필요하다.
+
+일반 NSIS 빌드와 앱 실행에서는 원격 checksum을 새 신뢰 기준으로 채택하지 않는다. lock에 고정된 전체 SHA-256으로 다운로드·캐시·exe를 검사한다. uv·Deno ZIP의 hash와 내부 exe hash를 구분하며 `latest`, self-update, 시스템 PATH 도구로 우회하지 않는다. 새 버전은 새 digest 경로에 준비하고 이전 정상 파일은 보존한다.
 
 ## 실패 안내
 

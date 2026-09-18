@@ -5,6 +5,7 @@ import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { isRuntimeActionAllowed } from '../shared/bootstrap'
+import { TOOL_IDS, type ToolReadinessSnapshot } from '../shared/runtimeTools'
 import {
   IPC_CHANNELS,
   MEDIA_PROTOCOL_SCHEME,
@@ -32,6 +33,7 @@ import {
   resolveSelectedRuntime,
   runtimeCacheRoot,
   verifyExistingFile,
+  ToolReadinessController,
   type LockFile,
   type RuntimeLockSet,
   type RuntimeManifest
@@ -216,7 +218,8 @@ function applyModelEnv(opts: {
  */
 function createSidecar(
   userData: string,
-  getDemucsModel: () => string
+  getDemucsModel: () => string,
+  onManifestVerified: () => void
 ): {
   sidecar: SidecarManager
   bootstrap: OverlayBootstrap
@@ -225,6 +228,8 @@ function createSidecar(
   modelsLock: LockFile | null
   modelsDir: string
   cacheRoot: string
+  tools: ToolReadinessController | null
+  urlImport: boolean
 } {
   const modelsDir = runtimeCacheRoot(userData)
   const cacheRoot = modelsDir
@@ -253,11 +258,12 @@ function createSidecar(
       toolsLock,
       modelsLock,
       modelsDir,
-      cacheRoot
+      cacheRoot,
+      tools: null,
+      urlImport: false
     }
   }
 
-  const uvCommand = getBundledBinary('uv')
   const targetSidecarDir = join(userData, 'sidecar')
   const uvEnv = buildUvEnv(userData)
   const manifestPath = join(process.resourcesPath, 'runtime-manifest.json')
@@ -278,23 +284,29 @@ function createSidecar(
     : null
   applyModelEnv({ lockPath, modelsDir, demucsModel: getDemucsModel() })
 
-  if (toolsLock) {
+  let tools: ToolReadinessController | null = null
+  if (manifest && toolsLock) {
     try {
-      verifyExistingFile(uvCommand, exeHashSpec(toolsLock, 'uv', 'uv.exe'))
+      tools = new ToolReadinessController({
+        manifest,
+        toolsLock,
+        userDataDir: userData,
+        resourcesDir: process.resourcesPath,
+        windowsStore: process.windowsStore === true
+      })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.error(`[bootstrap] uv verify failed: ${message}`)
+      console.error(`[bootstrap] tool policy invalid: ${message}`)
     }
-  } else if (!existsSync(uvCommand)) {
-    console.error(`[bootstrap] missing required uv.exe: ${uvCommand}`)
   }
 
   const inner: BootstrapController =
-    manifest && locks
+    manifest && locks && tools
       ? new SidecarBootstrap({
           bundledSidecarDir: getBundledSidecarDir(),
           targetSidecarDir,
-          uvCommand,
+          prepareUv: (signal) => tools!.ensure('uv', { signal }),
+          onManifestVerified,
           env: uvEnv,
           onLog,
           userDataDir: userData,
@@ -345,7 +357,9 @@ function createSidecar(
     toolsLock,
     modelsLock,
     modelsDir,
-    cacheRoot
+    cacheRoot,
+    tools,
+    urlImport: tools !== null && manifest?.capabilities.urlImport === true
   }
 }
 
@@ -455,9 +469,23 @@ function focusExistingMainWindow(): void {
 function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapController {
   const { store, userData, tracksDir } = ctx
   const settingsStore = new SettingsStore(join(userData, 'settings.json'))
-  const { sidecar, bootstrap, attachPackagedRuntime, toolsLock } = createSidecar(
+  let startTools = (): void => {}
+  let toolsAllowed = false
+  let disposed = false
+  const {
+    sidecar,
+    bootstrap,
+    attachPackagedRuntime,
+    toolsLock,
+    tools,
+    urlImport: packagedUrlImport
+  } = createSidecar(
     userData,
-    () => settingsStore.get().demucsModel
+    () => settingsStore.get().demucsModel,
+    () => {
+      toolsAllowed = true
+      startTools()
+    }
   )
   registerMediaProtocol(tracksDir)
 
@@ -515,74 +543,102 @@ function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapCont
     extractCover: (track) => coverService.refresh(track),
     analyze: (track) => analysisService.refresh(track.id)
   })
-  // URL 임포트는 zip판에만 동봉되는 yt-dlp.exe·deno.exe 존재로 켜고 끈다 (스펙 001 §4.3, 기준 6)
-  const ytDlpPath = getBundledBinary('yt-dlp')
-  const denoPath = getBundledBinary('deno')
+  // 배포 기능 지원 여부와 다운로드 완료 여부는 별도 계약이다.
   const appx = process.windowsStore === true
   const availability = urlImportAvailability({
-    ytDlpExists: existsSync(ytDlpPath),
-    denoExists: existsSync(denoPath),
+    ytDlpExists: existsSync(getBundledBinary('yt-dlp')),
+    denoExists: existsSync(getBundledBinary('deno')),
     appx
   })
-  let urlImport = availability.urlImport
-  let ytDlpHash: { sha256: string; size: number; id: string } | undefined
-  let denoHash: { sha256: string; size: number; id: string } | undefined
-  if (toolsLock && urlImport) {
-    try {
-      ytDlpHash = exeHashSpec(toolsLock, 'yt-dlp', 'yt-dlp.exe')
-      denoHash = exeHashSpec(toolsLock, 'deno', 'deno.exe')
-      verifyExistingFile(ytDlpPath, ytDlpHash)
-      verifyExistingFile(denoPath, denoHash)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.error(`[url-import] binary verify failed: ${message}`)
-      urlImport = false
-      notify(IPC_CHANNELS.appError, {
-        source: 'url-import',
-        message,
-        at: new Date().toISOString()
-      })
+  const urlImport = app.isPackaged ? packagedUrlImport : availability.urlImport
+  let ytDlpService: YtDlpService | null = null
+  let previewService: YoutubePreviewService | null = null
+  const paths: Partial<Record<'deno' | 'yt-dlp', string>> = {}
+  let activePaths = ''
+  const activateUrlServices = (): void => {
+    if (disposed || !urlImport || !paths.deno || !paths['yt-dlp']) return
+    const key = JSON.stringify(paths)
+    if (key === activePaths) return
+    const ytDlpHash = toolsLock ? exeHashSpec(toolsLock, 'yt-dlp', 'yt-dlp.exe') : undefined
+    const denoHash = toolsLock ? exeHashSpec(toolsLock, 'deno', 'deno.exe') : undefined
+    const common = {
+      command: paths['yt-dlp'],
+      denoPath: paths.deno,
+      ytDlpHash,
+      denoHash,
+      verifyCommand: toolsLock ? verifyExistingFile : undefined
     }
-  } else if (app.isPackaged && toolsLock && existsSync(denoPath)) {
+    ytDlpService?.dispose()
+    previewService?.dispose()
+    ytDlpService = new YtDlpService({
+      ...common,
+      scratchRoot: join(userData, 'tmp', 'url-import'),
+      tracksDir,
+      importFiles: (filePaths, hint, userMeta) =>
+        importService.importFiles(filePaths, hint, userMeta),
+      notify,
+      touchTrack: (track) =>
+        store.updateMeta(track.id, {
+          title: track.title,
+          artist: track.artist,
+          album: track.album
+        })
+    })
+    previewService = new YoutubePreviewService({
+      ...common,
+      enabled: true,
+      encodeThumbnail: encodeYoutubePreviewThumbnail
+    })
+    activePaths = key
+  }
+  const staticSnapshot: ToolReadinessSnapshot = {
+    tools: Object.fromEntries(
+      TOOL_IDS.map((toolId) => [
+        toolId,
+        {
+          toolId,
+          status: app.isPackaged ? 'error' : toolId === 'uv' || urlImport ? 'ready' : 'disabled',
+          downloadedBytes: null,
+          totalBytes: null,
+          error: app.isPackaged ? '런타임 manifest 검증에 실패했습니다' : null,
+          retryable: false
+        }
+      ])
+    ) as ToolReadinessSnapshot['tools']
+  }
+  const getToolReadiness = (): ToolReadinessSnapshot =>
+    app.isPackaged && !toolsAllowed && bootstrap.getState().status === 'error'
+      ? staticSnapshot
+      : (tools?.getSnapshot() ?? staticSnapshot)
+  const prepareUrlTool = async (id: 'deno' | 'yt-dlp'): Promise<void> => {
+    if (!tools || disposed) return
     try {
-      verifyExistingFile(denoPath, exeHashSpec(toolsLock, 'deno', 'deno.exe'))
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.error(`[bootstrap] deno verify failed: ${message}`)
+      const path = await tools.ensure(id)
+      if (disposed) return
+      paths[id] = path
+      activateUrlServices()
+    } catch {
+      // 개별 오류/재시도 가능 여부는 controller 상태 이벤트로 전달한다.
     }
   }
-  const ytDlpService = urlImport
-    ? new YtDlpService({
-        command: ytDlpPath,
-        denoPath,
-        scratchRoot: join(userData, 'tmp', 'url-import'),
-        tracksDir,
-        ytDlpHash,
-        denoHash,
-        verifyCommand: ytDlpHash || denoHash ? verifyExistingFile : undefined,
-        importFiles: (filePaths, hint, userMeta) =>
-          importService.importFiles(filePaths, hint, userMeta),
-        notify,
-        // 커버를 덮어쓴 뒤 updatedAt을 갱신해야 렌더러의 media:// 캐시 키가 바뀐다
-        touchTrack: (track) =>
-          store.updateMeta(track.id, {
-            title: track.title,
-            artist: track.artist,
-            album: track.album
-          })
-      })
-    : null
-  const previewService = urlImport
-    ? new YoutubePreviewService({
-        command: ytDlpPath,
-        denoPath,
-        ytDlpHash,
-        denoHash,
-        verifyCommand: ytDlpHash || denoHash ? verifyExistingFile : undefined,
-        enabled: true,
-        encodeThumbnail: encodeYoutubePreviewThumbnail
-      })
-    : null
+  let startedTools = false
+  startTools = (): void => {
+    if (startedTools || disposed || !tools) return
+    startedTools = true
+    queueMicrotask(() => {
+      if (disposed) return
+      void prepareUrlTool('deno')
+      if (urlImport) void prepareUrlTool('yt-dlp')
+    })
+  }
+  if (!app.isPackaged && urlImport) {
+    paths.deno = getBundledBinary('deno')
+    paths['yt-dlp'] = getBundledBinary('yt-dlp')
+    activateUrlServices()
+  }
+  const unsubscribeTools = tools?.onChange((state) =>
+    notify(IPC_CHANNELS.toolReadinessState, state)
+  )
 
   registerIpcHandlers({
     store,
@@ -598,21 +654,52 @@ function wireReadyLibrary(ctx: LibraryReadyContext<LibraryStore>): BootstrapCont
     trackEditService,
     coverService,
     analysisService,
-    getBootstrapState: () => bootstrap.getState()
+    getBootstrapState: () => bootstrap.getState(),
+    getUrlServices: () => ({ ytDlpService, previewService }),
+    getToolReadiness,
+    retryToolReadiness: async (id) => {
+      if (!tools || !toolsAllowed || disposed) return getToolReadiness()
+      try {
+        const path = await tools.retry(id)
+        if (!disposed) {
+          if (id === 'uv' && bootstrap.getState().status === 'error') {
+            void bootstrap.retry()
+          } else if (id !== 'uv') {
+            paths[id] = path
+            activateUrlServices()
+          }
+        }
+      } catch {
+        // 실패 상태도 snapshot으로 반환하여 다른 도구 상태를 보존한다.
+      }
+      return getToolReadiness()
+    }
   })
   // 부트스트랩 IPC. 서비스들은 lazy spawn이라 먼저 만들어도 되지만,
   // 시작 시 사이드카를 띄우는 backfill은 ready 이후에만 돈다.
   ipcMain.handle(IPC_CHANNELS.bootstrapGet, (): BootstrapState => bootstrap.getState())
   ipcMain.handle(IPC_CHANNELS.bootstrapRetry, (): Promise<BootstrapState> => bootstrap.retry())
-  bootstrap.onChange((state) => notify(IPC_CHANNELS.bootstrapState, state))
+  bootstrap.onChange((state) => {
+    notify(IPC_CHANNELS.bootstrapState, state)
+    if (!toolsAllowed && state.status === 'error') {
+      for (const tool of Object.values(getToolReadiness().tools)) {
+        notify(IPC_CHANNELS.toolReadinessState, tool)
+      }
+    }
+  })
   void bootstrap.whenReady().then(async () => {
+    if (disposed) return
     await attachPackagedRuntime()
+    if (disposed) return
     // 기존 트랙의 일본어 메타 발음 키·앨범 커버·BPM·키 분석을 백그라운드로 채운다
     searchKeyService.backfill()
     coverService.backfill()
     analysisService.backfill()
   })
   app.on('will-quit', () => {
+    disposed = true
+    unsubscribeTools?.()
+    tools?.dispose()
     bootstrap.dispose()
     ytDlpService?.dispose()
     previewService?.dispose()

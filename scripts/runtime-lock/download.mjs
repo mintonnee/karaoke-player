@@ -1,4 +1,8 @@
 import {
+  closeSync,
+  openSync,
+  readSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -9,7 +13,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, posix as posixPath } from 'node:path'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { ERROR_CODES, LockError, sha256Hex } from './schema.mjs'
 import { assertAllowedUrl, redactUrl } from './hosts.mjs'
 import { extractZipVerified } from './zip.mjs'
@@ -42,7 +46,29 @@ function ensureDir(path) {
  * @param {import('node:fs').PathLike} path
  */
 export function hashFile(path) {
-  return sha256Hex(readFileSync(path))
+  const hash = createHash('sha256')
+  const fd = openSync(path, 'r')
+  try {
+    const buf = Buffer.alloc(1024 * 1024)
+    let n = 0
+    while ((n = readSync(fd, buf, 0, buf.length, null)) > 0) {
+      hash.update(buf.subarray(0, n))
+    }
+    return hash.digest('hex')
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function copyFileAtomic(source, dest) {
+  ensureDir(dirname(dest))
+  const tmp = dest + '.' + process.pid + '.' + randomBytes(6).toString('hex') + '.tmp'
+  try {
+    copyFileSync(source, tmp)
+    renameSync(tmp, dest)
+  } finally {
+    rmSync(tmp, { force: true })
+  }
 }
 
 function writeFileAtomic(dest, data) {
@@ -119,7 +145,7 @@ export async function ensureArtifact(opts) {
     }
   } else {
     try {
-      writeFileAtomic(destPath, readFileSync(blob))
+      copyFileAtomic(blob, destPath)
     } catch (err) {
       if (existsSync(destPath) && destMatches(artifact, destPath)) {
         throw new LockError(

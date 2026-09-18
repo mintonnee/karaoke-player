@@ -47,6 +47,17 @@ not covered by the project's Apache-2.0 grant. SoundTouch is the explicitly
 identified source-file exception; it is not a claim that all other dependencies
 are Apache-2.0. See the app's third-party notices for component information.
 
+The `Unlicense` value in `build/locks/tools.lock.json` identifies the yt-dlp
+source project's license. It does not describe the official `yt-dlp.exe` as a
+whole. The locked Windows executable is built with PyInstaller and contains
+GPL-3.0-or-later and other third-party components; upstream therefore licenses
+the combined executable under GPL-3.0-or-later. It is outside this project's
+Apache-2.0 grant. Exact-version licensing evidence, component notices, checksum
+provenance, and corresponding source links are recorded in
+`build/locks/tools.provenance.json`. This distinction applies when the ZIP
+channel bundles the executable and when the NSIS channel downloads it after
+installation.
+
 ## Non-code material
 
 This Apache-2.0 grant does not cover README or other prose documentation
@@ -360,6 +371,11 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
 LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+========================================================================
+pretendard-jp v1.3.9 — OFL-1.1
+https://cactus.tistory.com/306
+
+(라이선스 전문은 패키지 배포본에 포함되어 있지 않음 — 위 라이선스 식별자를 따른다)
 ========================================================================
 react v19.2.8 — MIT
 https://react.dev/
@@ -1182,8 +1198,8 @@ soundfile — BSD-3-Clause (https://github.com/bastibe/python-soundfile)
 uv v0.12.9 — MIT OR Apache-2.0
 https://github.com/astral-sh/uv
 
-zip·MSIX 배포판에 동봉되어 sidecar 부트스트랩(uv sync)에 사용된다. 듀얼 라이선스이므로
-두 전문을 모두 싣는다.
+ZIP·MSIX 배포판에는 동봉되고 NSIS판은 첫 앱 실행에서 고정 lock으로 검증 다운로드해
+sidecar 부트스트랩(uv sync)에 사용한다. 듀얼 라이선스이므로 두 전문을 모두 싣는다.
 
 MIT License
 
@@ -1412,7 +1428,8 @@ Apache License
 deno v2.9.6 — MIT
 https://github.com/denoland/deno
 
-zip·MSIX 배포판에 동봉되어 yt-dlp의 JS 챌린지 런타임(--js-runtimes deno:<경로>)으로 사용된다.
+ZIP·MSIX 배포판에는 동봉되고 NSIS판은 첫 앱 실행에서 고정 lock으로 검증 다운로드한다.
+yt-dlp의 JS 챌린지 런타임(--js-runtimes deno:<경로>)으로 사용된다.
 
 MIT License
 
@@ -1435,11 +1452,19 @@ COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ========================================================================
-yt-dlp v2026.08.19 — Unlicense
-https://github.com/yt-dlp/yt-dlp
+yt-dlp v2026.08.19 Windows standalone executable — GPL-3.0-or-later combined work
+https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/README.md#licensing
 
-zip 배포판에만 동봉된다. MSIX(Store)판에는 yt-dlp가 포함되지 않는다 — Microsoft Store
-정책상 YouTube 다운로드 도구는 거부 사유이므로 배포 채널을 분리했다 (스펙 001 §4.2).
+yt-dlp 소스 프로젝트 자체는 Unlicense이지만 공식 yt-dlp.exe는 PyInstaller로 묶이며
+GPL-3.0-or-later 구성 요소와 다른 서드파티 구성 요소를 포함한다. upstream은 이 결합
+실행 파일 전체를 GPL-3.0-or-later로 고지한다. 정확한 구성 요소별 고지와 라이선스는
+https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/THIRD_PARTY_LICENSES.txt 를 참조한다.
+해당 버전의 소스와 빌드 파일은 https://github.com/yt-dlp/yt-dlp/releases/tag/2026.08.19
+에 있다. ZIP판에는 실행 파일이 동봉되고, NSIS판은 첫 앱 실행에서 고정 lock으로
+검증 다운로드한다. MSIX(Store)판에는 yt-dlp가 포함되지 않는다.
+
+아래 전문은 yt-dlp 소스 프로젝트의 Unlicense이며, 결합 실행 파일의 라이선스 식별자와
+구성 요소 고지는 위 exact-version 링크를 따른다.
 
 This is free and unencumbered software released into the public domain.
 

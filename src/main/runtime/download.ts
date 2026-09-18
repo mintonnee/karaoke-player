@@ -1,6 +1,7 @@
 import {
   closeSync,
   createWriteStream,
+  copyFileSync,
   existsSync,
   mkdirSync,
   openSync,
@@ -12,16 +13,18 @@ import {
   writeFileSync
 } from 'fs'
 import { createHash, randomBytes } from 'crypto'
-import { dirname, join, posix as posixPath } from 'path'
+import { dirname, join, posix as posixPath, resolve } from 'path'
 import { ERROR_CODES, LockError, type Artifact } from './schema'
 import { assertAllowedUrl, redactUrl } from './hosts'
 import { extractZipVerified, type ArchiveAllowSpec } from './zip'
 import { extractTarGzVerified } from './tar'
 import { withProcessLock } from './lockfile'
 import { posixDest, resolveInside } from './paths'
+import { checkAbort, waitWithSignal, withDownloadSlot } from './cancellation'
 
 interface Waiter {
   signal?: AbortSignal
+  onProgress?: (received: number, total: number) => void
 }
 
 interface Flight {
@@ -33,7 +36,7 @@ interface Flight {
 const inflight = new Map<string, Flight>()
 
 export function runtimeCacheRoot(userDataDir: string): string {
-  return join(userDataDir, 'runtime-cache')
+  return resolveInside(userDataDir, 'runtime-cache')
 }
 
 export function defaultCacheRoot(): string {
@@ -50,13 +53,13 @@ function cachePaths(
   lock: string
   tmpDir: string
 } {
-  const dir = join(cacheRoot, 'sha256', digest)
+  const dir = resolveInside(cacheRoot, `sha256/${digest}`)
   return {
     dir,
-    blob: join(dir, 'blob'),
-    complete: join(dir, 'complete'),
-    lock: join(cacheRoot, 'locks', `${digest}.lock`),
-    tmpDir: join(cacheRoot, 'tmp')
+    blob: resolveInside(cacheRoot, `sha256/${digest}/blob`),
+    complete: resolveInside(cacheRoot, `sha256/${digest}/complete`),
+    lock: resolveInside(cacheRoot, `locks/${digest}.lock`),
+    tmpDir: resolveInside(cacheRoot, 'tmp')
   }
 }
 
@@ -76,6 +79,17 @@ export function hashFile(path: string): string {
     return hash.digest('hex')
   } finally {
     closeSync(fd)
+  }
+}
+
+function copyFileAtomic(source: string, dest: string): void {
+  ensureDir(dirname(dest))
+  const tmp = dest + '.' + process.pid + '.' + randomBytes(6).toString('hex') + '.tmp'
+  try {
+    copyFileSync(source, tmp)
+    renameSync(tmp, dest)
+  } finally {
+    rmSync(tmp, { force: true })
   }
 }
 
@@ -110,6 +124,9 @@ export interface EnsureArtifactOptions {
   fetchImpl?: typeof fetch
   maxRedownload?: number
   skipHostCheck?: boolean
+  onProgress?: (received: number, total: number) => void
+  timeoutMs?: number
+  allowedHosts?: readonly string[]
 }
 
 export async function ensureArtifact(opts: EnsureArtifactOptions): Promise<{
@@ -118,6 +135,7 @@ export async function ensureArtifact(opts: EnsureArtifactOptions): Promise<{
   downloaded: boolean
 }> {
   const artifact = opts.artifact
+  checkAbort(opts.signal)
   const cacheRoot = opts.cacheRoot ?? defaultCacheRoot()
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch
   const maxRedownload = opts.maxRedownload ?? 1
@@ -131,7 +149,7 @@ export async function ensureArtifact(opts: EnsureArtifactOptions): Promise<{
   }
 
   const destPath = resolveInside(opts.destRoot, artifact.dest, { id: artifact.id })
-  if (!opts.force && existsSync(destPath) && destMatches(artifact, destPath)) {
+  if (!opts.force && artifactDestMatches(artifact, opts.destRoot)) {
     return { reused: true, destPath, downloaded: false }
   }
 
@@ -141,8 +159,13 @@ export async function ensureArtifact(opts: EnsureArtifactOptions): Promise<{
     fetchImpl,
     force: opts.force,
     signal: opts.signal,
-    maxRedownload
+    maxRedownload,
+    skipHostCheck: opts.skipHostCheck,
+    onProgress: opts.onProgress,
+    timeoutMs: opts.timeoutMs,
+    allowedHosts: opts.allowedHosts
   })
+  checkAbort(opts.signal)
 
   if (artifact.kind === 'archive') {
     const extractDir = join(
@@ -152,13 +175,21 @@ export async function ensureArtifact(opts: EnsureArtifactOptions): Promise<{
     )
     ensureDir(extractDir)
     try {
-      publishArchive(artifact, blob, opts.destRoot)
+      // Verify every member in isolation before publishing any member.
+      publishArchive(artifact, blob, extractDir)
+      for (const file of artifact.archive!.files) {
+        const dest = archiveDest(artifact, file)
+        writeFileAtomic(
+          resolveInside(opts.destRoot, dest),
+          readFileSync(resolveInside(extractDir, dest))
+        )
+      }
     } finally {
       rmSync(extractDir, { recursive: true, force: true })
     }
   } else {
     try {
-      writeFileAtomic(destPath, readFileSync(blob))
+      copyFileAtomic(blob, destPath)
     } catch (err) {
       if (existsSync(destPath) && destMatches(artifact, destPath)) {
         throw new LockError(
@@ -173,20 +204,32 @@ export async function ensureArtifact(opts: EnsureArtifactOptions): Promise<{
   return { reused: false, destPath, downloaded: true }
 }
 
+function archiveDest(artifact: Artifact, file: { path: string; dest?: string }): string {
+  return file.dest ?? posixDest(posixPath.join(posixPath.dirname(artifact.dest), file.path))
+}
+
 function destMatches(artifact: Artifact, destPath: string): boolean {
-  if (artifact.kind === 'archive') {
-    const primary =
-      artifact.archive?.files?.find(
-        (f) =>
-          (f.dest ?? posixDest(posixPath.join(posixPath.dirname(artifact.dest), f.path))) ===
-          artifact.dest
-      ) ?? artifact.archive?.files?.[0]
-    if (!primary) return false
-    if (statSync(destPath).size !== primary.size) return false
-    return hashFile(destPath) === primary.sha256
+  try {
+    verifyExistingFile(destPath, artifact)
+    return true
+  } catch {
+    return false
   }
-  if (statSync(destPath).size !== artifact.size) return false
-  return hashFile(destPath) === artifact.sha256
+}
+
+export function artifactDestMatches(artifact: Artifact, destRoot: string): boolean {
+  try {
+    if (artifact.kind === 'archive') {
+      if (!artifact.archive?.files.length) return false
+      for (const file of artifact.archive.files) {
+        verifyExistingFile(resolveInside(destRoot, archiveDest(artifact, file)), file)
+      }
+      return true
+    }
+    return destMatches(artifact, resolveInside(destRoot, artifact.dest))
+  } catch {
+    return false
+  }
 }
 
 function publishArchive(artifact: Artifact, blobPath: string, destRoot: string): void {
@@ -199,7 +242,7 @@ function publishArchive(artifact: Artifact, blobPath: string, destRoot: string):
       sha256: file.sha256,
       size: file.size,
       executable: file.executable,
-      dest: file.dest ?? file.path
+      dest: archiveDest(artifact, file)
     })
   }
   const writeFile = (absPath: string, data: Buffer): void => {
@@ -218,114 +261,124 @@ export interface DownloadVerifiedOptions {
   signal?: AbortSignal
   force?: boolean
   maxRedownload?: number
+  skipHostCheck?: boolean
+  onProgress?: (received: number, total: number) => void
+  timeoutMs?: number
+  allowedHosts?: readonly string[]
 }
 
 /** digest 단위 in-process single-flight + 프로세스 간 lock. 취소는 waiter 단위. */
 export async function downloadVerified(opts: DownloadVerifiedOptions): Promise<string> {
-  const { artifact, cacheRoot, fetchImpl, signal, force } = opts
-  const digest = artifact.sha256
-  const paths = cachePaths(cacheRoot, digest)
-
-  if (!force && existsSync(paths.complete) && existsSync(paths.blob)) {
-    const actual = hashFile(paths.blob)
-    if (actual === digest && statSync(paths.blob).size === artifact.size) {
-      return paths.blob
-    }
-    rmSync(paths.dir, { recursive: true, force: true })
-  }
-
-  let flight = inflight.get(digest)
+  const { artifact, cacheRoot, signal } = opts
+  checkAbort(signal)
+  if (artifact.url && !opts.skipHostCheck) assertAllowedUrl(artifact.url, { id: artifact.id })
+  const key = resolve(cacheRoot) + ':' + artifact.sha256
+  let flight = inflight.get(key)
+  if (flight?.controller.signal.aborted) flight = undefined
   if (!flight) {
-    flight = createFlight(artifact, cacheRoot, fetchImpl, opts.maxRedownload ?? 1)
-    inflight.set(digest, flight)
+    flight = createFlight(opts)
+    inflight.set(key, flight)
+    const ownFlight = flight
+    void flight.promise
+      .finally(() => {
+        if (inflight.get(key) === ownFlight) inflight.delete(key)
+      })
+      .catch(() => {})
   }
-  const waiter: Waiter = { signal }
+  const waiter: Waiter = { signal, onProgress: opts.onProgress }
   flight.waiters.add(waiter)
   const onAbort = (): void => {
     flight!.waiters.delete(waiter)
     if (flight!.waiters.size === 0) flight!.controller.abort()
   }
-  if (signal) {
-    if (signal.aborted) {
-      onAbort()
-      throw abortError(artifact.id)
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-  }
+  signal?.addEventListener('abort', onAbort, { once: true })
   try {
-    const blob = await flight.promise
-    if (signal?.aborted) throw abortError(artifact.id)
+    const blob = await waitWithSignal(flight.promise, signal)
+    checkAbort(signal)
+    verifyExistingFile(blob, artifact)
     return blob
   } finally {
-    if (signal) signal.removeEventListener('abort', onAbort)
+    signal?.removeEventListener('abort', onAbort)
     flight.waiters.delete(waiter)
-    if (flight.waiters.size === 0 && inflight.get(digest) === flight) inflight.delete(digest)
+    if (flight.waiters.size === 0) flight.controller.abort()
   }
 }
 
-function abortError(id: string): Error {
-  const err = new Error(`download cancelled (${id})`) as Error & { code: string }
-  err.name = 'AbortError'
-  err.code = 'ABORT_ERR'
-  return err
-}
-
-function createFlight(
-  artifact: Artifact,
-  cacheRoot: string,
-  fetchImpl: typeof fetch,
-  maxRedownload: number
-): Flight {
+function createFlight(opts: DownloadVerifiedOptions): Flight {
+  const { artifact, cacheRoot, fetchImpl } = opts
   const controller = new AbortController()
   const waiters = new Set<Waiter>()
-  const promise = withProcessLock(cachePaths(cacheRoot, artifact.sha256).lock, async () => {
-    const paths = cachePaths(cacheRoot, artifact.sha256)
-    if (existsSync(paths.complete) && existsSync(paths.blob)) {
-      if (hashFile(paths.blob) === artifact.sha256 && statSync(paths.blob).size === artifact.size) {
+  const onProgress = (received: number, total: number): void => {
+    for (const waiter of waiters) {
+      try {
+        waiter.onProgress?.(received, total)
+      } catch {
+        /* observers cannot fail a transfer */
+      }
+    }
+  }
+  const promise = withProcessLock(
+    cachePaths(cacheRoot, artifact.sha256).lock,
+    async () => {
+      const paths = cachePaths(cacheRoot, artifact.sha256)
+      if (
+        existsSync(paths.complete) &&
+        existsSync(paths.blob) &&
+        hashFile(paths.blob) === artifact.sha256 &&
+        statSync(paths.blob).size === artifact.size
+      ) {
         return paths.blob
       }
-    }
-    let attempt = 0
-    let lastErr: unknown
-    while (attempt <= maxRedownload) {
-      try {
-        return await downloadOnce(artifact, cacheRoot, fetchImpl, controller.signal)
-      } catch (err) {
-        lastErr = err
-        const name = (err as Error).name
-        const code = (err as { code?: string }).code
-        if (name === 'AbortError' || code === 'ABORT_ERR') throw err
-        if (code !== ERROR_CODES.HASH_MISMATCH && code !== ERROR_CODES.SIZE_MISMATCH) {
-          throw err
+      // Removal is safe only while holding the digest's process lock.
+      rmSync(paths.dir, { recursive: true, force: true })
+      return withDownloadSlot(controller.signal, async () => {
+        const timed = new AbortController()
+        const abort = (): void => timed.abort()
+        controller.signal.addEventListener('abort', abort, { once: true })
+        const timer = setTimeout(abort, opts.timeoutMs ?? 120_000)
+        try {
+          checkAbort(controller.signal)
+          for (let attempt = 0; ; attempt++) {
+            try {
+              return await downloadOnce(
+                artifact,
+                cacheRoot,
+                fetchImpl,
+                timed.signal,
+                opts.skipHostCheck,
+                onProgress,
+                opts.allowedHosts
+              )
+            } catch (err) {
+              if (timed.signal.aborted && !controller.signal.aborted) {
+                throw Object.assign(new Error('download timed out (' + artifact.id + ')'), {
+                  code: 'ETIMEDOUT'
+                })
+              }
+              checkAbort(controller.signal)
+              const code = (err as { code?: string }).code
+              if (
+                attempt >= (opts.maxRedownload ?? 1) ||
+                (code !== ERROR_CODES.HASH_MISMATCH && code !== ERROR_CODES.SIZE_MISMATCH)
+              )
+                throw err
+            }
+          }
+        } finally {
+          clearTimeout(timer)
+          controller.signal.removeEventListener('abort', abort)
         }
-        attempt += 1
-        if (attempt > maxRedownload) throw err
-      }
-    }
-    throw lastErr
-  })
+      })
+    },
+    { signal: controller.signal, timeoutMs: opts.timeoutMs }
+  )
   void promise.catch(() => {})
   return { controller, waiters, promise }
 }
 
 function writeChunk(stream: NodeJS.WritableStream, chunk: Uint8Array): Promise<void> {
   return new Promise((resolve, reject) => {
-    const onError = (err: Error): void => {
-      stream.off('drain', onDrain)
-      reject(err)
-    }
-    const onDrain = (): void => {
-      stream.off('error', onError)
-      resolve()
-    }
-    stream.once('error', onError)
-    const ok = stream.write(chunk)
-    if (ok) {
-      stream.off('error', onError)
-      resolve()
-    } else {
-      stream.once('drain', onDrain)
-    }
+    stream.write(chunk, (error?: Error | null) => (error ? reject(error) : resolve()))
   })
 }
 
@@ -333,7 +386,10 @@ async function downloadOnce(
   artifact: Artifact,
   cacheRoot: string,
   fetchImpl: typeof fetch,
-  signal: AbortSignal
+  signal: AbortSignal,
+  skipHostCheck = false,
+  onProgress?: (received: number, total: number) => void,
+  allowedHosts?: readonly string[]
 ): Promise<string> {
   const paths = cachePaths(cacheRoot, artifact.sha256)
   ensureDir(paths.tmpDir)
@@ -344,10 +400,18 @@ async function downloadOnce(
     if (!artifact.url) {
       throw new LockError(ERROR_CODES.SCHEMA_ERROR, 'missing url', { id: artifact.id })
     }
-    const response = await fetchImpl(artifact.url, { signal, redirect: 'follow' })
+    const response = await fetchRedirects(
+      artifact.url,
+      fetchImpl,
+      signal,
+      skipHostCheck,
+      artifact.id,
+      allowedHosts
+    )
+    checkAbort(signal)
     if (!response.ok) {
       throw new LockError(
-        ERROR_CODES.SCHEMA_ERROR,
+        `HTTP_${response.status}`,
         `download failed ${response.status} for ${artifact.id} (${redactUrl(artifact.url)})`,
         { id: artifact.id }
       )
@@ -361,24 +425,39 @@ async function downloadOnce(
       )
     }
     const fh = createWriteStream(tmp)
+    // Keep a listener installed even between writes and wait for close before deleting on Windows.
+    let streamError: Error | null = null
+    fh.on('error', (err) => {
+      streamError = err
+    })
+    const closed = new Promise<void>((resolve) => fh.once('close', resolve))
+    onProgress?.(0, artifact.size)
     try {
       if (response.body && typeof response.body.getReader === 'function') {
         const reader = response.body.getReader()
-        for (;;) {
-          const { done, value } = await reader.read()
-          if (done) break
-          received += value.byteLength
-          if (received > artifact.size) {
-            await reader.cancel()
-            throw new LockError(ERROR_CODES.SIZE_MISMATCH, 'download exceeded lock size', {
-              id: artifact.id
-            })
+        try {
+          for (;;) {
+            const { done, value } = await waitWithSignal(reader.read(), signal)
+            checkAbort(signal)
+            if (done) break
+            received += value.byteLength
+            if (received > artifact.size) {
+              await reader.cancel()
+              throw new LockError(ERROR_CODES.SIZE_MISMATCH, 'download exceeded lock size', {
+                id: artifact.id
+              })
+            }
+            hash.update(value)
+            await waitWithSignal(writeChunk(fh, value), signal)
+            onProgress?.(received, artifact.size)
           }
-          hash.update(value)
-          await writeChunk(fh, value)
+        } finally {
+          void reader.cancel().catch(() => {})
+          reader.releaseLock()
         }
       } else {
-        const buf = Buffer.from(await response.arrayBuffer())
+        const buf = Buffer.from(await waitWithSignal(response.arrayBuffer(), signal))
+        checkAbort(signal)
         received = buf.length
         if (received > artifact.size) {
           throw new LockError(ERROR_CODES.SIZE_MISMATCH, 'download exceeded lock size', {
@@ -386,15 +465,21 @@ async function downloadOnce(
           })
         }
         hash.update(buf)
-        await writeChunk(fh, buf)
+        await waitWithSignal(writeChunk(fh, buf), signal)
+        onProgress?.(received, artifact.size)
       }
       await new Promise<void>((resolve, reject) => {
+        fh.once('error', reject)
         fh.end((err: Error | null | undefined) => (err ? reject(err) : resolve()))
       })
+      if (streamError) throw streamError
+      await closed
     } catch (err) {
       fh.destroy()
+      await closed
       throw err
     }
+    checkAbort(signal)
     if (received !== artifact.size) {
       throw new LockError(
         ERROR_CODES.SIZE_MISMATCH,
@@ -427,6 +512,38 @@ async function downloadOnce(
     }
     throw err
   }
+}
+
+async function fetchRedirects(
+  initialUrl: string,
+  fetchImpl: typeof fetch,
+  signal: AbortSignal,
+  skipHostCheck: boolean,
+  id: string,
+  allowedHosts?: readonly string[]
+): Promise<Response> {
+  let url = initialUrl
+  for (let hops = 0; hops <= 5; hops++) {
+    checkAbort(signal)
+    if (!skipHostCheck) {
+      const host = assertAllowedUrl(url, { id })
+      if (allowedHosts && !allowedHosts.includes(host)) {
+        throw new LockError(ERROR_CODES.DISALLOWED_HOST, `disallowed tool host (${id})`, { id })
+      }
+    }
+    const response = await waitWithSignal(fetchImpl(url, { signal, redirect: 'manual' }), signal)
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response
+    const location = response.headers.get('location')
+    await response.body?.cancel()
+    if (!location || hops === 5)
+      throw new LockError(ERROR_CODES.DISALLOWED_HOST, `invalid redirect (${id})`, { id })
+    try {
+      url = new URL(location, url).href
+    } catch {
+      throw new LockError(ERROR_CODES.DISALLOWED_HOST, `invalid redirect (${id})`, { id })
+    }
+  }
+  throw new Error('unreachable redirect')
 }
 
 /** 테스트에서 inflight 상태를 비운다. */

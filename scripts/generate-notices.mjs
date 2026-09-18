@@ -114,7 +114,7 @@ parts.push(
     ].join('\n')
 )
 
-// ── 4. zip 배포판 동봉 도구 (uv/deno는 MSIX에도 포함, yt-dlp는 zip 전용) ──
+// ── 4. 배포 채널별 동봉/검증 다운로드 런타임 도구 ──
 const licDir = join(root, 'scripts', 'licenses')
 const uvMit = readFileSync(join(licDir, 'uv-LICENSE-MIT.txt'), 'utf-8').trim()
 const uvApache = readFileSync(join(licDir, 'uv-LICENSE-APACHE.txt'), 'utf-8').trim()
@@ -124,8 +124,8 @@ const ytdlpLicense = readFileSync(join(licDir, 'yt-dlp-LICENSE.txt'), 'utf-8').t
 parts.push(
   `uv v0.12.9 — MIT OR Apache-2.0\n` +
     `https://github.com/astral-sh/uv\n\n` +
-    `zip·MSIX 배포판에 동봉되어 sidecar 부트스트랩(uv sync)에 사용된다. 듀얼 라이선스이므로\n` +
-    `두 전문을 모두 싣는다.\n\n` +
+    `ZIP·MSIX 배포판에는 동봉되고 NSIS판은 첫 앱 실행에서 고정 lock으로 검증 다운로드해\n` +
+    `sidecar 부트스트랩(uv sync)에 사용한다. 듀얼 라이선스이므로 두 전문을 모두 싣는다.\n\n` +
     uvMit +
     '\n\n' +
     uvApache
@@ -134,15 +134,23 @@ parts.push(
 parts.push(
   `deno v2.9.6 — MIT\n` +
     `https://github.com/denoland/deno\n\n` +
-    `zip·MSIX 배포판에 동봉되어 yt-dlp의 JS 챌린지 런타임(--js-runtimes deno:<경로>)으로 사용된다.\n\n` +
+    `ZIP·MSIX 배포판에는 동봉되고 NSIS판은 첫 앱 실행에서 고정 lock으로 검증 다운로드한다.\n` +
+    `yt-dlp의 JS 챌린지 런타임(--js-runtimes deno:<경로>)으로 사용된다.\n\n` +
     denoLicense
 )
 
 parts.push(
-  `yt-dlp v2026.08.19 — Unlicense\n` +
-    `https://github.com/yt-dlp/yt-dlp\n\n` +
-    `zip 배포판에만 동봉된다. MSIX(Store)판에는 yt-dlp가 포함되지 않는다 — Microsoft Store\n` +
-    `정책상 YouTube 다운로드 도구는 거부 사유이므로 배포 채널을 분리했다 (스펙 001 §4.2).\n\n` +
+  `yt-dlp v2026.08.19 Windows standalone executable — GPL-3.0-or-later combined work\n` +
+    `https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/README.md#licensing\n\n` +
+    `yt-dlp 소스 프로젝트 자체는 Unlicense이지만 공식 yt-dlp.exe는 PyInstaller로 묶이며\n` +
+    `GPL-3.0-or-later 구성 요소와 다른 서드파티 구성 요소를 포함한다. upstream은 이 결합\n` +
+    `실행 파일 전체를 GPL-3.0-or-later로 고지한다. 정확한 구성 요소별 고지와 라이선스는\n` +
+    `https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/THIRD_PARTY_LICENSES.txt 를 참조한다.\n` +
+    `해당 버전의 소스와 빌드 파일은 https://github.com/yt-dlp/yt-dlp/releases/tag/2026.08.19\n` +
+    `에 있다. ZIP판에는 실행 파일이 동봉되고, NSIS판은 첫 앱 실행에서 고정 lock으로\n` +
+    `검증 다운로드한다. MSIX(Store)판에는 yt-dlp가 포함되지 않는다.\n\n` +
+    `아래 전문은 yt-dlp 소스 프로젝트의 Unlicense이며, 결합 실행 파일의 라이선스 식별자와\n` +
+    `구성 요소 고지는 위 exact-version 링크를 따른다.\n\n` +
     ytdlpLicense
 )
 

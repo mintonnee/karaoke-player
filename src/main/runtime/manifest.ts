@@ -3,18 +3,24 @@ import { join } from 'path'
 import {
   ERROR_CODES,
   LockError,
+  SHA256_RE,
   SUPPORTED_PLATFORM,
   digestCanonical,
+  getDistributionPolicy,
   lockDigest,
   posixDest,
   sha256Hex,
+  validateDistributionPolicy,
   validateLockShape,
   type Artifact,
-  type LockFile
+  type LockFile,
+  type RuntimeDistribution,
+  type ToolDelivery,
+  type ToolId
 } from './schema'
 import { validateArtifactRuntime } from './verify'
 
-export const MANIFEST_SCHEMA_VERSION = 1
+export const MANIFEST_SCHEMA_VERSION = 2
 
 export const SIDECAR_DIGEST_ROOTS = Object.freeze([
   '.python-version',
@@ -33,6 +39,11 @@ export interface RuntimeLockSet {
 export interface RuntimeManifest {
   schemaVersion: typeof MANIFEST_SCHEMA_VERSION
   platform: typeof SUPPORTED_PLATFORM
+  distribution: RuntimeDistribution
+  capabilities: {
+    urlImport: boolean
+  }
+  toolDelivery: Record<ToolId, ToolDelivery>
   runtimeId: string
   lockDigests: {
     tools: string
@@ -194,13 +205,18 @@ export async function computeManifestInputs(
 
 export async function buildRuntimeManifest(
   locks: RuntimeLockSet,
-  sidecarDir: string
+  sidecarDir: string,
+  distribution: RuntimeDistribution
 ): Promise<RuntimeManifest> {
   const inputs = await computeManifestInputs(locks, sidecarDir)
   const runtimeId = computeRuntimeId(inputs)
+  const policy = getDistributionPolicy(distribution)
   return {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     platform: SUPPORTED_PLATFORM,
+    distribution,
+    capabilities: { ...policy.capabilities },
+    toolDelivery: { ...policy.toolDelivery },
     runtimeId,
     lockDigests: inputs.lockDigests,
     interpreter: inputs.interpreter,
@@ -219,25 +235,141 @@ export interface VerifyManifestResult {
 
 const REQUIRED_SIDECAR_FILES = ['.python-version', 'pyproject.toml', 'uv.lock'] as const
 
-export async function verifyManifest(
-  manifest: RuntimeManifest,
-  locks: RuntimeLockSet,
-  sidecarDir: string
-): Promise<VerifyManifestResult> {
+const MANIFEST_KEYS = Object.freeze([
+  'schemaVersion',
+  'platform',
+  'distribution',
+  'capabilities',
+  'toolDelivery',
+  'runtimeId',
+  'lockDigests',
+  'interpreter',
+  'sidecarSourceDigest',
+  'wheelListDigest',
+  'uvToolDigest',
+  'modelsDigest'
+] as const)
+
+export function validateRuntimeManifestShape(manifest: unknown): LockError[] {
+  if (!isRecord(manifest)) {
+    return [new LockError(ERROR_CODES.SCHEMA_ERROR, 'runtime manifest must be an object')]
+  }
+
   const errors: LockError[] = []
+  if (!hasExactKeys(manifest, MANIFEST_KEYS)) {
+    errors.push(
+      new LockError(ERROR_CODES.SCHEMA_ERROR, 'runtime manifest fields do not match schema v2')
+    )
+  }
   if (manifest.schemaVersion !== MANIFEST_SCHEMA_VERSION) {
     errors.push(
       new LockError(
         ERROR_CODES.SCHEMA_ERROR,
-        `unsupported manifest schemaVersion: ${String(manifest.schemaVersion)}`
+        `unsupported manifest schemaVersion: ${String(manifest.schemaVersion)}`,
+        { id: 'schemaVersion' }
       )
     )
   }
   if (manifest.platform !== SUPPORTED_PLATFORM) {
     errors.push(
-      new LockError(ERROR_CODES.BAD_PLATFORM, `unsupported manifest platform: ${manifest.platform}`)
+      new LockError(
+        ERROR_CODES.BAD_PLATFORM,
+        `unsupported manifest platform: ${String(manifest.platform)}`,
+        { id: 'platform' }
+      )
     )
   }
+  errors.push(
+    ...validateDistributionPolicy(
+      manifest.distribution,
+      manifest.capabilities,
+      manifest.toolDelivery
+    )
+  )
+
+  validateDigestObject(errors, manifest.lockDigests, 'lockDigests', [
+    'tools',
+    'python',
+    'wheels',
+    'models'
+  ])
+  if (!hasExactKeys(manifest.interpreter, ['patch', 'distributionBuild'])) {
+    errors.push(
+      new LockError(
+        ERROR_CODES.SCHEMA_ERROR,
+        'interpreter must contain exactly patch and distributionBuild',
+        { id: 'interpreter' }
+      )
+    )
+  } else {
+    for (const key of ['patch', 'distributionBuild'] as const) {
+      if (typeof manifest.interpreter[key] !== 'string' || manifest.interpreter[key].length === 0) {
+        errors.push(
+          new LockError(ERROR_CODES.SCHEMA_ERROR, `invalid interpreter ${key}`, {
+            id: `interpreter.${key}`
+          })
+        )
+      }
+    }
+  }
+
+  for (const key of [
+    'runtimeId',
+    'sidecarSourceDigest',
+    'wheelListDigest',
+    'uvToolDigest',
+    'modelsDigest'
+  ] as const) {
+    if (typeof manifest[key] !== 'string' || !SHA256_RE.test(manifest[key])) {
+      errors.push(
+        new LockError(ERROR_CODES.SCHEMA_ERROR, `${key} must be lowercase 64-char hex`, { id: key })
+      )
+    }
+  }
+
+  return errors
+}
+
+function validateDigestObject(
+  errors: LockError[],
+  value: unknown,
+  id: string,
+  keys: readonly string[]
+): void {
+  if (!hasExactKeys(value, keys)) {
+    errors.push(new LockError(ERROR_CODES.SCHEMA_ERROR, `${id} fields do not match schema`, { id }))
+    return
+  }
+  for (const key of keys) {
+    if (typeof value[key] !== 'string' || !SHA256_RE.test(value[key])) {
+      errors.push(
+        new LockError(ERROR_CODES.SCHEMA_ERROR, `${id}.${key} must be lowercase 64-char hex`, {
+          id: `${id}.${key}`
+        })
+      )
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasExactKeys(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+  if (!isRecord(value)) return false
+  const actual = Object.keys(value).sort()
+  const expected = [...keys].sort()
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index])
+}
+
+export async function verifyManifest(
+  manifest: unknown,
+  locks: RuntimeLockSet,
+  sidecarDir: string
+): Promise<VerifyManifestResult> {
+  const shapeErrors = validateRuntimeManifestShape(manifest)
+  const errors: LockError[] = [...shapeErrors]
+  const validManifest = shapeErrors.length === 0 ? (manifest as RuntimeManifest) : null
 
   for (const [kind, lock] of Object.entries(locks) as Array<[keyof RuntimeLockSet, LockFile]>) {
     errors.push(...validateLockShape(lock))
@@ -285,21 +417,30 @@ export async function verifyManifest(
       )
     }
   }
-  check('tools', manifest.lockDigests.tools, computed.lockDigests.tools)
-  check('python', manifest.lockDigests.python, computed.lockDigests.python)
-  check('wheels', manifest.lockDigests.wheels, computed.lockDigests.wheels)
-  check('models', manifest.lockDigests.models, computed.lockDigests.models)
-  check('sidecar', manifest.sidecarSourceDigest, computed.sidecarSourceDigest)
-  check('wheelList', manifest.wheelListDigest, computed.wheelListDigest)
-  check('uv', manifest.uvToolDigest, computed.uvToolDigest)
-
   const runtimeId = computeRuntimeId(computed)
-  if (manifest.runtimeId !== runtimeId) {
-    errors.push(
-      new LockError(ERROR_CODES.HASH_MISMATCH, 'runtimeId does not match execution inputs', {
-        id: 'runtimeId'
-      })
+  if (validManifest) {
+    check('tools', validManifest.lockDigests.tools, computed.lockDigests.tools)
+    check('python', validManifest.lockDigests.python, computed.lockDigests.python)
+    check('wheels', validManifest.lockDigests.wheels, computed.lockDigests.wheels)
+    check('models', validManifest.lockDigests.models, computed.lockDigests.models)
+    check('sidecar', validManifest.sidecarSourceDigest, computed.sidecarSourceDigest)
+    check('wheelList', validManifest.wheelListDigest, computed.wheelListDigest)
+    check('uv', validManifest.uvToolDigest, computed.uvToolDigest)
+    check('modelsDigest', validManifest.modelsDigest, computed.modelsDigest)
+    check('interpreter.patch', validManifest.interpreter.patch, computed.interpreter.patch)
+    check(
+      'interpreter.distributionBuild',
+      validManifest.interpreter.distributionBuild,
+      computed.interpreter.distributionBuild
     )
+
+    if (validManifest.runtimeId !== runtimeId) {
+      errors.push(
+        new LockError(ERROR_CODES.HASH_MISMATCH, 'runtimeId does not match execution inputs', {
+          id: 'runtimeId'
+        })
+      )
+    }
   }
 
   return { ok: errors.length === 0, errors, runtimeId }

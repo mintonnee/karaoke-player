@@ -81,6 +81,28 @@ test('prepare-resources writes dest only after hash match', async () => {
   writeFileSync(join(locksDir, 'models.lock.json'), JSON.stringify(models))
   writeFileSync(join(locksDir, 'wheels.lock.json'), JSON.stringify(wheels))
 
+  let nsisFetches = 0
+  mkdirSync(join(root, 'resources', 'bin'), { recursive: true })
+  writeFileSync(join(root, 'resources', 'bin', 'uv.exe'), 'stale-tool')
+  writeFileSync(join(root, 'resources', 'bin', 'deno.exe'), 'stale-tool')
+  writeFileSync(join(root, 'resources', 'bin', 'yt-dlp.exe'), 'stale-tool')
+  writeFileSync(join(root, 'resources', 'bin', 'uv-windows.zip'), 'stale-archive')
+  const nsis = await prepareResources({
+    root,
+    target: 'nsis',
+    locksDir,
+    cacheRoot: join(root, 'cache-nsis'),
+    fetchImpl: () => {
+      nsisFetches += 1
+      throw new Error('NSIS preparation must not fetch tools')
+    },
+    log: () => {}
+  })
+  assert.equal(nsisFetches, 0)
+  assert.equal(existsSync(join(nsis.targetStageDir, 'resources', 'bin')), false)
+  assert.equal(existsSync(join(nsis.targetStageDir, 'sidecar', 'pyproject.toml')), true)
+  assert.equal(existsSync(join(nsis.targetStageDir, 'locks', 'tools.lock.json')), true)
+
   await prepareResources({
     root,
     locksDir,

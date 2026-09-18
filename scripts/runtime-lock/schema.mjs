@@ -11,6 +11,24 @@ export const LOCK_KINDS = Object.freeze(['tools', 'python', 'models', 'wheels'])
 export const ARTIFACT_KINDS = Object.freeze(['file', 'archive', 'wheel', 'sdist-build'])
 export const ARCHIVE_FORMATS = Object.freeze(['zip', 'tar.gz'])
 export const CAPABILITIES = Object.freeze(['always', 'zip-url-import'])
+export const RUNTIME_DISTRIBUTIONS = Object.freeze(['nsis', 'zip', 'appx'])
+export const TOOL_IDS = Object.freeze(['uv', 'deno', 'yt-dlp'])
+export const TOOL_DELIVERIES = Object.freeze(['bundled', 'download', 'disabled'])
+
+const DISTRIBUTION_POLICIES = Object.freeze({
+  nsis: Object.freeze({
+    capabilities: Object.freeze({ urlImport: true }),
+    toolDelivery: Object.freeze({ uv: 'download', deno: 'download', 'yt-dlp': 'download' })
+  }),
+  zip: Object.freeze({
+    capabilities: Object.freeze({ urlImport: true }),
+    toolDelivery: Object.freeze({ uv: 'bundled', deno: 'bundled', 'yt-dlp': 'bundled' })
+  }),
+  appx: Object.freeze({
+    capabilities: Object.freeze({ urlImport: false }),
+    toolDelivery: Object.freeze({ uv: 'bundled', deno: 'bundled', 'yt-dlp': 'disabled' })
+  })
+})
 
 export const SHA256_RE = /^[0-9a-f]{64}$/
 export const GIT_SHA_RE = /^[0-9a-f]{40}$/
@@ -41,6 +59,10 @@ export const ERROR_CODES = Object.freeze({
  * @typedef {'file' | 'archive' | 'wheel' | 'sdist-build'} ArtifactKind
  * @typedef {'tools' | 'python' | 'models' | 'wheels'} LockKind
  * @typedef {'always' | 'zip-url-import'} Capability
+ * @typedef {'nsis' | 'zip' | 'appx'} RuntimeDistribution
+ * @typedef {'uv' | 'deno' | 'yt-dlp'} ToolId
+ * @typedef {'bundled' | 'download' | 'disabled'} ToolDelivery
+ * @typedef {{ capabilities: { urlImport: boolean }, toolDelivery: Record<ToolId, ToolDelivery> }} DistributionPolicy
  *
  * @typedef {object} ArchiveMember
  * @property {string} path
@@ -126,6 +148,114 @@ export class LockError extends Error {
       message: this.message
     }
   }
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is RuntimeDistribution}
+ */
+export function isRuntimeDistribution(value) {
+  return typeof value === 'string' && RUNTIME_DISTRIBUTIONS.includes(value)
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is ToolId}
+ */
+export function isToolId(value) {
+  return typeof value === 'string' && TOOL_IDS.includes(value)
+}
+
+/**
+ * @param {unknown} distribution
+ * @returns {DistributionPolicy}
+ */
+export function getDistributionPolicy(distribution) {
+  if (!isRuntimeDistribution(distribution)) {
+    throw new LockError(
+      ERROR_CODES.SCHEMA_ERROR,
+      `unsupported runtime distribution: ${String(distribution)}`,
+      { id: 'distribution' }
+    )
+  }
+  return DISTRIBUTION_POLICIES[distribution]
+}
+
+/**
+ * @param {unknown} distribution
+ * @param {unknown} capabilities
+ * @param {unknown} toolDelivery
+ * @returns {LockError[]}
+ */
+export function validateDistributionPolicy(distribution, capabilities, toolDelivery) {
+  /** @type {LockError[]} */
+  const errors = []
+  let expected
+  try {
+    expected = getDistributionPolicy(distribution)
+  } catch (error) {
+    return [
+      error instanceof LockError
+        ? error
+        : new LockError(ERROR_CODES.SCHEMA_ERROR, 'invalid runtime distribution', {
+            id: 'distribution'
+          })
+    ]
+  }
+
+  if (!hasExactKeys(capabilities, ['urlImport'])) {
+    errors.push(
+      new LockError(ERROR_CODES.SCHEMA_ERROR, 'capabilities must contain only urlImport', {
+        id: 'capabilities'
+      })
+    )
+  } else if (capabilities.urlImport !== expected.capabilities.urlImport) {
+    errors.push(
+      new LockError(
+        ERROR_CODES.SCHEMA_ERROR,
+        `urlImport does not match ${String(distribution)} distribution policy`,
+        { id: 'capabilities.urlImport' }
+      )
+    )
+  }
+
+  if (!hasExactKeys(toolDelivery, TOOL_IDS)) {
+    errors.push(
+      new LockError(
+        ERROR_CODES.SCHEMA_ERROR,
+        'toolDelivery must contain exactly uv, deno, yt-dlp',
+        {
+          id: 'toolDelivery'
+        }
+      )
+    )
+  } else {
+    for (const toolId of TOOL_IDS) {
+      if (toolDelivery[toolId] !== expected.toolDelivery[toolId]) {
+        errors.push(
+          new LockError(
+            ERROR_CODES.SCHEMA_ERROR,
+            `${toolId} delivery does not match ${String(distribution)} distribution policy`,
+            { id: `toolDelivery.${toolId}` }
+          )
+        )
+      }
+    }
+  }
+
+  return errors
+}
+
+/**
+ * @param {unknown} value
+ * @param {readonly string[]} keys
+ * @returns {value is Record<string, unknown>}
+ */
+function hasExactKeys(value, keys) {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return false
+  const actual = Object.keys(value).sort()
+  const expected = [...keys].sort()
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index])
 }
 
 /**

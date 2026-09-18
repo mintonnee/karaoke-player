@@ -10,5 +10,8 @@ import { prepareResources } from './runtime-lock/prepare.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const force = process.argv.includes('--force')
+const targetIndex = process.argv.indexOf('--target')
+const target = targetIndex < 0 ? undefined : process.argv[targetIndex + 1]
+if (targetIndex >= 0 && !target) throw new Error('--target requires nsis, zip, or appx')
 
-await prepareResources({ root, force })
+await prepareResources({ root, force, target })

@@ -18,7 +18,7 @@ Karaoke Player의 기능 스펙 문서 모음. 새 스펙은 아래 템플릿 �
 | 009  | [`009-youtube-url-preview.md`](009-youtube-url-preview.md)                         | 004 §4.1-4.2 — YouTube URL 사전 확인·상태 아이콘·메타데이터 미리보기 | 구현 완료 (기준 1–10 자동 검증, 11·12 수동 확인 대기)                                  |
 | 010  | [`010-notification-center.md`](010-notification-center.md)                         | 008 §4.5·003 사이드 툴바 — 준비 상태·오류 기록을 알림 센터로 통합    | 구현 완료 (자동 검증 통과, 실제 앱 수동 확인 대기)                                     |
 | 011  | [`011-track-reanalysis.md`](011-track-reanalysis.md)                               | 005 §4.2·002 — 곡 수정 창의 키·BPM 재측정                            | 구현 완료 (자동 검증 통과, 실제 앱 수동 확인 대기)                                     |
-| 012 | [`012-nsis-installer.md`](012-nsis-installer.md) | 001 S7·008 — NSIS exe 설치 파일·uv/Deno/yt-dlp 초기화 다운로드 | 설계 완료, 구현 미착수 |
+| 012  | [`012-nsis-installer.md`](012-nsis-installer.md)                                   | 001 S7·008 — NSIS exe 설치 파일·uv/Deno/yt-dlp 초기화 다운로드       | 코드 구현·NSIS 빌드 검증 완료 (VM·설치 앱 인수 대기)                                   |
 
 ## 템플릿
 

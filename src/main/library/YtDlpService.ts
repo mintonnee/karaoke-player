@@ -187,7 +187,6 @@ export class YtDlpService {
   private chain: Promise<unknown> = Promise.resolve()
   private readonly running = new Set<ChildProcess>()
   private disposed = false
-  private binariesVerified = false
 
   constructor(private readonly options: YtDlpServiceOptions) {}
 
@@ -260,7 +259,6 @@ export class YtDlpService {
   }
 
   private verifyBinaries(): void {
-    if (this.binariesVerified) return
     const verify = this.options.verifyCommand
     if (verify) {
       if (this.options.ytDlpHash) verify(this.options.command, this.options.ytDlpHash)
@@ -268,7 +266,6 @@ export class YtDlpService {
     } else if (this.options.ytDlpHash || this.options.denoHash) {
       throw new Error('yt-dlp hash spec requires verifyCommand')
     }
-    this.binariesVerified = true
   }
 
   private download(id: string, url: string, scratch: string): Promise<DownloadOutcome> {

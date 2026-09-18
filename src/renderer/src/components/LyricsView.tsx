@@ -46,6 +46,7 @@ function LyricsView(): React.JSX.Element | null {
     confs,
     hints,
     showHints,
+    swapHints,
     working,
     workError,
     loading,
@@ -240,6 +241,15 @@ function LyricsView(): React.JSX.Element | null {
             i >= Math.min(dragSel.start, dragSel.end) &&
             i <= Math.max(dragSel.start, dragSel.end)
           const inLoop = loop !== null && line.time >= loop.start && line.time < loop.end
+          const hint = showHints && hints?.[i] ? hints[i] : null
+          const primaryText = swapHints && hint ? hint : line.text === '' ? '♪' : line.text
+          const secondaryText = hint
+            ? swapHints
+              ? line.text === ''
+                ? '♪'
+                : line.text
+              : hint
+            : null
           return (
             <p
               key={`${line.time}-${i}`}
@@ -255,8 +265,12 @@ function LyricsView(): React.JSX.Element | null {
                   ⚠{' '}
                 </span>
               )}
-              {line.text === '' ? '♪' : line.text}
-              {showHints && hints?.[i] && <span className="lyrics-hint">{hints[i]}</span>}
+              {primaryText}
+              {secondaryText && (
+                <span className={`lyrics-hint${swapHints ? ' lyrics-hint-original' : ''}`}>
+                  {secondaryText}
+                </span>
+              )}
               {state === 'current' && (
                 <span className="lyrics-line-progress">
                   <span style={{ width: `${progress * 100}%` }} />

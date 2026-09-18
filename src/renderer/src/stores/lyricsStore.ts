@@ -33,6 +33,8 @@ interface LyricsState {
   hints: (string | null)[] | null
   /** 힌트 표시 여부 (세션 단위 토글) */
   showHints: boolean
+  /** 한글 발음과 원문 위치 스왑 여부 */
+  swapHints: boolean
   loading: boolean
   /** 정렬/전사/발음 생성 진행 상태 */
   working: 'align' | 'transcribe' | 'pronounce' | null
@@ -52,6 +54,7 @@ interface LyricsState {
   /** 가사 초기화: 저장된 가사·정렬·보정·발음 힌트를 지우고 설정 화면으로 돌아간다 */
   reset: (trackId: string) => Promise<void>
   toggleHints: () => void
+  toggleSwapHints: () => void
   toggleCorrection: () => void
   selectLine: (index: number) => void
   /** 재생 중 탭: 선택 줄 시작점을 현재 위치로 지정하고 저장 후 다음 줄 선택 */
@@ -105,6 +108,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
     plain: null,
     hints: null,
     showHints: true,
+    swapHints: false,
     loading: false,
     working: null,
     progress: null,
@@ -183,7 +187,19 @@ export const useLyricsStore = create<LyricsState>((set, get) => {
         })
       }
     },
-    toggleHints: () => set((state) => ({ showHints: !state.showHints })),
+    toggleHints: () =>
+      set((state) => {
+        const nextShowHints = !state.showHints
+        return {
+          showHints: nextShowHints,
+          swapHints: nextShowHints ? state.swapHints : false
+        }
+      }),
+    toggleSwapHints: () =>
+      set((state) => ({
+        swapHints: !state.swapHints,
+        showHints: !state.swapHints ? true : state.showHints
+      })),
     toggleCorrection: () => set((state) => ({ correcting: !state.correcting, selectedIndex: 0 })),
     selectLine: (index) => set({ selectedIndex: index }),
     tap: async (trackId, positionSec) => {

@@ -10,7 +10,8 @@ import {
   MdHelpOutline,
   MdNotificationsNone,
   MdSchedule,
-  MdSettings
+  MdSettings,
+  MdSwapVert
 } from 'react-icons/md'
 import CoverArt from './components/CoverArt'
 import ErrorCenter from './components/ErrorCenter'
@@ -201,6 +202,14 @@ function App(): React.JSX.Element {
   const isPlaying = usePlayerStore((s) => s.engineState === 'playing')
   const loadLyrics = useLyricsStore((s) => s.load)
   const clearLyrics = useLyricsStore((s) => s.clear)
+  const lyricsHints = useLyricsStore((s) => s.hints)
+  const lyricsShowHints = useLyricsStore((s) => s.showHints)
+  const lyricsSwapHints = useLyricsStore((s) => s.swapHints)
+  const toggleSwapHints = useLyricsStore((s) => s.toggleSwapHints)
+  const hasPronunciation = Boolean(
+    currentTrackId && lyricsHints && lyricsHints.some((h) => h !== null)
+  )
+  const canSwapLyrics = hasPronunciation && lyricsShowHints
   const [dragOver, setDragOver] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
@@ -507,6 +516,27 @@ function App(): React.JSX.Element {
         <section className="panel lyrics-panel">
           <div className="panel-header">
             <h2>가사</h2>
+            <div className="panel-header-actions">
+              <button
+                type="button"
+                className={`icon-btn${lyricsSwapHints ? ' active' : ''}`}
+                disabled={!canSwapLyrics}
+                aria-label={lyricsSwapHints ? '원문을 위로 표시' : '한글 발음과 원문 위치 스왑'}
+                title={
+                  !hasPronunciation
+                    ? '한글 발음이 있는 곡에서 발음과 원문 위치를 바꿉니다'
+                    : !lyricsShowHints
+                      ? '한글 발음이 켜져 있을 때 위치를 바꿉니다'
+                      : lyricsSwapHints
+                        ? '원문을 위로 표시 (기본)'
+                        : '한글 발음과 원문 위치 스왑'
+                }
+                aria-pressed={lyricsSwapHints}
+                onClick={toggleSwapHints}
+              >
+                <MdSwapVert aria-hidden="true" />
+              </button>
+            </div>
           </div>
           {currentTrackId ? (
             <LyricsView />

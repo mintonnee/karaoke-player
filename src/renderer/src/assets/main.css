@@ -379,8 +379,15 @@
 .panel-header .icon-btn,
 .modal-header .icon-btn {
   padding: 0;
-  font-size: 15px;
+  width: 26px;
+  height: 26px;
+  font-size: 17px;
   color: var(--ev-c-text-1);
+}
+
+.panel-header .icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* 설정/정보 모달 */
@@ -895,6 +902,20 @@
   border-color: var(--ev-c-gray-1);
 }
 
+.icon-btn.active,
+.panel-header .icon-btn.active {
+  background-color: #4a7dbd;
+  border-color: #4a7dbd;
+  color: #fff;
+}
+
+.icon-btn.active:hover:not(:disabled),
+.panel-header .icon-btn.active:hover:not(:disabled) {
+  background-color: #5a8dcd;
+  border-color: #6b9fd8;
+  color: #fff;
+}
+
 /* LyricsView 루트: 가사 패널을 세로로 채운다 (본문 flex:1 + 하단 도구 막대) */
 .lyrics-pane {
   display: flex;
@@ -988,6 +1009,10 @@
   font-weight: 500;
   line-height: 1.3;
   opacity: 0.75;
+}
+
+.lyrics-hint.lyrics-hint-original {
+  opacity: 0.8;
 }
 
 .lyrics-line-progress {

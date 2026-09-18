@@ -1,6 +1,6 @@
 {
   "name": "karaoke-player",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0",
   "description": "Local karaoke desktop app: Demucs vocal separation, synced lyrics, key shift",
   "main": "./out/main/index.js",
   "author": "mintonnee",

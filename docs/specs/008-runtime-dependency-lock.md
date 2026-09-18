@@ -7,6 +7,8 @@
 
 이 문서는 001의 다운로드·부트스트랩에서 Python 런타임과 패키지, sidecar 코드, 모델, uv·yt-dlp·Deno의 고정·검증·활성화를 분리해 다룬다. 기존 001의 파일 존재 기반 재사용과 기존 venv에 직접 sync하는 방식은 이 스펙 구현 완료 후 대체한다.
 
+후속 [`012-nsis-installer.md`](012-nsis-installer.md)는 이 lock·검증·캐시 계약을 재사용해 NSIS 채널에서 세 도구를 첫 앱 실행에 다운로드하도록 확장한다. NSIS에는 도구 exe/ZIP을 포함하지 않으며 manifest v2의 채널·배치 정책, 도구 readiness와 재시도, 최종 설치 payload 검증을 추가한다. 아래 ZIP/APPX 정책은 유지하며 012의 구현 상태는 별도로 관리한다.
+
 ## 1. 목표와 비목표
 
 ```text

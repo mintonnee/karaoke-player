@@ -120,6 +120,22 @@ APPX 제출용 identity는 `APPX_IDENTITY_NAME`, `APPX_PUBLISHER`, `APPX_PUBLISH
 
 의존성 버전 변경과 checksum 갱신 절차는 [런타임 lock 운영](docs/runtime-lock.md)을 참고하세요. 일반 빌드는 lock을 자동 갱신하지 않습니다. 서드파티 고지는 `pnpm gen:notices`로 재생성합니다.
 
+### GitHub Actions와 릴리즈
+
+[Windows CI and Release](.github/workflows/windows.yml)는 PR·`main` push·수동 실행에서 타입 검사, 린트, 테스트, runtime lock 검증과 NSIS 빌드를 수행합니다. 설치 파일과 `SHA256SUMS`는 Actions의 `windows-nsis` 아티팩트에서 받을 수 있으며, payload 검증 보고서는 별도 아티팩트로 보관합니다. 보관 기간은 14일입니다.
+
+릴리즈 절차:
+
+1. `package.json`의 버전을 정하고 변경사항을 커밋합니다.
+2. 해당 커밋에 버전과 정확히 일치하는 태그를 만듭니다. 예: 버전 `0.1.0` → `v0.1.0`.
+3. 준비한 커밋과 태그를 GitHub에 push합니다.
+4. Windows 검증·빌드 성공 후 EXE와 `SHA256SUMS`가 첨부된 **Release 초안**이 생성됩니다. `v0.1.0-beta.1`처럼 접미사가 있는 버전은 prerelease로 표시됩니다.
+5. 초안의 설치 파일로 동작을 확인하고 릴리즈 노트를 검토한 뒤 GitHub에서 공개합니다.
+
+브랜치·PR·수동 실행은 릴리즈를 생성하지 않습니다. 태그와 앱 버전이 다르면 빌드 전에 실패합니다. 기존 릴리즈를 덮어쓰지 않으므로, 업로드 도중 실패해 초안이 남았다면 해당 초안을 확인·정리한 뒤 실패한 release job을 재실행하세요.
+
+빌드 job은 읽기 권한만 사용하며 릴리즈 job에만 `contents: write`를 부여합니다. 기본 `GITHUB_TOKEN`을 사용하므로 별도 PAT는 필요하지 않습니다. 저장소 정책에서 Actions 실행과 릴리즈 생성을 허용해야 합니다. 현재 워크플로는 코드 서명과 Store 업로드를 구성하지 않습니다.
+
 ### 환경 변수
 
 | 변수                       | 기본값 | 용도                                 |

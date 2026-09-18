@@ -1,0 +1,101 @@
+name: Windows CI and Release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.19.0'
+      - name: Check release tag
+        shell: pwsh
+        run: |
+          node -e "const p=require('./package.json'); if(process.env.GITHUB_REF_TYPE==='tag' && process.env.GITHUB_REF_NAME!=='v'+p.version) throw Error('Tag must equal v'+p.version)"
+      - name: Install pnpm
+        run: npm install --global pnpm@11.19.0
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Type check
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Application tests
+        run: pnpm test
+      - name: Packaging and runtime lock tests
+        run: node --test scripts/__tests__/runtime-lock/*.test.mjs scripts/nsis-acceptance/inventory.test.mjs
+      - name: Verify runtime locks
+        run: pnpm verify:runtime-lock
+      - name: Build and verify NSIS payload
+        run: pnpm build:nsis --publish never
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          $name = "karaoke-player-$version-win-x64-setup.exe"
+          $installer = Join-Path 'dist/nsis' $name
+          if (!(Test-Path -LiteralPath $installer)) { throw "Missing installer: $name" }
+          New-Item -ItemType Directory -Force dist/release | Out-Null
+          Copy-Item -LiteralPath $installer -Destination dist/release
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content -Encoding utf8NoBOM dist/release/SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-nsis
+          path: dist/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Upload payload verification reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nsis-verification
+          path: dist/nsis/acceptance/**/report.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  release:
+    needs: windows
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-nsis
+          path: release
+      - name: Verify downloaded assets
+        working-directory: release
+        run: sha256sum --check SHA256SUMS
+      - name: Create release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          args=(--draft --verify-tag --generate-notes --title "$RELEASE_TAG")
+          if [[ "$RELEASE_TAG" == *-* ]]; then args+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" release/* "${args[@]}"

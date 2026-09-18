@@ -6,12 +6,15 @@ import { IPC_CHANNELS } from '../../shared/types'
 import { registerIpcHandlers, type IpcDeps } from '../ipc'
 import { LibraryStore } from '../library/LibraryStore'
 
-const handlers = new Map<string, (event: unknown, ...args: any[]) => Promise<any>>()
+const handlers = new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>()
 const mockOpenPath = vi.fn(async (_path: string) => '')
 
 vi.mock('electron', () => ({
   ipcMain: {
-    handle: (channel: string, handler: (event: unknown, ...args: any[]) => Promise<any>) => {
+    handle: (
+      channel: string,
+      handler: (event: unknown, ...args: unknown[]) => Promise<unknown>
+    ) => {
       handlers.set(channel, handler)
     }
   },
@@ -44,18 +47,18 @@ describe('openTrackFolder IPC', () => {
 
     const deps: IpcDeps = {
       store,
-      importService: {} as any,
-      lyricsService: {} as any,
-      searchKeyService: {} as any,
-      settingsStore: {} as any,
+      importService: {} as IpcDeps['importService'],
+      lyricsService: {} as IpcDeps['lyricsService'],
+      searchKeyService: {} as IpcDeps['searchKeyService'],
+      settingsStore: {} as IpcDeps['settingsStore'],
       tracksDir,
       notify: vi.fn(),
       capabilities: { urlImport: true },
       ytDlpService: null,
       previewService: null,
-      trackEditService: {} as any,
-      coverService: {} as any,
-      analysisService: {} as any,
+      trackEditService: {} as IpcDeps['trackEditService'],
+      coverService: {} as IpcDeps['coverService'],
+      analysisService: {} as IpcDeps['analysisService'],
       getBootstrapState: () => ({ status: 'ready', message: '', error: null, log: [] })
     }
     registerIpcHandlers(deps)
@@ -126,6 +129,8 @@ describe('openTrackFolder IPC', () => {
     mockOpenPath.mockResolvedValueOnce('Failed to launch explorer')
 
     const handler = handlers.get(IPC_CHANNELS.openTrackFolder)!
-    await expect(handler!({}, trackId)).rejects.toThrow('failed to open track directory: Failed to launch explorer')
+    await expect(handler!({}, trackId)).rejects.toThrow(
+      'failed to open track directory: Failed to launch explorer'
+    )
   })
 })

@@ -1103,6 +1103,60 @@
   cursor: pointer;
 }
 
+.lyrics-empty button:hover:not(:disabled) {
+  border-color: var(--ev-c-gray-1);
+}
+
+.lyrics-empty button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lyrics-setup-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.lyrics-setup-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lyrics-setup-toolbar-group.lyrics-setup-lang {
+  margin-left: auto;
+}
+
+.lyrics-setup-lang-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ev-c-text-2);
+}
+
+.lyrics-setup-toolbar select,
+.lyrics-setup-actions select {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--ev-c-gray-2);
+  background-color: var(--ev-c-black-mute);
+  color: var(--ev-c-text-1);
+  font: inherit;
+  font-size: 13px;
+}
+
+.lyrics-setup-toolbar select:disabled,
+.lyrics-setup-actions select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .lyrics-setup textarea {
   align-self: stretch;
   resize: vertical;
@@ -1116,19 +1170,23 @@
   font-family: inherit;
 }
 
+.lyrics-setup textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .lyrics-setup-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
   align-items: center;
+  width: 100%;
 }
 
-.lyrics-setup-actions select {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--ev-c-gray-2);
-  background-color: var(--ev-c-black-mute);
-  color: var(--ev-c-text-1);
+.lyrics-setup-align-btn {
+  padding: 7px 16px;
+  font-weight: 500;
 }
 
 .lyrics-error {
@@ -1392,7 +1450,7 @@
   border-radius: 6px;
 }
 
-/* 드래그 정렬: 번호 왼쪽 핸들에서만 끌 수 있다. 행 호버 때만 드러나고 검색 중엔 자리만 남긴다 */
+/* 드래그 정렬: 번호 왼쪽 핸들에서 끌 수 있다. 상시 톤다운된 회색으로 표시되며 호버 시 뚜렷하게 밝아진다 */
 .track-drag-handle {
   flex: none;
   display: inline-flex;
@@ -1401,22 +1459,22 @@
   /* 번호와의 간격: 공통 gap(10px)에서 6px으로 당긴다 */
   margin-right: -4px;
   font-size: 18px;
-  color: var(--ev-c-text-3);
-  opacity: 0;
+  color: rgba(255, 255, 255, 0.18);
   cursor: grab;
-  transition: opacity 0.12s ease;
+  transition: color 0.15s ease;
 }
 
 .track-item:hover .track-drag-handle:not(.hidden-slot) {
-  opacity: 1;
+  color: var(--ev-c-text-1);
 }
 
 .track-drag-handle:hover {
-  color: var(--ev-c-text-2);
+  color: #fff;
 }
 
 .track-drag-handle:active {
   cursor: grabbing;
+  color: #fff;
 }
 
 .track-drag-handle.hidden-slot {

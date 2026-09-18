@@ -450,7 +450,7 @@ function App(): React.JSX.Element {
             ref={searchInputRef}
             className="search"
             type="search"
-            placeholder="제목/아티스트/앨범 검색"
+            placeholder="제목/아티스트/앨범 검색 (초성 검색 가능)"
             value={search}
             onChange={(e) => void setSearch(e.target.value)}
           />

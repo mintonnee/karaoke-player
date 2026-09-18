@@ -88,6 +88,31 @@ function LyricsSetup({ track, noGuide = false }: LyricsSetupProps): React.JSX.El
             {browserError}
           </p>
         )}
+        <div className="lyrics-setup-toolbar">
+          <div className="lyrics-setup-toolbar-group">
+            <button type="button" onClick={() => void searchGoogle()}>
+              가사 구글 검색
+            </button>
+            <button type="button" disabled={alignDisabled} onClick={() => void runTranscribe()}>
+              보컬 듣고 받아쓰기
+            </button>
+          </div>
+          <div className="lyrics-setup-toolbar-group lyrics-setup-lang">
+            <label className="lyrics-setup-lang-label">
+              <span>언어</span>
+              <select
+                aria-label="가사 언어"
+                disabled={alignDisabled}
+                value={lang}
+                onChange={(e) => setPickedLang(e.target.value as AlignLang)}
+              >
+                <option value="ko">한국어</option>
+                <option value="ja">일본어</option>
+                <option value="en">영어</option>
+              </select>
+            </label>
+          </div>
+        </div>
         <textarea
           aria-label="정렬할 가사"
           disabled={alignDisabled}
@@ -97,25 +122,13 @@ function LyricsSetup({ track, noGuide = false }: LyricsSetupProps): React.JSX.El
           rows={8}
         />
         <div className="lyrics-setup-actions">
-          <select
-            aria-label="가사 언어"
-            disabled={alignDisabled}
-            value={lang}
-            onChange={(e) => setPickedLang(e.target.value as AlignLang)}
-          >
-            <option value="ko">한국어</option>
-            <option value="ja">일본어</option>
-            <option value="en">영어</option>
-          </select>
           <button
+            type="button"
+            className="lyrics-setup-align-btn"
             disabled={alignDisabled || !text.trim()}
             onClick={() => void align(trackId, text, lang, text === (plain ?? ''))}
           >
-            정렬 실행
-          </button>
-          <button onClick={() => void searchGoogle()}>가사 구글 검색</button>
-          <button disabled={alignDisabled} onClick={() => void runTranscribe()}>
-            보컬 듣고 받아쓰기
+            가사 정렬 실행
           </button>
         </div>
       </section>

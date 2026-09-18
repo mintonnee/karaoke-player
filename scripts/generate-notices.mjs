@@ -80,6 +80,18 @@ parts.push(
     `react-icons 패키지를 통해 포함되는 Material Design 아이콘은 Apache License 2.0을 따른다.`
 )
 
+const pretendardLicense = readFileSync(
+  join(root, 'scripts', 'licenses', 'pretendard-jp-LICENSE.txt'),
+  'utf-8'
+).trim()
+parts.push(
+  `Pretendard JP — SIL Open Font License 1.1 (동봉 폰트)\n` +
+    `https://github.com/orioncactus/pretendard\n\n` +
+    `이 앱은 Pretendard JP 가변 글꼴(PretendardJPVariable.woff2)을 기본 UI 및 가사 글꼴로\n` +
+    `내부에 동봉하여 사용한다. 해당 폰트 소프트웨어는 SIL Open Font License 1.1을 따른다.\n\n` +
+    pretendardLicense
+)
+
 parts.push(
   `Electron / Chromium / Node.js\n\n` +
     `Electron 및 그에 포함된 Chromium·Node.js 구성요소의 상세 고지는 배포판 루트의\n` +

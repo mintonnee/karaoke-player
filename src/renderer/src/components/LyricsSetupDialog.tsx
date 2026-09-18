@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { MdClose } from 'react-icons/md'
 import type { Track } from '../../../shared/types'
 import { useLyricsStore } from '../stores/lyricsStore'
 import LyricsSetup from './LyricsSetup'
@@ -39,8 +40,14 @@ export default function LyricsSetupDialog({ track }: { track: Track }): React.JS
         >
           <header className="modal-header">
             <h2 id="lyrics-editor-heading">가사 편집 · {track.title}</h2>
-            <button type="button" onClick={() => setOpen(false)}>
-              닫기
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="닫기"
+              title="닫기"
+              onClick={() => setOpen(false)}
+            >
+              <MdClose aria-hidden="true" />
             </button>
           </header>
           <div className="lyrics-editor-body">

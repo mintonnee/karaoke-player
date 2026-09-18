@@ -1731,12 +1731,6 @@
 
 .lyrics-editor-dialog .modal-header button {
   flex-shrink: 0;
-  padding: 8px 12px;
-  border: 1px solid var(--ev-c-gray-2);
-  border-radius: 6px;
-  background: var(--ev-c-black-mute);
-  color: var(--ev-c-text-1);
-  font: inherit;
 }
 
 .lyrics-editor-body {
@@ -1800,7 +1794,7 @@
   flex-shrink: 0;
 }
 
-.lrclib-dialog button,
+.lrclib-dialog button:not(.icon-btn),
 .lrclib-search input {
   padding: 8px 12px;
   border: 1px solid var(--ev-c-gray-2);
@@ -1808,6 +1802,57 @@
   background: var(--ev-c-black-mute);
   color: var(--ev-c-text-1);
   font: inherit;
+}
+
+.lrclib-track {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--ev-c-gray-2);
+  border-radius: 8px;
+  background: var(--ev-c-black-mute);
+}
+
+.lrclib-track-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--ev-c-black-soft);
+  color: var(--ev-c-text-3);
+  font-size: 28px;
+}
+
+.lrclib-track-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lrclib-track-title,
+.lrclib-track-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lrclib-track-title {
+  font-size: 16px;
+}
+
+.lrclib-track-artist,
+.lrclib-track-duration {
+  color: var(--ev-c-text-2);
+  font-size: 13px;
+}
+
+.lrclib-track-duration {
+  font-variant-numeric: tabular-nums;
 }
 
 .lrclib-search {

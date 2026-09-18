@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { MdClose } from 'react-icons/md'
 import type { LrclibRecord } from '../../../shared/lrclib'
 import type { LyricsPayload, Track } from '../../../shared/types'
+import CoverArt from './CoverArt'
 
 interface Props {
   track: Track
@@ -82,12 +84,34 @@ export default function LrclibSearchDialog({ track, onClose, onApply }: Props): 
     >
       <header className="modal-header">
         <h2 id="lrclib-heading">LRCLIB에서 찾기</h2>
-        <button type="button" disabled={saving} onClick={onClose}>
-          닫기
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="닫기"
+          title="닫기"
+          disabled={saving}
+          onClick={onClose}
+        >
+          <MdClose aria-hidden="true" />
         </button>
       </header>
       <div className="lrclib-body">
         <div className="lrclib-search-panel">
+          <section className="lrclib-track" aria-label="가사를 찾을 곡 정보">
+            <CoverArt trackId={track.id} version={track.updatedAt} className="lrclib-track-cover" />
+            <div className="lrclib-track-info">
+              <strong className="lrclib-track-title" title={track.title}>
+                {track.title}
+              </strong>
+              <span className="lrclib-track-artist" title={track.artist || '아티스트 미상'}>
+                {track.artist || '아티스트 미상'}
+              </span>
+              <span className="lrclib-track-duration">
+                총 재생시간 {Math.floor(track.duration / 60)}:
+                {String(Math.floor(track.duration % 60)).padStart(2, '0')}
+              </span>
+            </div>
+          </section>
           <form
             className="lrclib-search"
             onSubmit={(event) => {

@@ -1,3 +1,4 @@
+import { verifyFileInWorker, artifactMatchesInWorker } from './fileWorkerClient'
 import { existsSync, mkdirSync, renameSync, rmSync } from 'fs'
 import { join, posix } from 'path'
 import { randomUUID } from 'crypto'
@@ -16,13 +17,7 @@ import {
   type LockFile
 } from './schema'
 import { validateRuntimeManifestShape, type RuntimeManifest } from './manifest'
-import {
-  artifactDestMatches,
-  downloadVerified,
-  ensureArtifact,
-  runtimeCacheRoot,
-  verifyExistingFile
-} from './download'
+import { downloadVerified, ensureArtifact, runtimeCacheRoot } from './download'
 import { resolveInside } from './paths'
 import { withProcessLock } from './lockfile'
 import { abortError, checkAbort, waitWithSignal } from './cancellation'
@@ -216,7 +211,7 @@ export class ToolReadinessController {
             )
           : artifact
       if (!expected) throw new LockError(ERROR_CODES.SCHEMA_ERROR, `missing primary member (${id})`)
-      verifyExistingFile(path, expected)
+      await verifyFileInWorker(path, expected, signal)
       checkAbort(signal)
       return path
     }
@@ -241,7 +236,8 @@ export class ToolReadinessController {
         })
         update({ status: 'verifying' })
         checkAbort(signal)
-        if (artifactDestMatches(mapped, finalDir)) return resolveInside(finalDir, mapped.dest)
+        if (await artifactMatchesInWorker(mapped, finalDir, signal))
+          return resolveInside(finalDir, mapped.dest)
         const staging = resolveInside(root, `.staging-${artifact.sha256}-${randomUUID()}`)
         mkdirSync(staging, { recursive: true })
         try {
@@ -253,7 +249,7 @@ export class ToolReadinessController {
             fetchImpl: this.options.fetchImpl,
             timeoutMs: this.options.timeoutMs
           })
-          if (!artifactDestMatches(mapped, staging))
+          if (!(await artifactMatchesInWorker(mapped, staging, signal)))
             throw new LockError(ERROR_CODES.HASH_MISMATCH, `tool validation failed (${id})`)
           checkAbort(signal)
           // Keep damaged/current and older versions intact; never delete an active directory.

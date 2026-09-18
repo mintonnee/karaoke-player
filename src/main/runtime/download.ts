@@ -1,25 +1,20 @@
+import { runFileJob } from './fileWorkerClient'
+export { hashFile, verifyExistingFile, artifactDestMatches } from './fileOperations'
 import {
-  closeSync,
   createWriteStream,
-  copyFileSync,
   existsSync,
   mkdirSync,
-  openSync,
-  readFileSync,
-  readSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync
 } from 'fs'
 import { createHash, randomBytes } from 'crypto'
-import { dirname, join, posix as posixPath, resolve } from 'path'
+import { join, resolve } from 'path'
 import { ERROR_CODES, LockError, type Artifact } from './schema'
 import { assertAllowedUrl, redactUrl } from './hosts'
-import { extractZipVerified, type ArchiveAllowSpec } from './zip'
-import { extractTarGzVerified } from './tar'
 import { withProcessLock } from './lockfile'
-import { posixDest, resolveInside } from './paths'
+import { resolveInside } from './paths'
 import { checkAbort, waitWithSignal, withDownloadSlot } from './cancellation'
 
 interface Waiter {
@@ -67,54 +62,6 @@ function ensureDir(path: string): void {
   mkdirSync(path, { recursive: true })
 }
 
-export function hashFile(path: string): string {
-  const hash = createHash('sha256')
-  const fd = openSync(path, 'r')
-  try {
-    const buf = Buffer.alloc(1024 * 1024)
-    let n = 0
-    while ((n = readSync(fd, buf, 0, buf.length, null)) > 0) {
-      hash.update(buf.subarray(0, n))
-    }
-    return hash.digest('hex')
-  } finally {
-    closeSync(fd)
-  }
-}
-
-function copyFileAtomic(source: string, dest: string): void {
-  ensureDir(dirname(dest))
-  const tmp = dest + '.' + process.pid + '.' + randomBytes(6).toString('hex') + '.tmp'
-  try {
-    copyFileSync(source, tmp)
-    renameSync(tmp, dest)
-  } finally {
-    rmSync(tmp, { force: true })
-  }
-}
-
-function writeFileAtomic(dest: string, data: Buffer): void {
-  ensureDir(dirname(dest))
-  const tmp = `${dest}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
-  writeFileSync(tmp, data)
-  try {
-    renameSync(tmp, dest)
-  } catch (err) {
-    try {
-      rmSync(tmp, { force: true })
-    } catch {
-      // ignore
-    }
-    if (existsSync(dest)) {
-      throw new LockError(
-        ERROR_CODES.SCHEMA_ERROR,
-        `rename failed; kept existing complete file: ${dest}`
-      )
-    }
-    throw err
-  }
-}
-
 export interface EnsureArtifactOptions {
   artifact: Artifact
   destRoot: string
@@ -149,7 +96,10 @@ export async function ensureArtifact(opts: EnsureArtifactOptions): Promise<{
   }
 
   const destPath = resolveInside(opts.destRoot, artifact.dest, { id: artifact.id })
-  if (!opts.force && artifactDestMatches(artifact, opts.destRoot)) {
+  if (
+    !opts.force &&
+    (await runFileJob({ kind: 'matches', artifact, destRoot: opts.destRoot }, opts.signal))
+  ) {
     return { reused: true, destPath, downloaded: false }
   }
 
@@ -167,91 +117,11 @@ export async function ensureArtifact(opts: EnsureArtifactOptions): Promise<{
   })
   checkAbort(opts.signal)
 
-  if (artifact.kind === 'archive') {
-    const extractDir = join(
-      cacheRoot,
-      'tmp',
-      `extract-${artifact.sha256}-${randomBytes(4).toString('hex')}`
-    )
-    ensureDir(extractDir)
-    try {
-      // Verify every member in isolation before publishing any member.
-      publishArchive(artifact, blob, extractDir)
-      for (const file of artifact.archive!.files) {
-        const dest = archiveDest(artifact, file)
-        writeFileAtomic(
-          resolveInside(opts.destRoot, dest),
-          readFileSync(resolveInside(extractDir, dest))
-        )
-      }
-    } finally {
-      rmSync(extractDir, { recursive: true, force: true })
-    }
-  } else {
-    try {
-      copyFileAtomic(blob, destPath)
-    } catch (err) {
-      if (existsSync(destPath) && destMatches(artifact, destPath)) {
-        throw new LockError(
-          ERROR_CODES.SCHEMA_ERROR,
-          `windows lock/rename failed; kept existing complete file (${artifact.id})`,
-          { id: artifact.id }
-        )
-      }
-      throw err
-    }
-  }
+  await runFileJob(
+    { kind: 'publish', artifact, blob, destRoot: opts.destRoot, cacheRoot },
+    opts.signal
+  )
   return { reused: false, destPath, downloaded: true }
-}
-
-function archiveDest(artifact: Artifact, file: { path: string; dest?: string }): string {
-  return file.dest ?? posixDest(posixPath.join(posixPath.dirname(artifact.dest), file.path))
-}
-
-function destMatches(artifact: Artifact, destPath: string): boolean {
-  try {
-    verifyExistingFile(destPath, artifact)
-    return true
-  } catch {
-    return false
-  }
-}
-
-export function artifactDestMatches(artifact: Artifact, destRoot: string): boolean {
-  try {
-    if (artifact.kind === 'archive') {
-      if (!artifact.archive?.files.length) return false
-      for (const file of artifact.archive.files) {
-        verifyExistingFile(resolveInside(destRoot, archiveDest(artifact, file)), file)
-      }
-      return true
-    }
-    return destMatches(artifact, resolveInside(destRoot, artifact.dest))
-  } catch {
-    return false
-  }
-}
-
-function publishArchive(artifact: Artifact, blobPath: string, destRoot: string): void {
-  if (!artifact.archive) {
-    throw new LockError(ERROR_CODES.SCHEMA_ERROR, 'archive metadata required', { id: artifact.id })
-  }
-  const allowlist = new Map<string, ArchiveAllowSpec>()
-  for (const file of artifact.archive.files) {
-    allowlist.set(file.path, {
-      sha256: file.sha256,
-      size: file.size,
-      executable: file.executable,
-      dest: archiveDest(artifact, file)
-    })
-  }
-  const writeFile = (absPath: string, data: Buffer): void => {
-    writeFileAtomic(absPath, data)
-  }
-  const bytes = readFileSync(blobPath)
-  const extractOpts = { targetDir: destRoot, allowlist, id: artifact.id, writeFile }
-  if (artifact.archive.format === 'zip') extractZipVerified(bytes, extractOpts)
-  else extractTarGzVerified(bytes, extractOpts)
 }
 
 export interface DownloadVerifiedOptions {
@@ -295,7 +165,7 @@ export async function downloadVerified(opts: DownloadVerifiedOptions): Promise<s
   try {
     const blob = await waitWithSignal(flight.promise, signal)
     checkAbort(signal)
-    verifyExistingFile(blob, artifact)
+    await runFileJob({ kind: 'verify', path: blob, expected: artifact }, signal)
     return blob
   } finally {
     signal?.removeEventListener('abort', onAbort)
@@ -324,7 +194,8 @@ function createFlight(opts: DownloadVerifiedOptions): Flight {
       if (
         existsSync(paths.complete) &&
         existsSync(paths.blob) &&
-        hashFile(paths.blob) === artifact.sha256 &&
+        (await runFileJob({ kind: 'hash', path: paths.blob }, controller.signal)) ===
+          artifact.sha256 &&
         statSync(paths.blob).size === artifact.size
       ) {
         return paths.blob
@@ -497,7 +368,10 @@ async function downloadOnce(
     try {
       renameSync(tmp, paths.blob)
     } catch (err) {
-      if (existsSync(paths.blob) && hashFile(paths.blob) === artifact.sha256) {
+      if (
+        existsSync(paths.blob) &&
+        (await runFileJob({ kind: 'hash', path: paths.blob }, signal)) === artifact.sha256
+      ) {
         rmSync(tmp, { force: true })
       } else {
         throw err
@@ -549,31 +423,4 @@ async function fetchRedirects(
 /** 테스트에서 inflight 상태를 비운다. */
 export function resetInflightForTests(): void {
   inflight.clear()
-}
-
-export function verifyExistingFile(
-  path: string,
-  expected: { sha256: string; size: number; id?: string }
-): void {
-  if (!existsSync(path)) {
-    throw new LockError(ERROR_CODES.SCHEMA_ERROR, `missing verified file: ${path}`, {
-      id: expected.id,
-      path
-    })
-  }
-  const size = statSync(path).size
-  if (size !== expected.size) {
-    throw new LockError(
-      ERROR_CODES.SIZE_MISMATCH,
-      `size mismatch for ${path}: ${size} != ${expected.size}`,
-      { id: expected.id, path }
-    )
-  }
-  const actual = hashFile(path)
-  if (actual !== expected.sha256) {
-    throw new LockError(ERROR_CODES.HASH_MISMATCH, `sha256 mismatch for ${path}`, {
-      id: expected.id,
-      path
-    })
-  }
 }

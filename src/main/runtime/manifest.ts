@@ -1,4 +1,5 @@
-import { readdir, readFile, stat } from 'fs/promises'
+import { hashFileInWorker } from './fileWorkerClient'
+import { readdir, stat } from 'fs/promises'
 import { join } from 'path'
 import {
   ERROR_CODES,
@@ -9,7 +10,6 @@ import {
   getDistributionPolicy,
   lockDigest,
   posixDest,
-  sha256Hex,
   validateDistributionPolicy,
   validateLockShape,
   type Artifact,
@@ -92,8 +92,7 @@ export function shouldHashSidecarPath(relPath: string): boolean {
 }
 
 async function hashFileHex(path: string): Promise<string> {
-  const content = await readFile(path)
-  return sha256Hex(content)
+  return hashFileInWorker(path)
 }
 
 /** sidecar 소스 digest. `.python-version`을 포함한다. */

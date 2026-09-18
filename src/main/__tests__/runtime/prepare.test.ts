@@ -2,7 +2,8 @@ import { existsSync } from 'fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { spawn } from 'child_process'
 import {
   ERROR_CODES,
   LockError,
@@ -13,6 +14,7 @@ import {
   readPointer,
   runtimeCacheRoot,
   runtimeDir,
+  runSmoke,
   writePointer
 } from '../../runtime'
 import {
@@ -35,6 +37,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await rm(root, { recursive: true, force: true })
 })
 
@@ -153,6 +156,32 @@ describe('isRuntimeSelected / pointer', () => {
 })
 
 describe('buildRuntimeSidecarOptions', () => {
+  it('smoke와 실제 실행에 검증된 src 경로만 전달한다', async () => {
+    vi.stubEnv('PYTHONPATH', 'C:\\untrusted')
+    vi.stubEnv('PYTHONHOME', 'C:\\untrusted-python')
+    const dest = join(root, 'runtime with spaces')
+    await mkdir(join(dest, 'venv', 'Scripts'), { recursive: true })
+    await writeFile(join(dest, 'venv', 'Scripts', 'python.exe'), 'fixture')
+    const launch = buildRuntimeSidecarOptions(dest)
+    const source = join(dest, 'sidecar', 'src')
+    expect(launch.env.PYTHONPATH).toBe(source)
+    expect(launch.env.PYTHONHOME).toBe('')
+    expect(launch.env.PYTHONNOUSERSITE).toBe('1')
+    expect(launch.env.PYTHONSAFEPATH).toBe('1')
+    expect(launch.baseArgs).toEqual(['-m', 'karaoke_worker'])
+    const smoke = await runSmoke({
+      command: launch.command,
+      module: 'karaoke_worker',
+      cwd: join(dest, 'sidecar'),
+      spawnImpl: (_command, args, options) => {
+        expect(args).toEqual(['-c', 'import karaoke_worker'])
+        expect(options.env).toEqual(launch.env)
+        return spawn(process.execPath, ['-e', 'process.exit(0)'], options)
+      }
+    })
+    expect(smoke.ok).toBe(true)
+  })
+
   it('현재 manifest와 다른 runtimeId면 실행을 거부한다', async () => {
     const { manifest, locks } = await miniManifest(sidecar)
     const dest = runtimeDir(root, manifest.runtimeId)

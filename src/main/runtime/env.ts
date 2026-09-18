@@ -1,10 +1,11 @@
+import { verifyFileInWorker } from './fileWorkerClient'
 import { spawn } from 'child_process'
 import type { ChildProcess, SpawnOptions } from 'child_process'
-import { basename, join } from 'path'
+import { basename, join, resolve } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
 import { existsSync, readFileSync } from 'fs'
 import { ERROR_CODES, LockError, posixDest, type Artifact } from './schema'
-import { ensureArtifact, verifyExistingFile, type EnsureArtifactOptions } from './download'
+import { ensureArtifact, type EnsureArtifactOptions } from './download'
 import type { RuntimeLockSet, RuntimeManifest, RuntimeInputDigests } from './manifest'
 import { findArtifact, runtimeInputDigests } from './manifest'
 import {
@@ -85,6 +86,13 @@ export function buildExecutionEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.Process
   env.PIP_NO_INDEX = '1'
   env.UV_OFFLINE = '1'
   env.UV_NO_INDEX = '1'
+  return env
+}
+
+/** Only the manifest-verified sidecar source is added; inherited PYTHONPATH stays excluded. */
+function buildSidecarEnv(sidecarDir: string): NodeJS.ProcessEnv {
+  const env = buildExecutionEnv()
+  env.PYTHONPATH = resolve(sidecarDir, 'src')
   return env
 }
 
@@ -193,17 +201,25 @@ async function defaultPrepare(opts: PreparePythonEnvOptions): Promise<EnvPrepRes
     pythonArt.archive?.files.find((f) => posixDest(f.path).endsWith('python/python.exe')) ??
     pythonArt.archive?.files.find((f) => posixDest(f.dest ?? '').endsWith('python.exe'))
   if (pythonMember) {
-    verifyExistingFile(pythonExe, {
-      sha256: pythonMember.sha256,
-      size: pythonMember.size,
-      id: pythonArt.id
-    })
+    await verifyFileInWorker(
+      pythonExe,
+      {
+        sha256: pythonMember.sha256,
+        size: pythonMember.size,
+        id: pythonArt.id
+      },
+      opts.signal
+    )
   } else {
-    verifyExistingFile(pythonExe, {
-      sha256: pythonArt.sha256,
-      size: pythonArt.size,
-      id: pythonArt.id
-    })
+    await verifyFileInWorker(
+      pythonExe,
+      {
+        sha256: pythonArt.sha256,
+        size: pythonArt.size,
+        id: pythonArt.id
+      },
+      opts.signal
+    )
   }
 
   for (const wheel of wheels) {
@@ -213,7 +229,11 @@ async function defaultPrepare(opts: PreparePythonEnvOptions): Promise<EnvPrepRes
       destRoot: runtimeDir
     })
     const dest = join(runtimeDir, WHEELHOUSE_DIR, basename(posixDest(wheel.dest)))
-    verifyExistingFile(dest, { sha256: wheel.sha256, size: wheel.size, id: wheel.id })
+    await verifyFileInWorker(
+      dest,
+      { sha256: wheel.sha256, size: wheel.size, id: wheel.id },
+      opts.signal
+    )
   }
 
   const venvDir = join(runtimeDir, VENV_DIR)
@@ -233,11 +253,15 @@ async function defaultPrepare(opts: PreparePythonEnvOptions): Promise<EnvPrepRes
   if (opts.uvCommand) {
     const uvArt = findArtifact(locks.tools, 'uv')
     const uvMember = uvArt.archive?.files.find((f) => f.path.endsWith('uv.exe'))
-    verifyExistingFile(opts.uvCommand, {
-      sha256: uvMember?.sha256 ?? uvArt.sha256,
-      size: uvMember?.size ?? uvArt.size,
-      id: 'uv'
-    })
+    await verifyFileInWorker(
+      opts.uvCommand,
+      {
+        sha256: uvMember?.sha256 ?? uvArt.sha256,
+        size: uvMember?.size ?? uvArt.size,
+        id: 'uv'
+      },
+      opts.signal
+    )
     await runCommand(
       spawnImpl,
       opts.uvCommand,
@@ -310,7 +334,7 @@ export async function runSmoke(opts: {
       opts.command,
       [...(opts.args ?? []), '-c', `import ${opts.module}`],
       {
-        env: buildExecutionEnv({ ...(opts.cwd ? { PYTHONPATH: '' } : {}) }),
+        env: opts.cwd ? buildSidecarEnv(opts.cwd) : buildExecutionEnv(),
         signal: opts.signal,
         onLog: opts.onLog
       }
@@ -387,6 +411,6 @@ export function buildRuntimeSidecarOptions(
   return {
     command,
     baseArgs: ['-m', 'karaoke_worker'],
-    env: buildExecutionEnv()
+    env: buildSidecarEnv(join(runtimeDir, SIDECAR_DIR))
   }
 }

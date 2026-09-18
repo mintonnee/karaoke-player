@@ -1,3 +1,4 @@
+import { executeFileJob } from '../../runtime/fileOperations'
 import * as fs from 'fs'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
@@ -401,18 +402,13 @@ it('publishes cached wheels without a whole-file read and preserves the old file
     writeFileSync(temp, 'partial')
     throw new Error('copy failed')
   })
-  const fetchImpl = vi.fn(async () => {
-    throw new Error('unexpected download')
-  })
-  await expect(ensureArtifact({ artifact, cacheRoot, destRoot, fetchImpl })).rejects.toThrow(
-    'copy failed'
-  )
+  const job = { kind: 'publish' as const, artifact, blob, cacheRoot, destRoot }
+  expect(() => executeFileJob(job, () => {})).toThrow('copy failed')
   expect(readFileSync(dest, 'utf8')).toBe('old wheel')
   expect(fs.readdirSync(join(dest, '..'))).not.toEqual(
     expect.arrayContaining([expect.stringMatching(/\.tmp$/)])
   )
   copy.mockImplementation(actualFs.copyFileSync)
-  await ensureArtifact({ artifact, cacheRoot, destRoot, fetchImpl })
+  executeFileJob(job, () => {})
   expect(readFileSync(dest, 'utf8')).toBe('new wheel')
-  expect(fetchImpl).not.toHaveBeenCalled()
 })

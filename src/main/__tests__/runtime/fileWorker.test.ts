@@ -8,6 +8,8 @@ import { tempDir, fileArtifact } from './helpers'
 import { abortError } from '../../runtime/cancellation'
 
 describe('runtime file worker', () => {
+  // Real worker startup and 64 MiB disk I/O vary on hosted Windows runners.
+  // This checks responsiveness and integrity, not a five-second throughput target.
   it('keeps the calling event loop responsive during hashing and preserves structured errors', async () => {
     const root = tempDir()
     const path = join(root, 'large.bin')
@@ -27,7 +29,7 @@ describe('runtime file worker', () => {
     ).rejects.toMatchObject({ code: 'HASH_MISMATCH', id: 'wheel', path })
     // An operation error must not poison subsequent requests.
     expect(await hashFileInWorker(path)).toBe(expected)
-  })
+  }, 30_000)
 
   it('cancels a queued publication without writing and allows retry', async () => {
     const root = tempDir()
